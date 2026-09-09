@@ -344,6 +344,10 @@ pub unsafe extern "C" fn hcl_value_type(val: *const hcl_value_t) -> *mut c_char 
 }
 
 #[cfg(test)]
+#[path = "../build.rs"]
+mod build_script;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -571,5 +575,57 @@ mod tests {
             hcl_free_string(std::ptr::null_mut());
             hcl_free_context(std::ptr::null_mut());
         }
+    }
+
+    #[test]
+    fn test_build_script_coverage() {
+        build_script::main();
+
+        let temp = std::env::temp_dir().join("hcl_ffi_test_build");
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        assert!(
+            build_script::generate_bindings(Some(manifest_dir), Some(&temp.to_string_lossy()))
+                .is_ok()
+        );
+
+        assert!(
+            build_script::generate_bindings(
+                Some("/nonexistent/directory/for/build/test"),
+                Some(&temp.to_string_lossy())
+            )
+            .is_err()
+        );
+
+        unsafe {
+            std::env::set_var("CARGO_TARGET_DIR", "/tmp/custom_target");
+        }
+        assert_eq!(
+            build_script::target_dir(),
+            std::path::PathBuf::from("/tmp/custom_target")
+        );
+        unsafe {
+            std::env::remove_var("CARGO_TARGET_DIR");
+        }
+        // Test target_dir when CARGO_TARGET_DIR is unset but CARGO_MANIFEST_DIR is set
+        unsafe {
+            std::env::set_var("CARGO_MANIFEST_DIR", manifest_dir);
+        }
+        let target_with_manifest = build_script::target_dir();
+        assert!(target_with_manifest.ends_with("target"));
+
+        // Test fallback branches when CARGO_MANIFEST_DIR and OUT_DIR are unset
+        unsafe {
+            std::env::remove_var("CARGO_MANIFEST_DIR");
+            std::env::remove_var("OUT_DIR");
+        }
+        let fallback = build_script::target_dir();
+        assert!(fallback.ends_with("target"));
+        let _ = build_script::generate_bindings(None, None);
+
+        unsafe {
+            std::env::set_var("CARGO_MANIFEST_DIR", manifest_dir);
+        }
+
+        let _ = std::fs::remove_dir_all(temp);
     }
 }

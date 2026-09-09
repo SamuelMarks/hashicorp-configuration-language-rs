@@ -2902,4 +2902,118 @@ mod tests {
             Some(Type::Dynamic)
         );
     }
+
+    #[test]
+    fn test_type_check_missing_branch_coverage() {
+        // 1. Line 417: attr_schema.expected_type is None
+        let mut attr_schemas = std::collections::HashMap::new();
+        attr_schemas.insert(
+            "any_attr".to_string(),
+            AttributeSchema::new("any_attr", false),
+        );
+        let body_schema = BodySchema {
+            attributes: attr_schemas,
+            blocks: std::collections::HashMap::new(),
+        };
+        let mut parser = Parser::new("any_attr = 123\n");
+        let body = parser.parse_body();
+        let checker = TypeChecker::new();
+        let diags = checker.check_body(&body, &body_schema);
+        assert!(diags.is_ok());
+
+        // 2. Lines 835, 836, 838: BinaryOp::Eq / NotEq branches
+        let mut scope = ScopeSchema::new();
+        scope.variables.insert("dyn_v".to_string(), Type::Dynamic);
+        scope
+            .variables
+            .insert("list_v".to_string(), Type::List(Box::new(Type::Number)));
+        scope
+            .variables
+            .insert("tuple_v".to_string(), Type::Tuple(vec![Type::Number]));
+
+        // 3. Lines 1184, 1185: Variadic param Dynamic vs allow_dynamic_type
+        let sig_var_dyn = FunctionSignature::with_static_return_type(vec![], Type::String)
+            .with_variadic(
+                FunctionParamSpec::new("rest", Type::Dynamic).with_allow_dynamic_type(true),
+            );
+        scope
+            .functions
+            .insert("var_dyn_fn".to_string(), sig_var_dyn);
+
+        let sig_var_str = FunctionSignature::with_static_return_type(vec![], Type::String)
+            .with_variadic(
+                FunctionParamSpec::new("rest", Type::String).with_allow_dynamic_type(true),
+            );
+        scope
+            .functions
+            .insert("var_str_fn".to_string(), sig_var_str);
+
+        // 4. Lines 1221, 1222: Fixed param Dynamic vs allow_dynamic_type
+        let sig_fixed_dyn = FunctionSignature::with_static_return_type(
+            vec![FunctionParamSpec::new("p1", Type::Dynamic).with_allow_dynamic_type(true)],
+            Type::Number,
+        );
+        scope
+            .functions
+            .insert("fixed_dyn_fn".to_string(), sig_fixed_dyn);
+
+        let sig_fixed_str = FunctionSignature::with_static_return_type(
+            vec![FunctionParamSpec::new("p1", Type::String).with_allow_dynamic_type(true)],
+            Type::Number,
+        );
+        scope
+            .functions
+            .insert("fixed_str_fn".to_string(), sig_fixed_str);
+
+        let checker = TypeChecker::new().with_scope(scope);
+
+        // BinaryOp Eq branches:
+        // l_ty is Dynamic
+        assert!(
+            checker
+                .infer_expression_type(&parse_expr("dyn_v == 1"))
+                .is_ok()
+        );
+        // r_ty is Dynamic
+        assert!(
+            checker
+                .infer_expression_type(&parse_expr("1 == dyn_v"))
+                .is_ok()
+        );
+        // is_type_compatible(l, r) is true
+        assert!(checker.infer_expression_type(&parse_expr("1 == 2")).is_ok());
+        // !is_type_compatible(l, r) is true, but !is_type_compatible(r, l) is false
+        assert!(
+            checker
+                .infer_expression_type(&parse_expr("list_v == tuple_v"))
+                .is_ok()
+        );
+
+        // Function call parameter branches:
+        // variadic param_type is Dynamic
+        assert!(
+            checker
+                .infer_expression_type(&parse_expr(r#"var_dyn_fn(1, "a")"#))
+                .is_ok()
+        );
+        // variadic arg_ty is Dynamic with allow_dynamic_type = true
+        assert!(
+            checker
+                .infer_expression_type(&parse_expr("var_str_fn(dyn_v)"))
+                .is_ok()
+        );
+
+        // fixed param_type is Dynamic
+        assert!(
+            checker
+                .infer_expression_type(&parse_expr("fixed_dyn_fn(1)"))
+                .is_ok()
+        );
+        // fixed arg_ty is Dynamic with allow_dynamic_type = true
+        assert!(
+            checker
+                .infer_expression_type(&parse_expr("fixed_str_fn(dyn_v)"))
+                .is_ok()
+        );
+    }
 }

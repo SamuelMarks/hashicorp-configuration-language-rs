@@ -374,9 +374,19 @@ impl LspServer {
     /// Returns [`LspError`] if binding or communicating fails.
     pub fn run_tcp(&mut self, addr: &str) -> Result<(), LspError> {
         let listener = TcpListener::bind(addr)?;
+        self.run_tcp_listener(listener)
+    }
+
+    /// Listens for a single TCP client connection on `listener` and runs the server loop.
+    ///
+    /// # Arguments
+    /// * `listener` - An already-bound TCP listener.
+    ///
+    /// # Errors
+    /// Returns [`LspError`] if accepting a connection or communicating fails.
+    pub fn run_tcp_listener(&mut self, listener: TcpListener) -> Result<(), LspError> {
         let (stream, _) = listener.accept()?;
-        let reader = stream.try_clone()?;
-        self.run_stream(reader, stream)
+        self.run_stream(&stream, &stream)
     }
 }
 
@@ -667,6 +677,14 @@ mod tests {
     fn test_server_notifications() {
         let mut server = LspServer::new();
 
+        // 0. didOpen, didChange, didClose with None params
+        let none_open = Notification::new("textDocument/didOpen", None);
+        assert!(server.handle_notification(none_open).is_none());
+        let none_change = Notification::new("textDocument/didChange", None);
+        assert!(server.handle_notification(none_change).is_none());
+        let none_close = Notification::new("textDocument/didClose", None);
+        assert!(server.handle_notification(none_close).is_none());
+
         // 1. didOpen with invalid params
         let bad_open = Notification::new("textDocument/didOpen", Some(serde_json::json!("bad")));
         assert!(server.handle_notification(bad_open).is_none());
@@ -766,10 +784,11 @@ mod tests {
             r#"{"jsonrpc":"2.0","method":"exit","params":null}"#,
         );
 
-        let mut output_buf = Vec::new();
-        let res = server.run_stream(Cursor::new(input_buf), &mut output_buf);
+        let writer_success = MockStreamWriter::new(false);
+        let mut output_writer = writer_success;
+        let res = server.run_stream(Cursor::new(input_buf), &mut output_writer);
         assert!(res.is_ok());
-        assert_ne!(output_buf.len(), 0);
+        assert!(!output_writer.buf.is_empty());
 
         // Stream that ends with clean EOF (no exit notification)
         let mut eof_buf = Vec::new();
@@ -777,17 +796,95 @@ mod tests {
             &mut eof_buf,
             r#"{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}"#,
         );
-        let mut eof_out = Vec::new();
+        let mut eof_writer = MockStreamWriter::new(false);
         assert!(
             server
-                .run_stream(Cursor::new(eof_buf), &mut eof_out)
+                .run_stream(Cursor::new(eof_buf), &mut eof_writer)
                 .is_ok()
         );
+
+        // 1. Read message error in run_stream (corrupted header)
+        let bad_header_stream = Cursor::new(b"Content-Length: not_a_num\r\n\r\n{}" as &[u8])
+            .get_ref()
+            .to_vec();
+        let mut bad_writer = MockStreamWriter::new(false);
+        assert!(
+            server
+                .run_stream(Cursor::new(bad_header_stream), &mut bad_writer)
+                .is_err()
+        );
+
+        // 2. Writer error on request response
+        let mut req_buf = Vec::new();
+        let _ = Transport::write_message(
+            &mut req_buf,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        );
+        let mut fail_req_writer = MockStreamWriter::new(true);
+        assert!(
+            server
+                .run_stream(Cursor::new(req_buf), &mut fail_req_writer)
+                .is_err()
+        );
+
+        // 3. Writer error on notification (e.g. diagnostics on didOpen)
+        let mut notif_buf = Vec::new();
+        let _ = Transport::write_message(
+            &mut notif_buf,
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///fail.hcl","languageId":"hcl","version":1,"text":"a = 1\n"}}}"#,
+        );
+        let mut fail_notif_writer = MockStreamWriter::new(true);
+        assert!(
+            server
+                .run_stream(Cursor::new(notif_buf), &mut fail_notif_writer)
+                .is_err()
+        );
+        assert!(MockStreamWriter::new(true).flush().is_err());
+        assert!(MockStreamWriter::new(false).flush().is_ok());
+    }
+
+    /// Mock writer that can selectively succeed or fail on writes to test all stream paths.
+    struct MockStreamWriter {
+        fail_writes: bool,
+        buf: Vec<u8>,
+    }
+
+    impl MockStreamWriter {
+        fn new(fail_writes: bool) -> Self {
+            Self {
+                fail_writes,
+                buf: Vec::new(),
+            }
+        }
+    }
+
+    impl Write for MockStreamWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.fail_writes {
+                Err(std::io::Error::other("mock write failure"))
+            } else {
+                self.buf.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            if self.fail_writes {
+                Err(std::io::Error::other("mock flush failure"))
+            } else {
+                Ok(())
+            }
+        }
     }
 
     #[test]
     fn test_server_run_tcp_lifecycle() {
         let mut server = LspServer::new();
+
+        // Non-blocking listener accept failure
+        let nb_listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        nb_listener.set_nonblocking(true).expect("nonblocking");
+        assert!(server.run_tcp_listener(nb_listener).is_err());
 
         for target in ["invalid-address:99999", "127.0.0.1:0"] {
             match TcpListener::bind(target) {

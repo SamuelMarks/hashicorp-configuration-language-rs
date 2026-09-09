@@ -217,6 +217,31 @@ mod tests {
     #[test]
     fn test_main_err() {
         let _ = main_impl("{");
+
+        // 1. Argument parsing error branch in main_with_args
+        assert!(main_with_args(vec!["--unknown-flag".to_string()]).is_err());
+
+        // 2. IO failure branch in main_with_args
+        assert!(
+            main_with_args(vec![
+                "nonexistent_file_definitely_missing_9999.hcl".to_string()
+            ])
+            .is_err()
+        );
+
+        // 3. Execution failure when HCL parsing fails
+        let dir = std::env::temp_dir().join(format!("hcl2json_args_test_{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let bad_file = dir.join("bad.hcl");
+        let _ = fs::write(&bad_file, "{\n");
+        assert!(main_with_args(vec![bad_file.to_string_lossy().to_string()]).is_err());
+
+        // 4. Success branch
+        let good_file = dir.join("good.hcl");
+        let _ = fs::write(&good_file, "key = \"value\"\n");
+        assert!(main_with_args(vec![good_file.to_string_lossy().to_string()]).is_ok());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -1,16 +1,19 @@
 # Usage Guide
 
-The `hashicorp-configuration-language-rs` crate exposes several ways to interact with HCL configurations, from high-level struct mapping to low-level AST manipulation.
+The `hashicorp-configuration-language-rs` crate exposes multiple levels of interaction with HCL configurations: high-level struct mapping, dynamic evaluation, lossless CST formatting, spec-driven decoding, and low-level AST manipulation.
+
+---
 
 ## 1. High-Level Macro Decoding (Recommended)
 
-The most idiomatic way to use this crate is to use the `hcl_macros::DecodeBody` procedural macro. This is equivalent to HashiCorp's `gohcl` library, natively coercing evaluated HCL straight into Rust structs.
+The most idiomatic way to decode HCL into strongly typed Rust structs is via `hcl_macros::DecodeBody`. This matches HashiCorp's `gohcl` library, mapping evaluated HCL attributes and blocks directly into Rust structures.
 
 ```rust
-use hcl_macros::DecodeBody;
 use hashicorp_configuration_language_rs::api::from_str;
+use hashicorp_configuration_language_rs::diagnostic::Diagnostics;
+use hcl_macros::DecodeBody;
 
-#[derive(DecodeBody, Debug)]
+#[derive(DecodeBody, Debug, PartialEq)]
 struct ServerConfig {
     name: String,
     port: i64,
@@ -18,35 +21,56 @@ struct ServerConfig {
     enabled: bool,
 }
 
-fn main() {
+fn main() -> Result<(), Diagnostics> {
     let hcl = r#"
-        name = "web_server"
-        port = 8080
+        name     = "web_server"
+        port     = 8080
         features = ["http2", "ssl"]
-        enabled = true
+        enabled  = true
     "#;
 
-    match from_str::<ServerConfig>(hcl) {
-        Ok(config) => println!("Config loaded: {:#?}", config),
-        Err(diagnostics) => {
-            // Diagnostics handle multiple errors at once!
-            for err in diagnostics.errors() {
-                eprintln!("Error: {} at {:?}", err.summary, err.subject);
-            }
-        }
-    }
+    let config: ServerConfig = from_str(hcl)?;
+    println!("Loaded config: {:?}", config);
+    Ok(())
 }
 ```
 
-## 2. Using an Evaluation Context
+### Advanced Macro Attributes
 
-HCL's power comes from dynamic evaluation—variable references, standard library functions, and mathematical operations. You can execute evaluations by passing a `Context`.
+- **`#[hcl(block)]`**: Decodes nested blocks into child structs, lists of structs, or label-keyed maps (`HashMap<String, T>`, `BTreeMap<String, T>`).
+- **`#[hcl(flatten)]` / `#[hcl(squash)]`**: Inlines child struct fields into the current body scope.
+- **`#[hcl(body)]`**: Captures the raw unevaluated `crate::ast::structure::Body` for custom inspection.
+- **`#[derive(EncodeBody)]`**: Re-encodes native structs back into formatted CST bodies.
+
+```rust
+use hcl_macros::DecodeBody;
+use std::collections::HashMap;
+
+#[derive(DecodeBody, Debug)]
+struct ResourceBlock {
+    ami: String,
+    instance_type: String,
+}
+
+#[derive(DecodeBody, Debug)]
+struct AppConfig {
+    // Maps `resource "aws_instance" "web" { ... }` into a nested map
+    #[hcl(block)]
+    resources: HashMap<String, HashMap<String, ResourceBlock>>,
+}
+```
+
+---
+
+## 2. Dynamic Evaluation Context
+
+HCL configurations typically feature variable interpolations, math operations, and function calls. You can control the evaluation environment using `Context`.
 
 ```rust
 use hashicorp_configuration_language_rs::api::from_str_with_context;
 use hashicorp_configuration_language_rs::eval::context::Context;
-use hashicorp_configuration_language_rs::types::val::{Value, ValueData};
 use hashicorp_configuration_language_rs::types::ty::Type;
+use hashicorp_configuration_language_rs::types::val::{Value, ValueData};
 use hcl_macros::DecodeBody;
 
 #[derive(DecodeBody, Debug)]
@@ -55,125 +79,279 @@ struct AppConfig {
     workers: i64,
 }
 
-fn main() -> Result<(), hashicorp_configuration_language_rs::error::HclError> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hcl = r#"
-        # Uses standard library 'upper' and custom variable 'base_name'
-        app_id = upper("${base_name}-prod")
-        # Evaluates math
-        workers = 2 * 4
+        # Uses built-in standard library function 'upper'
+        app_id  = upper("${base_name}-prod")
+        workers = base_workers * 2
     "#;
 
-    let mut ctx = Context::new();
-    // Inject a variable into the context
-    ctx.set_variable("base_name", Value::new(Type::String, ValueData::String("billing".to_string())));
+    let mut ctx = Context::with_stdlib();
+    ctx.set_variable("base_name", Value::new(Type::String, ValueData::String("billing".into())));
+    ctx.set_variable("base_workers", Value::new(Type::Number, ValueData::Number(4.into())));
 
-    let config: AppConfig = from_str_with_context(hcl, &mut ctx)?;
-    
+    let config: AppConfig = from_str_with_context(hcl, &mut ctx)
+        .map_err(|diags| format!("Evaluation diagnostics: {:?}", diags))?;
+
     assert_eq!(config.app_id, "BILLING-PROD");
     assert_eq!(config.workers, 8);
     Ok(())
 }
 ```
 
-## 3. Injecting Custom Functions
+---
 
-If you are building a tool like Vagrant or Packer, you often need to provide domain-specific functions to the user's HCL context.
+## 3. Registering Custom Functions
+
+You can expose domain-specific functions to HCL evaluation contexts using `Function::new`:
 
 ```rust
 use std::sync::Arc;
+use hashicorp_configuration_language_rs::api::from_str_with_context;
 use hashicorp_configuration_language_rs::eval::context::Context;
 use hashicorp_configuration_language_rs::eval::func::Function;
-use hashicorp_configuration_language_rs::types::val::{Value, ValueData};
 use hashicorp_configuration_language_rs::types::ty::Type;
-use hashicorp_configuration_language_rs::api::from_str_with_context;
+use hashicorp_configuration_language_rs::types::val::{Value, ValueData};
 use hcl_macros::DecodeBody;
 
-#[derive(DecodeBody)]
+#[derive(DecodeBody, Debug)]
 struct Config {
     path: String,
 }
 
-fn main() -> Result<(), hashicorp_configuration_language_rs::error::HclError> {
-    let mut ctx = Context::new();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut ctx = Context::with_stdlib();
 
-    let custom_func = Function {
-        name: "resolve_path".to_string(),
-        func: Arc::new(|args| {
-            if let ValueData::String(ref s) = *args[0].data {
-                // Perform arbitrary Rust logic here
+    let custom_func = Function::new("resolve_path", Arc::new(|args| {
+        match &args[0].data {
+            ValueData::String(s) => {
                 Ok(Value::new(Type::String, ValueData::String(format!("/opt/app/{}", s))))
-            } else {
-                Err("Type unification guarantees this is safe if properly defined".to_string())
             }
-        })
-    };
+            _ => Err("expected string argument".to_string()),
+        }
+    }));
 
     ctx.set_function("resolve_path", custom_func);
 
     let hcl = r#"path = resolve_path("config.yml")"#;
-    let config: Config = from_str_with_context(hcl, &mut ctx)?;
+    let config: Config = from_str_with_context(hcl, &mut ctx)
+        .map_err(|diags| format!("{:?}", diags))?;
 
     assert_eq!(config.path, "/opt/app/config.yml");
     Ok(())
 }
 ```
 
-## 4. Serde Integration
+---
 
-If you want standard serialization/deserialization into types that implement `serde::Serialize` and `serde::DeserializeOwned`, you can use the `serde` module directly.
+## 4. Unknown Values in Planning Phases
+
+For infrastructure-as-code planning phases (e.g. Terraform plan), attributes may not be known until apply time. `Value::unknown` propagates safely through calculations and logic without crashing:
 
 ```rust
-use serde::{Deserialize, Serialize};
-use hashicorp_configuration_language_rs::serde::{from_str, to_string};
+use hashicorp_configuration_language_rs::api::evaluate_expr;
+use hashicorp_configuration_language_rs::eval::context::Context;
+use hashicorp_configuration_language_rs::types::ty::Type;
+use hashicorp_configuration_language_rs::types::val::Value;
 
-#[derive(Serialize, Deserialize, Debug)]
-struct GeneralConfig {
-    host: String,
-    port: i32,
-}
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut ctx = Context::with_stdlib();
+    ctx.set_variable("server_ip", Value::unknown(Type::String));
 
-fn main() -> Result<(), hashicorp_configuration_language_rs::error::HclError> {
-    let hcl_input = r#"
-        host = "localhost"
-        port = 5432
-    "#;
+    // Unknown values propagate safely through functions and templates
+    let res = evaluate_expr(r#"upper(server_ip)"#, Some(&ctx))
+        .map_err(|diags| format!("{:?}", diags))?;
 
-    // Parse HCL into a Serde-compatible struct
-    let config: GeneralConfig = from_str(hcl_input)?;
-    
-    // Serialize a Struct back into cleanly formatted HCL
-    let hcl_output = to_string(&config)?;
-    println!("{}", hcl_output);
+    assert!(res.is_unknown());
+    assert_eq!(res.ty, Type::String);
     Ok(())
 }
 ```
 
-## 5. Working directly with the AST
+---
 
-For tooling that needs to format, lint, or analyze HCL without fully evaluating it, you can parse directly into the AST:
+## 5. Lossless CST Formatting & Mutation
+
+To format HCL canonically or mutate attributes while preserving original whitespace and comments:
 
 ```rust
-use hashicorp_configuration_language_rs::api::parse;
+use hashicorp_configuration_language_rs::cst::format::format_str;
 
 fn main() -> Result<(), hashicorp_configuration_language_rs::error::HclError> {
-    let hcl = r#"
-        resource "aws_instance" "web" {
-            ami = "ami-123456"
+    let unformatted = r#"
+        resource "server" "app" {
+        ip="10.0.0.1"
+          port =8080
+        # Preserve this comment!
         }
     "#;
 
-    let body = parse(hcl)?;
+    let formatted = format_str(unformatted)?;
+    println!("{}", formatted);
+    Ok(())
+}
+```
 
-    // Iterate over blocks
-    for block in &body.blocks {
-        println!("Block Type: {}", block.block_type);
-        println!("Labels: {:?}", block.labels);
+---
 
-        // Inspect the block's inner body
-        for (attr_name, attr) in &block.body.attributes {
-            println!("Attribute: {} = {:?}", attr_name, attr.expr);
+## 6. Specification-Driven Decoding (`hcldec`)
+
+When schemas are dynamic and not known at Rust compile time, use `hcldec`:
+
+```rust
+use hashicorp_configuration_language_rs::api::parse;
+use hashicorp_configuration_language_rs::hcldec::{decode, AttrSpec, BlockSpec, Spec};
+use hashicorp_configuration_language_rs::types::ty::Type;
+use std::collections::BTreeMap;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let input = r#"
+        region  = "us-east-1"
+        workers = 5
+    "#;
+
+    let body = parse(input).map_err(|diags| format!("{:?}", diags))?;
+
+    let mut attrs = BTreeMap::new();
+    attrs.insert("region".to_string(), AttrSpec {
+        name: "region".to_string(),
+        ty: Type::String,
+        required: true,
+    });
+    attrs.insert("workers".to_string(), AttrSpec {
+        name: "workers".to_string(),
+        ty: Type::Number,
+        required: true,
+    });
+
+    let spec = Spec::Block(BlockSpec {
+        attributes: attrs,
+        block_types: BTreeMap::new(),
+    });
+
+    let val = decode(&body, &spec)?;
+    println!("Decoded cty value: {:?}", val);
+    Ok(())
+}
+```
+
+---
+
+## 7. Serde Interoperability
+
+Treat HCL like JSON, YAML, or TOML using the `serde` module:
+
+```rust
+use hashicorp_configuration_language_rs::serde::{from_str, to_string};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct DatabaseSettings {
+    host: String,
+    port: u16,
+    active: bool,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let input = r#"
+        host   = "localhost"
+        port   = 5432
+        active = true
+    "#;
+
+    let config: DatabaseSettings = from_str(input)?;
+    assert_eq!(config.port, 5432);
+
+    let output = to_string(&config)?;
+    println!("HCL Output:\n{}", output);
+    Ok(())
+}
+```
+
+---
+
+## 8. Static Analysis & Linting
+
+Analyze configurations without executing expressions:
+
+```rust
+use hashicorp_configuration_language_rs::analysis::{Linter, TypeChecker, ScopeSchema};
+use hashicorp_configuration_language_rs::api::parse;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let input = r#"
+        variable "env" {
+            default = true ? "prod" : "dev"
         }
+    "#;
+
+    let body = parse(input).map_err(|diags| format!("{:?}", diags))?;
+
+    // Lint for dead branches and tautological conditionals
+    let linter = Linter::new();
+    let lint_diags = linter.lint_body(&body);
+    for diag in lint_diags.diagnostics() {
+        println!("Lint Warning: {:?}", diag.summary);
     }
     Ok(())
 }
+```
+
+---
+
+## 9. Migrating Legacy HCL 1.0 to HCL 2.0
+
+Transform legacy HCL1 files (such as old Packer or Terraform 0.11 configs) into modern HCL2:
+
+```rust
+use hashicorp_configuration_language_rs::hcl1::parser::Hcl1Parser;
+use hashicorp_configuration_language_rs::hcl1::migrate::migrate_hcl1_to_hcl2;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let hcl1_input = r#"
+        variable "name" {
+            default = "${var.prefix}-app"
+        }
+    "#;
+
+    let hcl1_file = Hcl1Parser::parse(hcl1_input)?;
+    let hcl2_body = migrate_hcl1_to_hcl2(&hcl1_file);
+
+    println!("Migrated HCL2 Body blocks: {}", hcl2_body.blocks.len());
+    Ok(())
+}
+```
+
+---
+
+## 10. CLI Tools
+
+Install or run the included command-line utilities:
+
+```bash
+# Format files in-place with 2-space canonical indentation
+cargo run --bin hclfmt -- -w main.hcl
+
+# Convert HCL files to JSON
+cargo run --bin hcl2json -- config.hcl
+
+# Start the interactive HCL evaluation console
+cargo run --bin hcl-repl
+
+# Validate HCL syntax and schemas recursively in CI
+cargo run --bin hcl-validate -- ./configs/
+```
+
+---
+
+## 11. IDE & Language Server (`hcl-lsp`)
+
+Start the Language Server Protocol daemon for editor integration:
+
+```bash
+# Run over stdio (standard for VS Code, Neovim, Helix)
+cargo run --bin hcl-lsp -- --stdio
+
+# Or run over a TCP port
+cargo run --bin hcl-lsp -- --tcp 127.0.0.1:9257
 ```

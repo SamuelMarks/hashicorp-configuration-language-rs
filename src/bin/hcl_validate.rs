@@ -504,8 +504,28 @@ mod tests {
 
         #[cfg(unix)]
         {
+            use std::os::unix::fs::PermissionsExt;
+
             let broken_symlink = sub_dir.join("broken_symlink");
             let _ = std::os::unix::fs::symlink("does_not_exist", broken_symlink);
+
+            // 1. Unreadable directory triggers walk_directory error in collect_validate_files
+            let unreadable_dir = dir.join("unreadable_dir");
+            let _ = fs::create_dir_all(&unreadable_dir);
+            let _ = fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o000));
+            assert!(collect_validate_files(&unreadable_dir.to_string_lossy()).is_err());
+
+            // 2. Nested unreadable directory triggers recursive walk_directory error
+            let parent_walk = dir.join("parent_walk");
+            let child_unreadable = parent_walk.join("child_unreadable");
+            let _ = fs::create_dir_all(&child_unreadable);
+            let _ = fs::set_permissions(&child_unreadable, fs::Permissions::from_mode(0o000));
+            let mut files = Vec::new();
+            assert!(walk_directory(&parent_walk, &mut files).is_err());
+
+            // Restore permissions for cleanup
+            let _ = fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o755));
+            let _ = fs::set_permissions(&child_unreadable, fs::Permissions::from_mode(0o755));
         }
 
         let collected = collect_validate_files(dir.to_str().expect("to_str")).expect("collect dir");
@@ -545,6 +565,15 @@ mod tests {
         assert_eq!(code_clean, 0);
         let stdout_str = String::from_utf8_lossy(&stdout);
         assert!(stdout_str.contains("Success! The configuration is valid."));
+
+        // Target file missing in run_validate
+        let opts_missing = ValidateOptions {
+            schema_path: None,
+            strict: false,
+            json: false,
+            targets: vec!["nonexistent_target_path_definitely_absent_12345.hcl".to_string()],
+        };
+        assert!(run_validate(&opts_missing, &mut stdout, &mut stderr).is_err());
 
         // Clean with json = true
         let opts_clean_json = ValidateOptions {

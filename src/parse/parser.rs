@@ -228,6 +228,17 @@ impl<'a> Parser<'a> {
         current
     }
 
+    /// Advances the parser and returns the consumed token, falling back to an empty token if at EOF.
+    fn advance_token(&mut self) -> Token {
+        self.advance()
+            .unwrap_or_else(|| Token::new(TokenKind::Ident, String::new(), Span::default()))
+    }
+
+    /// Returns the span of the current token, or `fallback` if at EOF.
+    fn current_span_or(&self, fallback: Span) -> Span {
+        self.current.as_ref().map_or(fallback, |t| t.span.clone())
+    }
+
     /// Check the current token's kind without advancing.
     fn peek_kind(&self) -> Option<TokenKind> {
         self.current.as_ref().map(|t| t.kind.clone())
@@ -380,7 +391,7 @@ impl<'a> Parser<'a> {
         ident: Token,
         leading_comments: Vec<String>,
     ) -> Option<Attribute> {
-        let assign_tok = self.advance()?; // We know it's Assign
+        let assign_tok = self.advance_token(); // We know it's Assign
 
         let Some(expr) = self.parse_expression() else {
             self.recover_after_body_item();
@@ -399,15 +410,15 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(TokenKind::Comma) => {
-                let bad = self.advance()?;
+                let bad = self.advance_token();
                 #[rustfmt::skip]
                 self.diags.push(Diagnostic::error( "Unexpected comma after argument".to_string(), "Argument definitions must be separated by newlines, not commas. An argument definition must end with a newline.".to_string(), bad.span, ));
                 self.recover_after_body_item();
             }
             Some(_) => {
-                let bad = self.current.as_ref()?;
+                let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Missing newline after argument".to_string(), "An argument definition must end with a newline.".to_string(), bad.span.clone(), ));
+                self.diags.push(Diagnostic::error( "Missing newline after argument".to_string(), "An argument definition must end with a newline.".to_string(), bad_span, ));
                 self.recover_after_body_item();
             }
         }
@@ -495,9 +506,9 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
-                let bad = self.current.as_ref()?;
+                let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Missing newline after function definition".to_string(), "A function definition must end with a newline.".to_string(), bad.span.clone(), ));
+                self.diags.push(Diagnostic::error( "Missing newline after function definition".to_string(), "A function definition must end with a newline.".to_string(), bad_span, ));
                 self.recover_after_body_item();
             }
         }
@@ -775,7 +786,7 @@ impl<'a> Parser<'a> {
         ident: &Token,
         block_type: &str,
     ) -> Option<(Expression, Expression, Span)> {
-        let open_brace = self.advance()?;
+        let open_brace = self.advance_token();
 
         let inner_body = self.parse_body_inner(Some(&TokenKind::CBrace));
 
@@ -856,10 +867,10 @@ impl<'a> Parser<'a> {
         let open_brace = loop {
             match self.peek_kind() {
                 Some(TokenKind::OBrace) => {
-                    break self.advance()?;
+                    break self.advance_token();
                 }
                 Some(TokenKind::String) => {
-                    let tok = self.advance()?;
+                    let tok = self.advance_token();
                     let raw = tok.text.strip_prefix('"').unwrap_or(&tok.text);
                     let raw = raw.strip_suffix('"').unwrap_or(raw);
                     match crate::lex::unescape_string(raw, &tok.span) {
@@ -875,19 +886,19 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Some(TokenKind::Ident) => {
-                    let tok = self.advance()?;
+                    let tok = self.advance_token();
                     labels.push(tok.text);
                     label_spans.push(tok.span);
                 }
                 Some(TokenKind::Assign) => {
-                    let bad = self.advance()?;
+                    let bad = self.advance_token();
                     #[rustfmt::skip]
                     self.diags.push(Diagnostic::error( "Invalid block definition".to_string(), "The equals sign \"=\" indicates an argument definition, and must not be used when defining a block.".to_string(), bad.span, ));
                     self.recover_after_body_item();
                     return None;
                 }
                 Some(TokenKind::Newline) => {
-                    let bad = self.advance()?;
+                    let bad = self.advance_token();
                     #[rustfmt::skip]
                     self.diags.push(Diagnostic::error( "Invalid block definition".to_string(), "A block definition must have block content delimited by \"{\" and \"}\", starting on the same line as the block header.".to_string(), bad.span, ));
                     self.recover_after_body_item();
@@ -929,9 +940,9 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
-                let bad = self.current.as_ref()?;
+                let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Missing newline after block definition".to_string(), "A block definition must end with a newline.".to_string(), bad.span.clone(), ));
+                self.diags.push(Diagnostic::error( "Missing newline after block definition".to_string(), "A block definition must end with a newline.".to_string(), bad_span, ));
                 self.recover_after_body_item();
             }
         }
@@ -1017,7 +1028,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let infix_tok = self.advance()?;
+            let infix_tok = self.advance_token();
             left = self.parse_infix(left, &infix_tok)?;
         }
 
@@ -1502,10 +1513,10 @@ impl<'a> Parser<'a> {
                 let mut has_ns = false;
                 while self.peek_kind() == Some(TokenKind::ColonColon) {
                     has_ns = true;
-                    let cc_tok = self.advance()?;
+                    let cc_tok = self.advance_token();
                     span = span.merge(&cc_tok.span);
                     if self.peek_kind() == Some(TokenKind::Ident) {
-                        let next_ident = self.advance()?;
+                        let next_ident = self.advance_token();
                         name.push_str("::");
                         name.push_str(&next_ident.text);
                         span = span.merge(&next_ident.span);
@@ -1529,7 +1540,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::OParen => {
                 let inner = self.parse_expression()?;
-                let cparen = self.advance()?;
+                let cparen = self.advance_token();
                 if cparen.kind != TokenKind::CParen {
                     #[rustfmt::skip]
                     self.diags.push(Diagnostic::error( "Expected closing parenthesis".to_string(), "Expected `)` to close the expression.".to_string(), cparen.span, ));
@@ -1549,7 +1560,7 @@ impl<'a> Parser<'a> {
                 let mut elements = Vec::new();
                 let end_span = loop {
                     if self.peek_kind() == Some(TokenKind::CBrack) {
-                        break self.advance()?.span;
+                        break self.advance_token().span;
                     }
                     if self.peek_kind() == Some(TokenKind::Newline) {
                         self.advance();
@@ -1564,10 +1575,10 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
                         Some(TokenKind::CBrack) => {
-                            break self.advance()?.span;
+                            break self.advance_token().span;
                         }
                         _ => {
-                            let bad = self.advance()?;
+                            let bad = self.advance_token();
                             #[rustfmt::skip]
                             self.diags.push(Diagnostic::error( "Expected comma or `]`".to_string(), "Expected a comma to separate tuple elements, or `]` to close the tuple.".to_string(), bad.span, ));
                             return None;
@@ -1588,7 +1599,7 @@ impl<'a> Parser<'a> {
                 let mut elements = Vec::new();
                 let end_span = loop {
                     if self.peek_kind() == Some(TokenKind::CBrace) {
-                        break self.advance()?.span;
+                        break self.advance_token().span;
                     }
                     if self.peek_kind() == Some(TokenKind::Newline) {
                         self.advance();
@@ -1596,7 +1607,7 @@ impl<'a> Parser<'a> {
                     }
                     let key = self.parse_expression()?;
 
-                    let op = self.advance()?;
+                    let op = self.advance_token();
                     if op.kind != TokenKind::Assign && op.kind != TokenKind::Colon {
                         #[rustfmt::skip]
                         self.diags.push(Diagnostic::error( "Expected `=` or `:`".to_string(), "Expected `=` or `:` in object constructor.".to_string(), op.span, ));
@@ -1612,10 +1623,10 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
                         Some(TokenKind::CBrace) => {
-                            break self.advance()?.span;
+                            break self.advance_token().span;
                         }
                         _ => {
-                            let bad = self.advance()?;
+                            let bad = self.advance_token();
                             #[rustfmt::skip]
                             self.diags.push(Diagnostic::error( "Expected comma, newline, or `}`".to_string(), "Expected a separator or `}` in object constructor.".to_string(), bad.span, ));
                             return None;
@@ -1809,7 +1820,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::OBrack => {
                 let (op, cbrack_span) = if self.peek_kind() == Some(TokenKind::Star) {
-                    let _star_tok = self.advance()?;
+                    let _star_tok = self.advance_token();
                     let Some(cbrack) = self.advance() else {
                         #[rustfmt::skip]
                         self.diags.push(Diagnostic::error(
@@ -1890,7 +1901,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let mut args = Vec::new();
                 let (cparen_tok, expand_final) = if self.peek_kind() == Some(TokenKind::CParen) {
-                    (self.advance()?, false)
+                    (self.advance_token(), false)
                 } else {
                     let mut expand = false;
                     let cparen = loop {
@@ -1906,7 +1917,7 @@ impl<'a> Parser<'a> {
                             Some(TokenKind::Ellipsis) => {
                                 self.advance();
                                 expand = true;
-                                let next = self.advance()?;
+                                let next = self.advance_token();
                                 if next.kind != TokenKind::CParen {
                                     #[rustfmt::skip]
                                     self.diags.push(Diagnostic::error( "Expected `)`".to_string(), "Expected `)` after `...`.".to_string(), next.span, ));
@@ -1915,10 +1926,10 @@ impl<'a> Parser<'a> {
                                 break next;
                             }
                             Some(TokenKind::CParen) => {
-                                break self.advance()?;
+                                break self.advance_token();
                             }
                             _ => {
-                                let bad = self.advance()?;
+                                let bad = self.advance_token();
                                 #[rustfmt::skip]
                                 self.diags.push(Diagnostic::error( "Expected `,` or `)`".to_string(), "Expected a comma to separate function arguments, or `)` to close the call.".to_string(), bad.span, ));
                                 return None;

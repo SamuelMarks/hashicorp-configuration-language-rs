@@ -5,7 +5,9 @@ members = [".", "hcl-macros", "fuzz", "hcl-lsp", "hcl-ffi", "hcl-wasm"]
 name = "hashicorp-configuration-language-rs"
 version = "0.0.1"
 edition = "2024"
+authors = ["Samuel Marks"]
 license = "CC0 OR MIT OR Apache-2.0"
+repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs"
 
 [dependencies]
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }

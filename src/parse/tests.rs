@@ -2225,3 +2225,16 @@ fn test_template_branch_coverage_gaps() {
     assert!(expr3.is_some());
     assert!(parser3.errors().has_errors());
 }
+
+/// Tests advance_token and current_span_or helper methods for fallback paths.
+#[test]
+fn test_parser_advance_token_and_current_span_helpers() {
+    let mut parser = Parser::new("");
+    let tok = parser.advance_token();
+    assert_eq!(tok.text, "");
+    assert_eq!(tok.kind, crate::lex::TokenKind::Ident);
+
+    let span = parser.current_span_or(crate::span::Span::new(1, 2, 3, 4, 5, 6));
+    assert_eq!(span.start_byte, 1);
+    assert_eq!(span.end_byte, 2);
+}

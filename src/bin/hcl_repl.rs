@@ -437,6 +437,10 @@ mod tests {
                 .contains("Usage: :set <var> = <expr>")
         );
 
+        // :set expression evaluation error
+        let set_eval_err = session.eval_line(":set x = undefined_eval_variable_xyz");
+        assert!(set_eval_err.is_err());
+
         // :type
         let type_res = session.eval_line(":type x").expect("type ok");
         assert_eq!(type_res, Some("number: 42".to_string()));

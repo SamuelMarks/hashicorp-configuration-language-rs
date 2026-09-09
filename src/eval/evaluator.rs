@@ -7450,4 +7450,127 @@ mod tests {
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_str_num_bad).is_err());
     }
+
+    #[test]
+    fn test_evaluator_missing_branch_coverage() {
+        use crate::ast::expr::Traversal;
+        use crate::eval::func::{Function, FunctionParamSpec, FunctionSignature};
+        use std::sync::Arc;
+
+        let mut ctx = Context::new();
+
+        // 1. Line 576: unknown string + unknown bool in Add
+        let ref_alpha = crate::types::refinement::Refinement::new().with_prefix("abc");
+        let unk_str_alpha = Value::unknown_refined(Type::String, ref_alpha);
+        ctx.set_variable("unk_str", unk_str_alpha);
+        ctx.set_variable("unk_bool", Value::unknown(Type::Bool));
+        let expr_add = Expression::BinaryOp(
+            BinaryOp::Add,
+            Box::new(Expression::Variable("unk_str".into(), empty_span())),
+            Box::new(Expression::Variable("unk_bool".into(), empty_span())),
+            empty_span(),
+        );
+        let eval_res = Evaluator::new(&ctx).evaluate(&expr_add);
+        assert!(eval_res.is_ok());
+
+        // 2. Line 1277: while loop termination on null.*.foo
+        ctx.set_variable("null_var", Value::null(Type::Dynamic));
+        let splat_trav = Traversal {
+            expr: Box::new(Expression::Variable("null_var".into(), empty_span())),
+            operators: vec![
+                TraversalOperator::FullSplat(empty_span()),
+                TraversalOperator::GetAttr("foo".into(), empty_span()),
+            ],
+        };
+        let expr_trav = Expression::Traversal(Box::new(splat_trav), empty_span());
+        let splat_res = Evaluator::new(&ctx).evaluate(&expr_trav);
+        assert!(splat_res.is_ok());
+
+        // 3. Line 362: allow_null is true and arg is null
+        let sig_allow_null = FunctionSignature::with_static_return_type(
+            vec![FunctionParamSpec::new("arg", Type::Dynamic).with_allow_null(true)],
+            Type::Dynamic,
+        );
+        let fn_allow_null = Function::new(
+            "fn_allow_null",
+            Arc::new(|_| Ok(Value::new(Type::Number, ValueData::Number(100.into())))),
+        )
+        .with_signature(sig_allow_null);
+        ctx.set_function("fn_allow_null", fn_allow_null);
+        ctx.set_variable("val_null", Value::null(Type::Dynamic));
+        let expr_null_arg = Expression::FuncCall(
+            Box::new(crate::ast::expr::FuncCall {
+                name: "fn_allow_null".into(),
+                args: vec![Expression::Variable("val_null".into(), empty_span())],
+                expand_final: false,
+            }),
+            empty_span(),
+        );
+        assert!(Evaluator::new(&ctx).evaluate(&expr_null_arg).is_ok());
+
+        // 4. Line 371: param_type is not Dynamic, and arg is Dynamic
+        let sig_typed_param = FunctionSignature::with_static_return_type(
+            vec![FunctionParamSpec::new("str_arg", Type::String)],
+            Type::Dynamic,
+        );
+        let fn_typed_param = Function::new(
+            "fn_typed_param",
+            Arc::new(|_| Ok(Value::new(Type::String, ValueData::String("ok".into())))),
+        )
+        .with_signature(sig_typed_param);
+        ctx.set_function("fn_typed_param", fn_typed_param);
+        ctx.set_variable("dyn_arg", Value::unknown(Type::Dynamic));
+        let expr_dyn_arg = Expression::FuncCall(
+            Box::new(crate::ast::expr::FuncCall {
+                name: "fn_typed_param".into(),
+                args: vec![Expression::Variable("dyn_arg".into(), empty_span())],
+                expand_final: false,
+            }),
+            empty_span(),
+        );
+        assert!(Evaluator::new(&ctx).evaluate(&expr_dyn_arg).is_ok());
+
+        // 5. Line 395: v.ty() == expected_ty (v.ty() != expected_ty is false)
+        let sig_match_ret = FunctionSignature::with_static_return_type(vec![], Type::Dynamic)
+            .with_value_return_type(Arc::new(|_| Ok(Type::Number)));
+        let fn_match_ret = Function::new(
+            "fn_match_ret",
+            Arc::new(|_| Ok(Value::new(Type::Number, ValueData::Number(42.into())))),
+        )
+        .with_signature(sig_match_ret);
+        ctx.set_function("fn_match_ret", fn_match_ret);
+        let expr_match_ret = Expression::FuncCall(
+            Box::new(crate::ast::expr::FuncCall {
+                name: "fn_match_ret".into(),
+                args: vec![],
+                expand_final: false,
+            }),
+            empty_span(),
+        );
+        assert!(Evaluator::new(&ctx).evaluate(&expr_match_ret).is_ok());
+
+        // 6. Line 397: v cannot be coerced to expected_ty
+        let sig_uncoercible_ret = FunctionSignature::with_static_return_type(vec![], Type::Dynamic)
+            .with_value_return_type(Arc::new(|_| Ok(Type::Number)));
+        let fn_uncoercible_ret = Function::new(
+            "fn_uncoercible_ret",
+            Arc::new(|_| {
+                Ok(Value::new(
+                    Type::List(Box::new(Type::Number)),
+                    ValueData::Array(vec![Value::new(Type::Number, ValueData::Number(1.into()))]),
+                ))
+            }),
+        )
+        .with_signature(sig_uncoercible_ret);
+        ctx.set_function("fn_uncoercible_ret", fn_uncoercible_ret);
+        let expr_uncoercible_ret = Expression::FuncCall(
+            Box::new(crate::ast::expr::FuncCall {
+                name: "fn_uncoercible_ret".into(),
+                args: vec![],
+                expand_final: false,
+            }),
+            empty_span(),
+        );
+        assert!(Evaluator::new(&ctx).evaluate(&expr_uncoercible_ret).is_ok());
+    }
 }

@@ -1,87 +1,204 @@
-# Architecture of `hcl-rs`
+# Architecture of `hashicorp-configuration-language-rs`
 
-This document describes the high-level architecture and subsystem interactions within the `hashicorp-configuration-language-rs` crate. The crate is designed as a direct Rust-native analog to the official Go implementation (`hashicorp/hcl` and `zclconf/go-cty`).
+This document details the internal systems, data structures, execution pipelines, and design invariants of `hashicorp-configuration-language-rs`. The crate is designed as an industrial-strength, spec-compliant, 100% native Rust implementation of the HashiCorp Configuration Language (HCL2) and HashiCorp's `cty` type system, delivering semantic parity with the official Go implementations (`hashicorp/hcl/v2`, `zclconf/go-cty`, and `hashicorp/hcl-lang`).
 
-## Core Subsystems
+---
+
+## 1. System Pipeline
 
 ```mermaid
 flowchart TD
-    Input[Raw HCL / JSON String] --> Lexer[Lexical Analysis]
-    Lexer -->|Token Stream| Parser[Parsing]
-    Parser -->|AST| ASTNode[Abstract Syntax Tree]
-    
-    Context[Eval Context & Stdlib] --> Evaluator[Evaluation]
-    ASTNode --> Evaluator
-    
-    Evaluator -->|Evaluated Values| Types[Type System & Values]
-    
-    Types --> Decoder[Structural Decoding]
-    Types --> Serde[Serde Integration]
-    
-    Decoder --> RustTypes[Rust Native Structs]
-    Serde --> SerdeTypes[serde::Deserialize]
+    subgraph Inputs["Source Inputs"]
+        HCL2Src["HCL2 Source (*.hcl, *.tf)"]
+        HCL1Src["Legacy HCL1 Source"]
+        JSONSrc["HCL JSON Syntax (*.json)"]
+    end
+
+    subgraph Frontend["Frontend Parsing & CST"]
+        Lexer["Logos Lexer & Heredoc Engine
+(src/lex/)"]
+        PrattParser["Pratt Precedence Parser
+(src/parse/)"]
+        JSONParser["Schema-Driven JSON Parser
+(src/parse/json.rs)"]
+        HCL1Engine["HCL1 Lexer & Migration
+(src/hcl1/)"]
+        CST["Concrete Syntax Tree & Trivia
+(src/cst/)"]
+        AST["Abstract Syntax Tree (AST)
+(src/ast/)"]
+    end
+
+    subgraph Analysis["Static Analysis & Validation"]
+        TypeChecker["AOT Type Checker
+(src/analysis/type_check.rs)"]
+        Linter["Dead-Code & Logic Linter
+(src/analysis/lint.rs)"]
+        DepGraph["Static Reference & Dep Graph
+(src/ast/deps.rs)"]
+    end
+
+    subgraph Runtime["Evaluation & Type System"]
+        Context["Hierarchical Scopes & Context
+(src/eval/context.rs)"]
+        Stdlib["70+ Stdlib Functions
+(src/eval/stdlib/)"]
+        VFS["Virtual & Sandboxed VFS
+(src/eval/fs.rs)"]
+        DynBlock["Dynamic Block Expander
+(src/eval/dynblock.rs)"]
+        Evaluator["Dynamic Evaluator
+(src/eval/evaluator.rs)"]
+        PartialEval["Partial & Lazy Evaluator
+(src/eval/partial.rs, lazy.rs)"]
+        CtyType["cty Type System & Values
+(src/types/)"]
+    end
+
+    subgraph Consumers["Decoders & Downstream Systems"]
+        DecodeBody["Structural Decoding
+(src/decode.rs, hcl-macros)"]
+        Hcldec["Dynamic Spec Decoding
+(src/hcldec/)"]
+        Serde["Serde Serializer/Deserializer
+(src/serde/)"]
+        Formatter["Lossless CST Formatter
+(src/cst/format.rs)"]
+    end
+
+    subgraph Extensions["Workspace Tools & Interfaces"]
+        LSP["Language Server Protocol (hcl-lsp)"]
+        FFI["C ABI Dynamic/Static Bindings (hcl-ffi)"]
+        WASM["WebAssembly Interface (hcl-wasm)"]
+        CLI["CLI Suite (hclfmt, hcl2json, hcl-repl, hcl-validate)"]
+    end
+
+    HCL2Src --> Lexer --> PrattParser --> AST
+    HCL2Src --> CST
+    HCL1Src --> HCL1Engine --> AST
+    JSONSrc --> JSONParser --> AST
+
+    AST --> Analysis
+    AST --> DynBlock --> Evaluator
+    Context --> Evaluator
+    Stdlib --> Evaluator
+    VFS --> Stdlib
+    Evaluator --> CtyType
+    PartialEval --> CtyType
+
+    CtyType --> DecodeBody
+    CtyType --> Hcldec
+    CtyType --> Serde
+    CST --> Formatter
+
+    AST --> Extensions
+    CtyType --> Extensions
 ```
 
-The library is divided into several distinct phases of execution:
-1. **Lexical Analysis (`src/lex/`)**
-2. **Parsing (`src/parse/`)**
-3. **Abstract Syntax Tree (`src/ast/`)**
-4. **Type System & Values (`src/types/`)**
-5. **Context & Evaluation (`src/eval/`)**
-6. **Structural Decoding (`src/decode.rs`, `hcl-macros`)**
-7. **Serde Integration (`src/serde/`)**
+---
+
+## 2. Core Subsystems
+
+### 2.1 Lexical Analysis (`src/lex/`)
+The lexer converts raw UTF-8 streams into strongly-typed `Token` instances using [Logos](https://github.com/maciejhirsz/logos).
+- **Identifier Compliance**: Identifiers follow Unicode Standard Annex #31 (UAX #31) rules, supporting namespaced and scoped identifiers (`foo::bar`).
+- **Heredocs**: Handles standard (`<<EOF`) and indented (`<<-EOF`) heredocs. Indented heredocs determine minimum indentation prefixes across non-empty lines and strip them losslessly while preserving relative indentations.
+- **Escape Sequences & Interpolations**: Disambiguates escaped delimiters (`$${`, `%%{`), template interpolations (`${...}`), and directives (`%{if...}`, `%{for...}`), supporting whitespace trim markers (`~`).
+- **Span Tracking**: Every token encapsulates a `Span` with byte start/end positions and 1-based line and column offsets.
+
+### 2.2 Concrete Syntax Tree & Splicing (`src/cst/`)
+Unlike an AST that discards trivia, the CST preserves 100% of the lexical structure:
+- **`Document` & `TokenStream`**: Represents the raw token sequence, retaining leading/trailing newlines, spaces, and comments (`#`, `//`, `/* ... */`).
+- **In-Place Mutation & Splicing (`src/cst/splicing.rs`)**: Enables structural editing of attributes, block labels, and expressions while retaining original whitespace, comments, and delimiters.
+- **Canonical Formatter (`src/cst/format.rs`)**: Implements `hclwrite` formatting parity, calculating column alignment for contiguous assignment operators (`=`), normalizing indentation, and compacting trivia upon node deletion.
+
+### 2.3 Abstract Syntax Tree & Parsing (`src/ast/`, `src/parse/`)
+The parsing pipeline uses a recursive descent parser for high-level structure coupled with a Pratt parser for expressions:
+- **Structural Parser**: Parses top-level and nested `Body` elements into `Block` and `Attribute` nodes. Resolves multi-label blocks and validation/assertion blocks (`precondition`, `postcondition`, `validation`).
+- **Pratt Precedence Parser**: Correctly resolves unary and binary operators (arithmetic, equality, comparison, logical conjunction/disjunction) and ternary conditionals (`cond ? true_val : false_val`).
+- **Comprehensions & Splats**: Supports tuple/object for-expressions (`[for k, v in list : expr if cond]`) and splat traversals (`attr.*.id` and `attr[*].id`).
+- **Visitor & Transformation Patterns (`src/ast/walk.rs`)**: Provides `AstVisitor` (read-only traversal) and `AstFolder` (tree-rewriting) traits.
+- **Static Dependency Analysis (`src/ast/deps.rs`)**: Extracts static references from expressions and bodies, building an acyclic `DependencyGraph` with topological sorting.
+
+### 2.4 HashiCorp `cty` Type System (`src/types/`)
+A pure Rust realization of HashiCorp's `go-cty` type algebra:
+- **Type Hierarchy (`ty.rs`)**:
+  - *Primitives*: `String`, `Number` (arbitrary-precision decimal powered by `BigDecimal`), `Bool`.
+  - *Collections*: `List(T)`, `Set(T)`, `Map(T)`.
+  - *Structural*: `Tuple(Vec<T>)`, `Object(BTreeMap<String, T>)`.
+  - *Dynamic*: `DynamicPseudoType` for unconstrained parameters or multi-type slots.
+  - *Capsule*: Encapsulates arbitrary foreign Rust types (`Arc<dyn Any>`) with custom arithmetic, comparison, and index hooks.
+- **Unknown Value Semantics (`Value::Unknown`)**: Critical for Terraform-style planning phases. Unknown values propagate cleanly through expressions, function calls, and collection operations without causing panics or unrecoverable evaluation errors.
+- **Null Values (`Value::Null(Type)`)**: Type-tagged nulls conforming to HCL2 specification semantics.
+- **Unification & Coercion (`unify.rs`)**: Deterministic type coercion (e.g. converting Tuples to lowest-common-denominator Lists, Objects to Maps, or Numbers to Strings).
+- **Value Mark Tracking (`val.rs`)**: Granular, path-indexed sensitivity marks (`Value::mark_path`, `Value::unmark_path`) allowing specific nested keys to be marked sensitive while preserving container traversals.
+- **Wire Formats (`json.rs`, `msgpack.rs`)**: Native encoding and decoding of `cty` types and values to/from JSON and MessagePack schemas.
+
+### 2.5 Evaluator & Scopes (`src/eval/`)
+- **Evaluation Context (`context.rs`)**: Scopes form a parent/child hierarchy where lookups ascend the tree while variable mutations remain local.
+- **Dynamic Blocks (`dynblock.rs`)**: Evaluates `dynamic "type" { for_each = ... content { ... } }` blocks, expanding them into multiple concrete blocks prior to structural decoding.
+- **Lazy Evaluation & Memoization (`lazy.rs`)**: Defers parsing and evaluating attributes until explicitly requested, caching evaluated results to avoid redundant calculations.
+- **Partial Evaluation (`partial.rs`)**: Evaluates known branches while preserving AST representations for unknown variables, enabling multi-stage planning pipelines.
+- **Virtual Filesystems (`fs.rs`)**: Provides `MemFileSystem`, `ArchiveFileSystem` (supporting `.zip`, `.tar`, and `.tar.gz`), and `SandboxedFileSystem` (preventing directory traversal attacks).
+- **Native Standard Library (`stdlib/`)**: Exhaustive implementation of over 70 standard functions mirroring official HCL behavior:
+  - *String*: `format`, `join`, `split`, `upper`, `lower`, `replace`, `trim`, `regex`, `regexall`, `substr`, `indent`, `chomp`, `title`.
+  - *Numeric*: `abs`, `ceil`, `floor`, `log`, `max`, `min`, `parseint`, `pow`, `signum`.
+  - *Collection*: `concat`, `contains`, `distinct`, `element`, `flatten`, `index`, `keys`, `lookup`, `merge`, `reverse`, `slice`, `sort`, `values`, `zipmap`.
+  - *Encoding*: `base64encode`, `base64decode`, `base64gzip`, `csvdecode`, `jsonencode`, `jsondecode`, `urlencode`, `yamlencode`, `yamldecode`.
+  - *Date & Time*: `formatdate`, `timeadd`, `timestamp`, `plantimestamp`.
+  - *Crypto*: `bcrypt`, `md5`, `sha1`, `sha256`, `sha512`, `uuidv4`, `uuidv5`, `rsadecrypt`.
+  - *Network*: `cidrhost`, `cidrnetmask`, `cidrsubnet`, `cidrsubnets`.
+  - *Filesystem*: `abspath`, `dirname`, `pathexpand`, `basename`, `file`, `fileexists`, `filebase64`, `filemd5`, `filesha256`, `fileset`, `templatefile`.
+  - *Conversion*: `tobool`, `tolist`, `tomap`, `tonumber`, `toset`, `tostring`, `can`, `try`.
+
+### 2.6 Structural Decoding (`src/decode.rs`, `hcl-macros`)
+Equivalent to HashiCorp's `gohcl` library:
+- **`DecodeBody` & `DecodeValue` Traits**: Define bidirectional mapping from AST nodes and evaluated `cty.Value`s into native Rust structures.
+- **Procedural Macros (`hcl-macros`)**:
+  - `#[derive(DecodeBody)]`: Automatically maps attributes, labels, and blocks into struct fields.
+  - `#[hcl(block)]`: Maps blocks to child structs, `Vec<T>`, or label-keyed maps (`HashMap<String, T>`, `BTreeMap<String, T>`).
+  - `#[hcl(flatten)]` / `#[hcl(squash)]`: Inlines child fields into the parent body scope.
+  - `#[hcl(body)]`: Retains the raw, unevaluated `Body` for downstream inspection.
+  - `#[hcl(with = "...")]`: Custom decoding hook invocation.
+  - `#[derive(EncodeBody)]`: Re-encodes native structs back into formatted CST bodies.
+
+### 2.7 Specification-Driven Decoding (`src/hcldec/`)
+Provides runtime-configurable schema definitions matching Go's `hcldec`:
+- **`Spec` Hierarchy**: `BlockSpec`, `AttrSpec`, `BlockListSpec`, `BlockMapSpec`, `BlockSetSpec`, `TupleSpec`, `TransformSpec`, and `DefaultSpec`.
+- **Validation**: Enforces type constraints, regex patterns, value ranges, and custom validation closures without requiring compile-time Rust structs.
+- **Multi-Stage Partial Decoding**: Partially decodes bodies against specifications when some dependencies are unknown.
+
+### 2.8 Legacy HCL 1.0 Compatibility (`src/hcl1/`)
+- Dedicated tokenizer (`lex.rs`) and recursive-descent parser (`parser.rs`) supporting legacy HCL 1.0 syntax.
+- Migration engine (`migrate.rs`) transforming HCL1 ASTs into canonical HCL2 ASTs, automatically converting legacy quoted interpolation syntax (`"${...}"`) into native HCL2 expressions.
+
+### 2.9 Static Analysis & Linter (`src/analysis/`)
+- **`TypeChecker`**: Performs Ahead-of-Time (AOT) type checking of AST bodies against a `ScopeSchema`, validating expressions, function signatures, and traversals without runtime values.
+- **`Linter`**: Detects dead code, unused local variables, tautological conditionals (`true ? a : b`), unreachable template directives, and redundant type conversions.
+
+### 2.10 Diagnostic Architecture (`src/diagnostic/`)
+- **Centralized Aggregation**: All failure paths return a `Diagnostics` container that accumulates multiple errors and warnings in a single pass.
+- **Source Spans**: Retains exact line, column, and byte bounds with context snippets.
+- **Damerau-Levenshtein Typo Suggestions**: Suggests closest valid attribute or variable names when an unknown identifier is encountered.
+- **Formatters**: Pretty terminal formatting with ANSI color support, plus standardized JSON diagnostic output conforming to HashiCorp's JSON diagnostic schema.
 
 ---
 
-### 1. Lexical Analysis (`lex`)
-The lexer transforms a raw UTF-8 string into a stream of strongly-typed `Token`s. It handles:
-- **Comments**: Single-line (`#`, `//`) and multi-line (`/* ... */`).
-- **Identifiers**: Compliant with Unicode Standard Annex #31 (UAX #31).
-- **Strings & Heredocs**: Advanced handling of standard (`<<EOF`) and indented (`<<-EOF`) heredocs, stripping leading indents correctly.
-- **Spans**: Every token tracks its exact start/end byte, line, and column, which is critical for emitting rich `Diagnostics`.
+## 3. Workspace Ecosystem & Extensions
 
-### 2. Parsing (`parse`)
-The parser consumes the token stream and generates the Abstract Syntax Tree (AST).
-- **Structural Parsing**: Resolves the outer `Body`, determining `Attributes` (e.g., `key = "value"`) and `Blocks` (e.g., `resource "aws_instance" "web" { ... }`).
-- **Expression Parsing**: Utilizes a Pratt (precedence) parser for handling complex HCL2 expressions, including mathematical operations, binary logic, conditionals (`a ? b : c`), and function calls.
-- **JSON Profile Standard**: Native capability to ingest `.json` strings and map them accurately onto the HCL AST.
-
-### 3. Abstract Syntax Tree (`ast`)
-The AST strictly defines the language constructs.
-- **`Body`**: Contains a collection of blocks and attributes.
-- **`Expression`**: Recursive enum covering literal types, tuple/object constructors, string templates (interpolations and directives like `%{ if }`), `ForExpr`, `SplatExpr`, etc.
-
-### 4. Type System & Values (`types`)
-This module replicates HashiCorp's `go-cty`.
-- **`Type`**: Enums for primitive (`String`, `Number`, `Bool`) and complex (`List`, `Set`, `Map`, `Object`, `Tuple`) types.
-- **`Value`**: Ties data to a specific `Type`. Handles `Value::Unknown` (crucial for Terraform/Packer `plan` outputs where a value won't be known until apply time) and `Value::Null(Type)`.
-- **Unification**: Contains strict coercion rules (e.g., Tuple to List, Object to Map, String to Number).
-
-### 5. Context & Evaluation (`eval`)
-The evaluator reduces AST `Expression` nodes into concrete `Value` instances.
-- **`Context`**: Holds scoped variables and function definitions. Scopes can be hierarchically nested.
-- **`Evaluator`**: Walks the AST using a context. Implements short-circuiting for logical operators (`&&`, `||`) and safely cascades `Value::Unknown` through mathematical and logical operations.
-- **`stdlib`**: Contains a complete implementation of HCL's native standard library (e.g., `upper()`, `cidrsubnet()`, `jsonencode()`).
-
-### 6. Structural Decoding (`decode`, `hcl-macros`)
-Replicates the functionality of `gohcl` in Go.
-- **`DecodeBody` & `DecodeValue`**: Traits defining how AST nodes and evaluated `Value`s map to native Rust types.
-- **`#[derive(DecodeBody)]`**: A procedural macro that automatically generates the mapping boilerplate for Rust structs. It extracts attributes from an evaluated AST `Body` and maps them directly, collecting multiple errors into `Diagnostics`.
-
-### 7. Serde Integration (`serde`)
-Allows users to treat HCL identically to JSON, YAML, or TOML using the `serde` ecosystem.
-- **Deserialization (`de.rs`)**: Parses HCL strings, converts the structure into an intermediate JSON-equivalent structure, and uses `serde_json::from_value` to map to `T: DeserializeOwned`.
-- **Serialization (`ser.rs`)**: Takes a `T: Serialize`, converts it to a JSON value, and outputs formatted HCL logic via a recursive formatting engine.
+| Crate | Role | Architectural Mechanics |
+| :--- | :--- | :--- |
+| **`hcl-macros`** | Macro Expansion | Implements `DecodeBody`, `EncodeBody`, `DecodeValue`, `EncodeValue`, and `ImpliedBodySchema` proc-macros. |
+| **`hcl-lsp`** | Language Server | Multi-threaded JSON-RPC LSP daemon (stdio/TCP) implementing hover, definitions, document symbols, completions, and semantic token highlighting. |
+| **`hcl-ffi`** | C ABI Bindings | Exposes opaque pointer handles (`hcl_body_t`, `hcl_context_t`, `hcl_value_t`) and a C header (`include/hcl.h`) for embedding in C, C++, Python, or Go. |
+| **`hcl-wasm`** | WebAssembly | Compiles to `wasm32-unknown-unknown` via `wasm-bindgen`, exposing JavaScript APIs and TypeScript type declarations (`hcl.d.ts`). |
+| **`fuzz`** | Continuous Fuzzing | Target-driven fuzzing harnesses (`parse`, `eval`, `msgpack`, `hcl1`) driven by `libFuzzer` and `cargo-fuzz`. |
 
 ---
 
-## Error Handling & Diagnostics
+## 4. Engineering Invariants
 
-We strictly avoid the use of `unwrap()`, `expect()`, or string-based errors (e.g., `anyhow`).
-All errors are reported via a `Diagnostics` collection. A single `Diagnostic` contains:
-- **Severity**: Error or Warning.
-- **Summary**: High-level description.
-- **Detail**: In-depth explanation.
-- **Subject**: The `Span` indicating the exact byte/line range where the error occurred.
-
-This allows the parser and evaluator to recover from partial failures, accumulating multiple errors to show the user in a single pass.
+1. **Zero-Panic Policy**: `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]` is strictly enforced across all non-test code. All fallible paths return typed `Result<T, Diagnostics>` or `Result<T, HclError>`.
+2. **Unified Error Hierarchy**: Error representations are strongly typed via `HclError` using `derive_more`, completely rejecting `anyhow` or unstructured string errors.
+3. **100% Documentation Coverage**: Enforced via `#![deny(missing_docs)]` on every module, struct, enum variant, field, trait, and function.
+4. **Deterministic Evaluation**: Floating-point parsing and arithmetic rely on arbitrary-precision decimals (`BigDecimal`) to prevent rounding errors across environments.

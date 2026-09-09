@@ -2185,11 +2185,24 @@ mod tests {
             from_cap.as_capsule::<CustomOpaque>().ok().map(|c| c.id),
             Some(400)
         );
+        assert!(from_cap.downcast::<CustomOpaque>().is_ok());
+        assert!(from_cap.downcast_ref::<CustomOpaque>().is_some());
         assert!(from_cap.as_capsule::<String>().is_err());
         assert!(42_i64.encode_value().as_capsule::<CustomOpaque>().is_err());
 
         assert!(from_cap.downcast::<String>().is_err());
         assert!(42_i64.encode_value().downcast::<CustomOpaque>().is_err());
+
+        let from_cap_str = Value::capsule("str_capsule", "hello".to_string());
+        assert!(from_cap_str.as_capsule::<String>().is_ok());
+        assert!(from_cap_str.downcast::<String>().is_ok());
+        assert!(from_cap_str.downcast_ref::<String>().is_some());
+        assert!(42_i64.encode_value().as_capsule::<String>().is_err());
+        assert!(42_i64.encode_value().downcast::<String>().is_err());
+        assert!(42_i64.encode_value().downcast_ref::<String>().is_none());
+        assert!(from_cap_str.as_capsule::<CustomOpaque>().is_err());
+        assert!(from_cap_str.downcast::<CustomOpaque>().is_err());
+        assert!(from_cap_str.downcast_ref::<CustomOpaque>().is_none());
 
         // ValueMark::custom constructor
         assert_eq!(
@@ -2287,6 +2300,16 @@ mod tests {
             val1.as_capsule::<ManagedClient>().ok().map(|c| c.retries),
             Some(3)
         );
+        assert!(val1.downcast::<ManagedClient>().is_ok());
+        assert!(val1.downcast_ref::<ManagedClient>().is_some());
+        let non_cap_mc = 42_i64.encode_value();
+        assert!(non_cap_mc.as_capsule::<ManagedClient>().is_err());
+        assert!(non_cap_mc.downcast::<ManagedClient>().is_err());
+        assert!(non_cap_mc.downcast_ref::<ManagedClient>().is_none());
+        let wrong_cap_mc = Value::capsule("other", 100_u32);
+        assert!(wrong_cap_mc.as_capsule::<ManagedClient>().is_err());
+        assert!(wrong_cap_mc.downcast::<ManagedClient>().is_err());
+        assert!(wrong_cap_mc.downcast_ref::<ManagedClient>().is_none());
 
         // Coerce via convert_to hook
         let coerced = val1.coerce(&Type::String);
@@ -3085,5 +3108,98 @@ mod tests {
             crate::types::refinement::Refinement::new().with_prefix("prefix"),
         );
         assert!(unk_str_ref.coerce(&Type::Bool).is_ok());
+    }
+
+    /// Tests comprehensive branch, region, and line coverage for `walk_internal` and `transform_internal`
+    /// across all structural variants (primitive, array, object, set) and error/pruning paths.
+    #[test]
+    fn test_walk_transform_instantiation_full_coverage() {
+        use crate::encode::EncodeValue;
+        use crate::types::path::Path;
+
+        let val_prim = 42_i64.encode_value();
+        let val_arr = Value::new(
+            Type::List(Box::new(Type::Number)),
+            ValueData::Array(vec![1_i64.encode_value(), 2_i64.encode_value()]),
+        );
+        let mut obj_map = BTreeMap::new();
+        obj_map.insert("key".to_string(), 10_i64.encode_value());
+        let val_obj = Value::new(Type::Dynamic, ValueData::Object(obj_map));
+
+        let mut set_data = std::collections::BTreeSet::new();
+        set_data.insert(100_i64.encode_value());
+        let val_set = Value::new(Type::Set(Box::new(Type::Number)), ValueData::Set(set_data));
+
+        let val_err_arr = Value::new(
+            Type::List(Box::new(Type::String)),
+            ValueData::Array(vec!["trigger_err".encode_value()]),
+        );
+        let mut err_obj_map = BTreeMap::new();
+        err_obj_map.insert("sub".to_string(), "trigger_err".encode_value());
+        let val_err_obj = Value::new(Type::Dynamic, ValueData::Object(err_obj_map));
+
+        let mut err_set_data = std::collections::BTreeSet::new();
+        err_set_data.insert("trigger_err".encode_value());
+        let val_err_set = Value::new(
+            Type::Set(Box::new(Type::String)),
+            ValueData::Set(err_set_data),
+        );
+
+        let val_prune = Value::new(
+            Type::List(Box::new(Type::String)),
+            ValueData::Array(vec!["prune".encode_value()]),
+        );
+
+        // Visitor closure covering 100% of walk_internal
+        let mut visitor = |_path: &Path, val: &Value| -> Result<bool, HclError> {
+            match &*val.data {
+                ValueData::String(s) if s == "trigger_err" => {
+                    Err(HclError::Type("intentional_walk_err".into()))
+                }
+                ValueData::String(s) if s == "prune" => Ok(false),
+                _ => Ok(true),
+            }
+        };
+
+        assert!(val_prim.walk(&mut visitor).is_ok());
+        assert!("normal_str".encode_value().walk(&mut visitor).is_ok());
+        assert!(val_prune.walk(&mut visitor).is_ok());
+        assert!(val_arr.walk(&mut visitor).is_ok());
+        assert!(val_err_arr.walk(&mut visitor).is_err());
+        assert!(val_obj.walk(&mut visitor).is_ok());
+        assert!(val_err_obj.walk(&mut visitor).is_err());
+        assert!(val_set.walk(&mut visitor).is_ok());
+        assert!(val_err_set.walk(&mut visitor).is_err());
+        assert!("trigger_err".encode_value().walk(&mut visitor).is_err());
+
+        // Transformer closure covering 100% of transform_internal
+        let mut transformer = |_path: &Path, val: &Value| -> Result<Value, HclError> {
+            match &*val.data {
+                ValueData::String(s) if s == "trigger_err" => {
+                    Err(HclError::Type("intentional_transform_err".into()))
+                }
+                _ => Ok(val.clone()),
+            }
+        };
+
+        assert!(val_prim.transform(&mut transformer).is_ok());
+        assert!(
+            "normal_str"
+                .encode_value()
+                .transform(&mut transformer)
+                .is_ok()
+        );
+        assert!(val_arr.transform(&mut transformer).is_ok());
+        assert!(val_err_arr.transform(&mut transformer).is_err());
+        assert!(val_obj.transform(&mut transformer).is_ok());
+        assert!(val_err_obj.transform(&mut transformer).is_err());
+        assert!(val_set.transform(&mut transformer).is_ok());
+        assert!(val_err_set.transform(&mut transformer).is_err());
+        assert!(
+            "trigger_err"
+                .encode_value()
+                .transform(&mut transformer)
+                .is_err()
+        );
     }
 }

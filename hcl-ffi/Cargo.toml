@@ -2,7 +2,9 @@
 name = "hcl-ffi"
 version = "0.0.1"
 edition = "2024"
+authors = ["Samuel Marks"]
 license = "CC0 OR MIT OR Apache-2.0"
+repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -10,6 +12,9 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 hashicorp-configuration-language-rs = { path = ".." }
 serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+cbindgen = { version = "0.28", default-features = false }
 
 [build-dependencies]
 cbindgen = { version = "0.28", default-features = false }
