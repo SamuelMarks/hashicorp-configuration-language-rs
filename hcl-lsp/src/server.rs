@@ -374,7 +374,7 @@ impl LspServer {
     /// Returns [`LspError`] if binding or communicating fails.
     pub fn run_tcp(&mut self, addr: &str) -> Result<(), LspError> {
         let listener = TcpListener::bind(addr)?;
-        self.run_tcp_listener(listener)
+        self.run_tcp_listener(&listener)
     }
 
     /// Listens for a single TCP client connection on `listener` and runs the server loop.
@@ -384,7 +384,7 @@ impl LspServer {
     ///
     /// # Errors
     /// Returns [`LspError`] if accepting a connection or communicating fails.
-    pub fn run_tcp_listener(&mut self, listener: TcpListener) -> Result<(), LspError> {
+    pub fn run_tcp_listener(&mut self, listener: &TcpListener) -> Result<(), LspError> {
         let (stream, _) = listener.accept()?;
         self.run_stream(&stream, &stream)
     }
@@ -788,7 +788,7 @@ mod tests {
         let mut output_writer = writer_success;
         let res = server.run_stream(Cursor::new(input_buf), &mut output_writer);
         assert!(res.is_ok());
-        assert!(!output_writer.buf.is_empty());
+        assert!(!output_writer.buf.is_empty(), "expected non-empty output");
 
         // Stream that ends with clean EOF (no exit notification)
         let mut eof_buf = Vec::new();
@@ -884,7 +884,7 @@ mod tests {
         // Non-blocking listener accept failure
         let nb_listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         nb_listener.set_nonblocking(true).expect("nonblocking");
-        assert!(server.run_tcp_listener(nb_listener).is_err());
+        assert!(server.run_tcp_listener(&nb_listener).is_err());
 
         for target in ["invalid-address:99999", "127.0.0.1:0"] {
             match TcpListener::bind(target) {

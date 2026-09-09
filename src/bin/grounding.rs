@@ -1,5 +1,6 @@
 //! Grounding tool for the HCL parser.
 
+/// Entry point for `grounding` binary.
 fn main() {
     let mut parser =
         hashicorp_configuration_language_rs::parse::parser::Parser::new("a = \"unclosed");

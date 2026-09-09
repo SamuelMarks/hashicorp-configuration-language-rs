@@ -2,6 +2,8 @@
 
 use hashicorp_configuration_language_rs::serde::ser::to_string;
 use std::collections::BTreeMap;
+
+/// Entry point for `test-err` binary.
 fn main() {
     let mut bad = BTreeMap::new();
     bad.insert(vec![1, 2], "value");

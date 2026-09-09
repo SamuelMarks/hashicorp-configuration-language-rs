@@ -6596,6 +6596,49 @@ mod tests {
             .evaluate(&expr_marked_add)
             .expect("eval marked add");
         assert!(res_marked_add.has_mark(&crate::types::val::ValueMark::Sensitive));
+
+        // 10. Direct closure error invocations (when downcast_ref fails on invalid payload)
+        let invalid_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(12345_u32);
+        let valid_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(Matrix2x2(1, 2, 3, 4));
+
+        let add_fn = ops.add.as_ref().expect("add hook missing");
+        assert!(add_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
+        assert!(add_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
+
+        let sub_fn = ops.sub.as_ref().expect("sub hook missing");
+        assert!(sub_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
+        assert!(sub_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
+
+        let mul_fn = ops.mul.as_ref().expect("mul hook missing");
+        assert!(mul_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
+        assert!(mul_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
+
+        let div_fn = ops.div.as_ref().expect("div hook missing");
+        assert!(div_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
+        assert!(div_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
+
+        let mod_fn = ops.modulo.as_ref().expect("modulo hook missing");
+        assert!(mod_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
+        assert!(mod_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
+
+        let neg_fn = ops.neg.as_ref().expect("neg hook missing");
+        assert!(neg_fn(invalid_any.as_ref()).is_err());
+
+        let cmp_fn = ops.cmp.as_ref().expect("cmp hook missing");
+        assert!(cmp_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
+        assert!(cmp_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
+
+        let attr_fn = ops.attr_get.as_ref().expect("attr_get hook missing");
+        assert!(attr_fn(invalid_any.as_ref(), "a").is_err());
+
+        let idx_fn = ops.index_get.as_ref().expect("index_get hook missing");
+        assert!(
+            idx_fn(
+                invalid_any.as_ref(),
+                &Value::new(Type::Number, ValueData::Number(0.into()))
+            )
+            .is_err()
+        );
     }
 
     #[test]

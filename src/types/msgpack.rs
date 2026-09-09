@@ -588,7 +588,7 @@ impl<'a> MsgPackReader<'a> {
 // Type Serialization
 // -----------------------------------------------------------------------------
 
-fn encode_type_internal(w: &mut MsgPackWriter, ty: &Type) -> Result<(), HclError> {
+fn encode_type_internal(w: &mut MsgPackWriter, ty: &Type) {
     match ty {
         Type::Number => w.write_str("N"),
         Type::String => w.write_str("S"),
@@ -597,24 +597,24 @@ fn encode_type_internal(w: &mut MsgPackWriter, ty: &Type) -> Result<(), HclError
         Type::List(elem) => {
             w.write_array_header(2);
             w.write_str("L");
-            encode_type_internal(w, elem)?;
+            encode_type_internal(w, elem);
         }
         Type::Set(elem) => {
             w.write_array_header(2);
             w.write_str("Z");
-            encode_type_internal(w, elem)?;
+            encode_type_internal(w, elem);
         }
         Type::Map(elem) => {
             w.write_array_header(2);
             w.write_str("M");
-            encode_type_internal(w, elem)?;
+            encode_type_internal(w, elem);
         }
         Type::Tuple(elems) => {
             w.write_array_header(2);
             w.write_str("T");
             w.write_array_header(elems.len());
             for elem in elems {
-                encode_type_internal(w, elem)?;
+                encode_type_internal(w, elem);
             }
         }
         Type::Object { attrs, .. } => {
@@ -623,7 +623,7 @@ fn encode_type_internal(w: &mut MsgPackWriter, ty: &Type) -> Result<(), HclError
             w.write_map_header(attrs.len());
             for (k, v) in attrs {
                 w.write_str(k);
-                encode_type_internal(w, v)?;
+                encode_type_internal(w, v);
             }
         }
         Type::Capsule { name, .. } => {
@@ -632,7 +632,6 @@ fn encode_type_internal(w: &mut MsgPackWriter, ty: &Type) -> Result<(), HclError
             w.write_str(name);
         }
     }
-    Ok(())
 }
 
 fn decode_type_internal(reader: &mut MsgPackReader<'_>) -> Result<Type, HclError> {
@@ -722,7 +721,7 @@ fn decode_type_internal(reader: &mut MsgPackReader<'_>) -> Result<Type, HclError
 /// Returns [`HclError::MsgPackEncode`] on serialization failure.
 pub fn encode_type(ty: &Type) -> Result<Vec<u8>, HclError> {
     let mut writer = MsgPackWriter::new();
-    encode_type_internal(&mut writer, ty)?;
+    encode_type_internal(&mut writer, ty);
     Ok(writer.into_bytes())
 }
 
@@ -897,7 +896,7 @@ fn decode_refinement(reader: &mut MsgPackReader<'_>) -> Result<Refinement, HclEr
     })
 }
 
-fn encode_value_data(w: &mut MsgPackWriter, val: &Value) -> Result<(), HclError> {
+fn encode_value_data(w: &mut MsgPackWriter, val: &Value) {
     match &*val.data {
         ValueData::Null => w.write_nil(),
         ValueData::Unknown(maybe_ref) => {
@@ -928,20 +927,20 @@ fn encode_value_data(w: &mut MsgPackWriter, val: &Value) -> Result<(), HclError>
         ValueData::Array(arr) => {
             w.write_array_header(arr.len());
             for item in arr {
-                encode_value_internal(w, item)?;
+                encode_value_internal(w, item);
             }
         }
         ValueData::Set(set) => {
             w.write_array_header(set.len());
             for item in set {
-                encode_value_internal(w, item)?;
+                encode_value_internal(w, item);
             }
         }
         ValueData::Object(obj) => {
             w.write_map_header(obj.len());
             for (k, v) in obj {
                 w.write_str(k);
-                encode_value_internal(w, v)?;
+                encode_value_internal(w, v);
             }
         }
         ValueData::Capsule(_) => {
@@ -949,17 +948,16 @@ fn encode_value_data(w: &mut MsgPackWriter, val: &Value) -> Result<(), HclError>
             w.write_ext(2, cap_name.as_bytes());
         }
     }
-    Ok(())
 }
 
-fn encode_value_internal(w: &mut MsgPackWriter, val: &Value) -> Result<(), HclError> {
+fn encode_value_internal(w: &mut MsgPackWriter, val: &Value) {
     if val.marks.is_empty() {
-        encode_value_data(w, val)?;
+        encode_value_data(w, val);
     } else {
         // Marked value envelope: [0x01, value, [marks...]]
         w.write_array_header(3);
         w.write_uint(1);
-        encode_value_data(w, val)?;
+        encode_value_data(w, val);
         w.write_array_header(val.marks.len());
         for m in &val.marks {
             match m {
@@ -968,7 +966,6 @@ fn encode_value_internal(w: &mut MsgPackWriter, val: &Value) -> Result<(), HclEr
             }
         }
     }
-    Ok(())
 }
 
 fn decode_value_internal(
@@ -988,8 +985,8 @@ fn decode_value_internal(
         );
         if is_marked_envelope {
             // Consume array header and tag
-            let _ = reader.read_token()?;
-            let _ = reader.read_token()?;
+            let _ = reader.read_token();
+            let _ = reader.read_token();
             let mut inner_val = decode_value_data(reader, expected_type)?;
             let marks_hdr = reader.read_token()?;
             let marks_count = match marks_hdr {
@@ -1160,7 +1157,7 @@ fn decode_value_data(
 /// Returns [`HclError::MsgPackEncode`] if the value cannot be encoded.
 pub fn encode_value(val: &Value) -> Result<Vec<u8>, HclError> {
     let mut writer = MsgPackWriter::new();
-    encode_value_internal(&mut writer, val)?;
+    encode_value_internal(&mut writer, val);
     Ok(writer.into_bytes())
 }
 
@@ -1642,15 +1639,23 @@ mod tests {
             &[0xc6, 0x00, 0x01],                   // bin32 missing len
             &[0xc6, 0x00, 0x00, 0x00, 0x05, 0x01], // bin32 truncated payload
             &[0xc7],                               // ext8 missing len
+            &[0xc7, 0x05],                         // ext8 missing code
             &[0xc7, 0x02, 0x01, 0xaa],             // ext8 truncated payload
             &[0xc8, 0x01],                         // ext16 missing len
+            &[0xc8, 0x00, 0x05],                   // ext16 missing code
             &[0xc8, 0x00, 0x05, 0x01],             // ext16 truncated payload
             &[0xc9, 0x00, 0x01],                   // ext32 missing len
+            &[0xc9, 0x00, 0x00, 0x00, 0x05],       // ext32 missing code
             &[0xc9, 0x00, 0x00, 0x00, 0x05, 0x01], // ext32 truncated payload
             &[0xd4],                               // fixext1 missing type/payload
+            &[0xd4, 0x01],                         // fixext1 missing payload
+            &[0xd5],                               // fixext2 missing code
             &[0xd5, 0x01],                         // fixext2 missing payload
+            &[0xd6],                               // fixext4 missing code
             &[0xd6, 0x01],                         // fixext4 missing payload
+            &[0xd7],                               // fixext8 missing code
             &[0xd7, 0x01],                         // fixext8 missing payload
+            &[0xd8],                               // fixext16 missing code
             &[0xd8, 0x01],                         // fixext16 missing payload
             &[0xd9],                               // str8 missing len
             &[0xd9, 0x05, 0x61],                   // str8 truncated payload
@@ -1710,6 +1715,17 @@ mod tests {
         // Unknown compound type tag
         let unknown_tag = [0x92, 0xa1, b'X'];
         assert!(decode_type(&unknown_tag).is_err());
+
+        // Truncated compound type members
+        assert!(decode_type(&[0x92, 0xa1, b'L']).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'Z']).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'M']).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'T']).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'T', 0x91]).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'O']).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'O', 0x81]).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'O', 0x81, 0xa1, b'a']).is_err());
+        assert!(decode_type(&[0x92, 0xa1, b'C']).is_err());
 
         // Unexpected top-level token
         assert!(decode_type(&[0xc0]).is_err());
@@ -1944,5 +1960,71 @@ mod tests {
         let dec_bad_mark = decode_value(&marked_bad_mark.into_bytes(), &Type::String)
             .unwrap_or(Value::null(Type::Dynamic));
         assert!(dec_bad_mark.marks.is_empty());
+
+        // 16. Refinement error paths during decoding
+        let bad_ref_payloads: &[&[u8]] = &[
+            &[0xc1],
+            &[0x9a],
+            &[0x9a, 0xc3],
+            &[0x9a, 0xc3, 0x01],
+            &[0x9a, 0xc3, 0x01, 0x02],
+            &[0x9a, 0xc3, 0x01, 0x02, 0xc0],
+            &[0x9a, 0xc3, 0x01, 0x02, 0xc0, 0xc0],
+            &[0x9a, 0xc3, 0x01, 0x02, 0xc0, 0xc0, 0x01],
+            &[0x9a, 0xc3, 0x01, 0x02, 0xc0, 0xc0, 0x01, 0x02],
+            &[0x9a, 0xc3, 0x01, 0x02, 0xc0, 0xc0, 0x01, 0x02, 0x01],
+            &[0x9a, 0xc3, 0x01, 0x02, 0xc0, 0xc0, 0x01, 0x02, 0x01, 0x02],
+            &[
+                0x9a, 0xc3, 0x01, 0x02, 0xc0, 0xc0, 0x01, 0x02, 0x01, 0x02, 0x81,
+            ],
+            &[
+                0x9a, 0xc3, 0x01, 0x02, 0xc0, 0xc0, 0x01, 0x02, 0x01, 0x02, 0x81, 0xa1, b'k', 0xc0,
+            ],
+        ];
+        for bad_payload in bad_ref_payloads {
+            let mut w = MsgPackWriter::new();
+            w.write_ext(0, bad_payload);
+            let bytes = w.into_bytes();
+            let res = decode_value(&bytes, &Type::String);
+            assert!(
+                res.is_err(),
+                "payload {bad_payload:?} unexpectedly succeeded: {res:?}"
+            );
+        }
+
+        // 17. Marked envelope truncated error paths
+        assert!(decode_value(&[0x93, 0x01], &Type::String).is_err());
+        assert!(
+            decode_value(
+                &[0x93, 0x01, 0xa5, b'h', b'e', b'l', b'l', b'o'],
+                &Type::String
+            )
+            .is_err()
+        );
+
+        // 18. Collection and map element decoding error paths
+        assert!(decode_value(&[0x91], &Type::List(Box::new(Type::String))).is_err());
+        assert!(decode_value(&[0x91], &Type::Set(Box::new(Type::String))).is_err());
+        assert!(decode_value(&[0x91], &Type::Tuple(vec![Type::String])).is_err());
+        assert!(decode_value(&[0x91], &Type::Dynamic).is_err());
+
+        assert!(decode_value(&[0x81], &Type::Map(Box::new(Type::String))).is_err());
+        assert!(decode_value(&[0x81, 0xa1, b'k'], &Type::Map(Box::new(Type::String))).is_err());
+        assert!(
+            decode_value(
+                &[0x81],
+                &Type::object(BTreeMap::from([("k".into(), Type::String)]))
+            )
+            .is_err()
+        );
+        assert!(
+            decode_value(
+                &[0x81, 0xa1, b'k'],
+                &Type::object(BTreeMap::from([("k".into(), Type::String)]))
+            )
+            .is_err()
+        );
+        assert!(decode_value(&[0x81], &Type::Dynamic).is_err());
+        assert!(decode_value(&[0x81, 0xa1, b'k'], &Type::Dynamic).is_err());
     }
 }

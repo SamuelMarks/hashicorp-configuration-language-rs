@@ -2226,7 +2226,7 @@ fn test_template_branch_coverage_gaps() {
     assert!(parser3.errors().has_errors());
 }
 
-/// Tests advance_token and current_span_or helper methods for fallback paths.
+/// Tests `advance_token` and `current_span_or` helper methods for fallback paths.
 #[test]
 fn test_parser_advance_token_and_current_span_helpers() {
     let mut parser = Parser::new("");
@@ -2237,4 +2237,13 @@ fn test_parser_advance_token_and_current_span_helpers() {
     let span = parser.current_span_or(crate::span::Span::new(1, 2, 3, 4, 5, 6));
     assert_eq!(span.start_byte, 1);
     assert_eq!(span.end_byte, 2);
+}
+
+/// Tests that empty or invalid expression inside parentheses returns None (covering early return in `OParen`).
+#[test]
+fn test_parser_parentheses_empty_expression() {
+    let mut parser = Parser::new("()");
+    let expr = parser.parse_expression();
+    assert!(expr.is_none());
+    assert!(parser.errors().has_errors());
 }

@@ -3,25 +3,35 @@ repos:
     hooks:
     -   id: cargo-fmt
         name: cargo fmt
-        entry: cargo fmt --
-        language: system
-        types: [rust]
-        pass_filenames: false
-    -   id: cargo-build
-        name: cargo build
-        entry: cargo build
-        language: system
-        types: [rust]
-        pass_filenames: false
-    -   id: cargo-test
-        name: cargo test
-        entry: cargo test
+        entry: bash -c "cargo fmt --all && cargo fmt --all -- --check"
         language: system
         types: [rust]
         pass_filenames: false
     -   id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy -- -D warnings
+        entry: cargo clippy --workspace --all-targets -- -D warnings
         language: system
         types: [rust]
+        pass_filenames: false
+    -   id: cargo-build
+        name: cargo build
+        entry: cargo build --workspace --exclude hashicorp-configuration-language-rs-fuzz
+        language: system
+        types: [rust]
+        pass_filenames: false
+    -   id: cargo-test
+        name: cargo test
+        entry: cargo test --workspace
+        language: system
+        types: [rust]
+        pass_filenames: false
+    -   id: doc-coverage
+        name: doc coverage shield
+        entry: python3 scripts/update_coverage_shields.py --doc
+        language: system
+        pass_filenames: false
+    -   id: test-coverage
+        name: test coverage shield
+        entry: python3 scripts/update_coverage_shields.py --test
+        language: system
         pass_filenames: false

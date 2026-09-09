@@ -20,7 +20,11 @@ jobs:
 
       - name: Setup Rust toolchain (nightly)
         uses: dtolnay/rust-toolchain@nightly
+        with:
           components: rustfmt, clippy
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-tarpaulin
         uses: taiki-e/install-action@cargo-tarpaulin

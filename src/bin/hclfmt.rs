@@ -94,6 +94,7 @@ pub fn collect_target_files(target: &str) -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
+/// Recursively scans a directory for `.hcl` and `.tf` files.
 fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
     let entries = fs::read_dir(dir)
         .map_err(|e| format!("Failed to read directory '{}': {e}", dir.display()))?;
@@ -116,8 +117,11 @@ fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
 /// A line edit operation for diff generation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DiffOp<'a> {
+    /// Line is identical in original and formatted text.
     Equal(&'a str),
+    /// Line was deleted from original text.
     Delete(&'a str),
+    /// Line was inserted into formatted text.
     Insert(&'a str),
 }
 
@@ -174,6 +178,7 @@ pub fn generate_unified_diff(original: &str, formatted: &str, file_name: &str) -
     format_unified_hunks(&ops, file_name)
 }
 
+/// Formats calculated diff operations into unified diff hunk format.
 fn format_unified_hunks(ops: &[DiffOp<'_>], file_name: &str) -> String {
     let mut out = format!(
         "--- {file_name}	(original)

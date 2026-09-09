@@ -58,15 +58,15 @@ pub fn generate_bindings(manifest_dir: Option<&str>, out_dir: Option<&str>) -> R
 /// The path to the resolved target directory.
 #[must_use]
 pub fn target_dir() -> PathBuf {
-    match env::var("CARGO_TARGET_DIR") {
-        Ok(target) => PathBuf::from(target),
-        Err(_) => {
-            let manifest = match env::var("CARGO_MANIFEST_DIR") {
-                Ok(m) => m,
-                Err(_) => ".".to_string(),
-            };
-            PathBuf::from(manifest).join("target")
-        }
+    if let Ok(target) = env::var("CARGO_TARGET_DIR") {
+        PathBuf::from(target)
+    } else {
+        let manifest = if let Ok(m) = env::var("CARGO_MANIFEST_DIR") {
+            m
+        } else {
+            ".".to_string()
+        };
+        PathBuf::from(manifest).join("target")
     }
 }
 
@@ -79,6 +79,11 @@ pub fn main() {
     let _ = target_dir();
 
     unsafe {
+        std::env::set_var("CARGO_TARGET_DIR", "/tmp/build_rs_target");
+    }
+    let _ = target_dir();
+    unsafe {
+        std::env::remove_var("CARGO_TARGET_DIR");
         std::env::remove_var("CARGO_MANIFEST_DIR");
         std::env::remove_var("OUT_DIR");
     }
