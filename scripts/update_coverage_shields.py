@@ -9,7 +9,6 @@ and workspace test coverage using cargo-llvm-cov (or cargo-tarpaulin fallback).
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
 import re
@@ -20,7 +19,14 @@ from pathlib import Path
 
 
 def get_shield_color(percent: float) -> str:
-    """Returns the badge color corresponding to a coverage percentage."""
+    """Returns the badge color corresponding to a coverage percentage.
+
+    Args:
+        percent: Coverage percentage value.
+
+    Returns:
+        The badge color corresponding to the coverage percentage.
+    """
     if percent >= 95.0:
         return "brightgreen"
     if percent >= 90.0:
@@ -35,10 +41,18 @@ def get_shield_color(percent: float) -> str:
 
 
 def compute_doc_coverage(repo_root: Path) -> float:
-    """
-    Computes documentation coverage percentage across all workspace crates.
+    """Computes documentation coverage percentage across all workspace crates.
 
     Uses rustdoc unstable --show-coverage flag to generate JSON coverage reports.
+
+    Args:
+        repo_root: Root path of the repository.
+
+    Returns:
+        The calculated doc coverage percentage.
+
+    Raises:
+        RuntimeError: If cargo doc execution fails or no doc coverage output is found.
     """
     env = dict(os.environ)
     env["RUSTDOCFLAGS"] = "-Z unstable-options --show-coverage --output-format json"
@@ -50,6 +64,7 @@ def compute_doc_coverage(repo_root: Path) -> float:
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode != 0:
         # Fallback to text format if json is unsupported
@@ -60,6 +75,7 @@ def compute_doc_coverage(repo_root: Path) -> float:
             env=env,
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode != 0:
             raise RuntimeError(f"cargo doc failed: {result.stderr}")
@@ -73,14 +89,14 @@ def compute_doc_coverage(repo_root: Path) -> float:
             try:
                 with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    for _, stats in data.items():
+                    for stats in data.values():
                         total_items += stats.get("total", 0)
                         documented_items += stats.get("with_docs", 0)
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 print(f"Warning: could not read {p}: {e}", file=sys.stderr)
 
         if total_items > 0:
-            return round((documented_items / total_items) * 100.0, 1)
+            return float(round((documented_items / total_items) * 100.0, 1))
 
     # Inspect target/doc/*.txt if no JSON files
     txt_files = list(repo_root.glob("target/doc/*.txt"))
@@ -103,20 +119,28 @@ def compute_doc_coverage(repo_root: Path) -> float:
                             )
                             documented_items += doc_count
                             total_items += total_est
-            except Exception as e:
+            except (OSError, UnicodeDecodeError, ValueError) as e:
                 print(f"Warning: could not read {p}: {e}", file=sys.stderr)
 
         if total_items > 0:
-            return round((documented_items / total_items) * 100.0, 1)
+            return float(round((documented_items / total_items) * 100.0, 1))
 
     raise RuntimeError("No doc coverage output found in target/doc/")
 
 
 def compute_test_coverage(repo_root: Path) -> float:
-    """
-    Computes test coverage percentage across all workspace crates.
+    """Computes test coverage percentage across all workspace crates.
 
     Prefers cargo-llvm-cov, with fallback to cargo-tarpaulin.
+
+    Args:
+        repo_root: Root path of the repository.
+
+    Returns:
+        The calculated test coverage percentage.
+
+    Raises:
+        RuntimeError: If neither cargo-llvm-cov nor cargo-tarpaulin succeeds in computing test coverage.
     """
     if shutil.which("cargo-llvm-cov"):
         cmd = [
@@ -134,6 +158,7 @@ def compute_test_coverage(repo_root: Path) -> float:
             cwd=repo_root,
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             try:
@@ -143,10 +168,16 @@ def compute_test_coverage(repo_root: Path) -> float:
                 count = lines.get("count", 0)
                 covered = lines.get("covered", 0)
                 if count > 0:
-                    return round((covered / count) * 100.0, 1)
+                    return float(round((covered / count) * 100.0, 1))
                 percent = lines.get("percent", 0.0)
-                return round(float(percent), 1)
-            except (json.JSONDecodeError, KeyError, IndexError) as e:
+                return float(round(float(percent), 1))
+            except (
+                json.JSONDecodeError,
+                KeyError,
+                IndexError,
+                TypeError,
+                ValueError,
+            ) as e:
                 print(f"Warning: failed to parse llvm-cov json: {e}", file=sys.stderr)
 
     if shutil.which("cargo-tarpaulin"):
@@ -168,6 +199,7 @@ def compute_test_coverage(repo_root: Path) -> float:
             cwd=repo_root,
             capture_output=True,
             text=True,
+            check=False,
         )
         tarpaulin_json = out_dir / "tarpaulin-report.json"
         if tarpaulin_json.exists():
@@ -178,13 +210,13 @@ def compute_test_coverage(repo_root: Path) -> float:
                     covered = sum(len(f.get("covered", [])) for f in files.values())
                     coverable = sum(f.get("coverable", 0) for f in files.values())
                     if coverable > 0:
-                        return round((covered / coverable) * 100.0, 1)
-            except Exception as e:
+                        return float(round((covered / coverable) * 100.0, 1))
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 print(f"Warning: failed to read tarpaulin report: {e}", file=sys.stderr)
 
         match = re.search(r"([\d.]+)%\s+coverage", result.stdout)
         if match:
-            return round(float(match.group(1)), 1)
+            return float(round(float(match.group(1)), 1))
 
     raise RuntimeError(
         "Neither cargo-llvm-cov nor cargo-tarpaulin succeeded in computing test coverage."
@@ -194,10 +226,15 @@ def compute_test_coverage(repo_root: Path) -> float:
 def update_or_add_badge(
     readme_text: str, badge_type: str, percent: float
 ) -> tuple[str, bool]:
-    """
-    Updates or adds a shield for badge_type ('Doc Coverage' or 'Test Coverage') in readme_text.
+    """Updates or adds a shield for badge_type ('Doc Coverage' or 'Test Coverage') in readme_text.
 
-    Returns (new_readme_text, was_modified).
+    Args:
+        readme_text: Original markdown content of README.
+        badge_type: Name of the badge ('Doc Coverage' or 'Test Coverage').
+        percent: Percentage value to set on the badge.
+
+    Returns:
+        Tuple of (new_readme_text, was_modified).
     """
     color = get_shield_color(percent)
     escaped_type = badge_type.replace(" ", "%20")
@@ -254,7 +291,7 @@ def update_or_add_badge(
     lines = readme_text.splitlines(keepends=True)
     insert_idx = 0
     for idx, line in enumerate(lines):
-        if line.startswith("#") or line.startswith("===") or line.startswith("---"):
+        if line.startswith(("#", "===", "---")):
             insert_idx = idx + 1
             while insert_idx < len(lines) and lines[insert_idx].strip() == "":
                 insert_idx += 1
@@ -264,19 +301,27 @@ def update_or_add_badge(
     return "".join(lines), True
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Entry point to update or add coverage shields in README.md.
+
+    Args:
+        argv: Optional list of CLI arguments (defaults to sys.argv[1:] if None).
+
+    Returns:
+        int: 0 on success without modifications, 1 if file was modified or on error.
+    """
     parser = argparse.ArgumentParser(
         description="Update or add coverage shields in README.md."
     )
     parser.add_argument(
         "--doc",
         action="store_true",
-        help="Update '% doc coverage' shield in README.md",
+        help="Update '%% doc coverage' shield in README.md",
     )
     parser.add_argument(
         "--test",
         action="store_true",
-        help="Update '% test coverage' shield in README.md",
+        help="Update '%% test coverage' shield in README.md",
     )
     parser.add_argument(
         "--readme",
@@ -284,7 +329,7 @@ def main() -> int:
         default=Path("README.md"),
         help="Path to README.md",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     do_doc = args.doc or not (args.doc or args.test)
     do_test = args.test or not (args.doc or args.test)
@@ -315,7 +360,7 @@ def main() -> int:
                 print(f"Updated '% doc coverage' shield to {doc_pct:.1f}%")
             else:
                 print(f"'% doc coverage' shield is already up to date ({doc_pct:.1f}%)")
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             print(f"Error computing doc coverage: {e}", file=sys.stderr)
             return 1
 
@@ -333,7 +378,7 @@ def main() -> int:
                 print(
                     f"'% test coverage' shield is already up to date ({test_pct:.1f}%)"
                 )
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             print(f"Error computing test coverage: {e}", file=sys.stderr)
             return 1
 

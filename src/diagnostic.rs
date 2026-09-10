@@ -1,8 +1,10 @@
 //! Diagnostics and error handling.
 
+pub mod html;
 pub mod json;
 pub mod suggestion;
 
+pub use html::{HtmlDiagnosticWriter, diagnostics_to_html};
 pub use json::{
     DiagnosticJson, DiagnosticPosJson, DiagnosticRangeJson, DiagnosticSnippetJson,
     diagnostics_from_json, diagnostics_to_json,
@@ -381,6 +383,36 @@ impl Diagnostics {
     /// Returns [`HclError::CtyJson`] if deserialization fails.
     pub fn from_json(json_str: &str) -> Result<Self, HclError> {
         json::diagnostics_from_json(json_str)
+    }
+
+    /// Converts all diagnostics into an HTML report string.
+    ///
+    /// # Arguments
+    /// * `source` - Optional source text for code snippets.
+    /// * `standalone` - `true` for a complete standalone HTML document, `false` for an embeddable snippet.
+    #[must_use]
+    pub fn to_html(&self, source: Option<&str>, standalone: bool) -> String {
+        html::diagnostics_to_html(self, source, standalone)
+    }
+
+    /// Writes the diagnostics as an HTML report to an arbitrary output stream.
+    ///
+    /// # Arguments
+    /// * `writer` - The output stream.
+    /// * `source` - Optional source text for code snippets.
+    /// * `standalone` - `true` for a complete standalone HTML document.
+    ///
+    /// # Errors
+    /// Returns [`std::io::Error`] if writing fails.
+    pub fn write_html(
+        &self,
+        writer: &mut dyn std::io::Write,
+        source: Option<&str>,
+        standalone: bool,
+    ) -> std::io::Result<()> {
+        html::HtmlDiagnosticWriter::new()
+            .with_standalone(standalone)
+            .write_html(self, source, writer)
     }
 }
 
@@ -1331,5 +1363,20 @@ mod tests {
         let rendered =
             DiagnosticWriter::plain().format_diagnostic(&diag_same_file, "main.tf", "code line\n");
         assert!(!rendered.contains("(context in"));
+
+        // HTML serialization tests
+        let html_str = diags.to_html(Some("code line\n"), true);
+        assert!(html_str.contains("<!DOCTYPE html>"));
+        assert!(html_str.contains("summary only"));
+
+        let mut html_buf = Vec::new();
+        assert!(
+            diags
+                .write_html(&mut html_buf, Some("code line\n"), false)
+                .is_ok()
+        );
+        let snippet = String::from_utf8_lossy(&html_buf);
+        assert!(!snippet.contains("<!DOCTYPE html>"));
+        assert!(snippet.contains("summary only"));
     }
 }

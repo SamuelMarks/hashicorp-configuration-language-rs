@@ -711,4 +711,82 @@ mod tests {
             (regexall_fn.func)(&[str_val("(?P<first>\\d+)-(\\d+)"), str_val("12-34"),]).is_err()
         );
     }
+
+    #[test]
+    fn test_unicode_uax29_grapheme_parity() {
+        let length_fn = get_stdlib_function("length").expect("length exists");
+        let substr_fn = get_stdlib_function("substr").expect("substr exists");
+        let strrev_fn = get_stdlib_function("strrev").expect("strrev exists");
+
+        let str_val = |s: &str| {
+            crate::types::Value::new(crate::types::Type::String, ValueData::String(s.to_string()))
+        };
+        let num_val = |n: i64| {
+            crate::types::Value::new(
+                crate::types::Type::Number,
+                ValueData::Number(crate::number::Number::from(n)),
+            )
+        };
+
+        // 1. Regional indicator flag emoji: "🇺🇸" (2 codepoints, 1 grapheme cluster)
+        let flag = "🇺🇸";
+        let len_res = (length_fn.func)(&[str_val(flag)]).expect("length ok");
+        assert_eq!(len_res.to_string(), "1");
+
+        let sub_res =
+            (substr_fn.func)(&[str_val(flag), num_val(0), num_val(1)]).expect("substr ok");
+        assert_eq!(sub_res.to_string(), "\"🇺🇸\"");
+
+        let mixed_flag = "flag: 🇺🇸!";
+        let mixed_len = (length_fn.func)(&[str_val(mixed_flag)]).expect("length ok");
+        assert_eq!(mixed_len.to_string(), "8"); // "f","l","a","g",":"," ","🇺🇸","!"
+
+        let sub_flag =
+            (substr_fn.func)(&[str_val(mixed_flag), num_val(6), num_val(1)]).expect("substr ok");
+        assert_eq!(sub_flag.to_string(), "\"🇺🇸\"");
+
+        let rev_flag = (strrev_fn.func)(&[str_val("A🇺🇸B")]).expect("strrev ok");
+        assert_eq!(rev_flag.to_string(), "\"B🇺🇸A\"");
+
+        // 2. Zero-Width Joiner (ZWJ) family emoji: "👨‍👩‍👧‍👦" (7 codepoints, 1 grapheme cluster)
+        let family = "👨‍👩‍👧‍👦";
+        let fam_len = (length_fn.func)(&[str_val(family)]).expect("length ok");
+        assert_eq!(fam_len.to_string(), "1");
+
+        let fam_sub =
+            (substr_fn.func)(&[str_val(family), num_val(0), num_val(1)]).expect("substr ok");
+        assert_eq!(fam_sub.to_string(), "\"👨‍👩‍👧‍👦\"");
+
+        let rev_fam = (strrev_fn.func)(&[str_val("X👨‍👩‍👧‍👦Y")]).expect("strrev ok");
+        assert_eq!(rev_fam.to_string(), "\"Y👨‍👩‍👧‍👦X\"");
+
+        // 3. Combining accent: "e\u{0301}" (e + combining acute accent -> 1 cluster "é")
+        let accented = "e\u{0301}";
+        let acc_len = (length_fn.func)(&[str_val(accented)]).expect("length ok");
+        assert_eq!(acc_len.to_string(), "1");
+
+        let acc_rev = (strrev_fn.func)(&[str_val(accented)]).expect("strrev ok");
+        assert_eq!(acc_rev.to_string(), "\"e\u{0301}\"");
+
+        let acc_word = "re\u{0301}sume\u{0301}";
+        let word_len = (length_fn.func)(&[str_val(acc_word)]).expect("length ok");
+        assert_eq!(word_len.to_string(), "6"); // r, é, s, u, m, é
+
+        let word_sub =
+            (substr_fn.func)(&[str_val(acc_word), num_val(1), num_val(2)]).expect("substr ok");
+        assert_eq!(word_sub.to_string(), "\"e\u{0301}s\"");
+
+        // 4. Skin tone modifier: "👍🏽" (1 cluster)
+        let thumbs_up = "👍🏽";
+        let thumb_len = (length_fn.func)(&[str_val(thumbs_up)]).expect("length ok");
+        assert_eq!(thumb_len.to_string(), "1");
+
+        let thumb_rev = (strrev_fn.func)(&[str_val(thumbs_up)]).expect("strrev ok");
+        assert_eq!(thumb_rev.to_string(), "\"👍🏽\"");
+
+        // 5. Negative offsets with grapheme clusters
+        let neg_sub =
+            (substr_fn.func)(&[str_val(mixed_flag), num_val(-2), num_val(1)]).expect("substr ok");
+        assert_eq!(neg_sub.to_string(), "\"🇺🇸\"");
+    }
 }

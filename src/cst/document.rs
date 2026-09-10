@@ -239,6 +239,277 @@ impl Document {
             .filter(|b| b.type_ident.text == block_type)
             .collect()
     }
+
+    /// Inserts an attribute before a target attribute in the document.
+    ///
+    /// # Arguments
+    /// * `target` - The name of the existing attribute to insert before.
+    /// * `attr` - The attribute to insert.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::HclError::CstNodeNotFound`] if the target attribute is not found.
+    pub fn insert_attribute_before(
+        &mut self,
+        target: &str,
+        attr: Attribute,
+    ) -> Result<(), crate::error::HclError> {
+        let item_idx = self
+            .items
+            .iter()
+            .position(|item| match item {
+                DocumentItem::Attribute(a) => a.name.text == target,
+                _ => false,
+            })
+            .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target.to_string()))?;
+
+        let attr_idx = self
+            .attributes
+            .iter()
+            .position(|a| a.name.text == target)
+            .unwrap_or(self.attributes.len());
+
+        self.attributes.insert(attr_idx, attr.clone());
+        self.items.insert(item_idx, DocumentItem::Attribute(attr));
+        Ok(())
+    }
+
+    /// Inserts an attribute after a target attribute in the document.
+    ///
+    /// # Arguments
+    /// * `target` - The name of the existing attribute to insert after.
+    /// * `attr` - The attribute to insert.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::HclError::CstNodeNotFound`] if the target attribute is not found.
+    pub fn insert_attribute_after(
+        &mut self,
+        target: &str,
+        attr: Attribute,
+    ) -> Result<(), crate::error::HclError> {
+        let item_idx = self
+            .items
+            .iter()
+            .position(|item| match item {
+                DocumentItem::Attribute(a) => a.name.text == target,
+                _ => false,
+            })
+            .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target.to_string()))?;
+
+        let attr_idx = self
+            .attributes
+            .iter()
+            .position(|a| a.name.text == target)
+            .map_or(self.attributes.len(), |i| i + 1);
+
+        self.attributes.insert(attr_idx, attr.clone());
+        self.items
+            .insert(item_idx + 1, DocumentItem::Attribute(attr));
+        Ok(())
+    }
+
+    /// Inserts a block before a target block matching the specified type and labels.
+    ///
+    /// # Arguments
+    /// * `target_type` - The block type identifier of the target block.
+    /// * `target_labels` - The labels of the target block.
+    /// * `block` - The block to insert.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::HclError::CstNodeNotFound`] if the target block is not found.
+    pub fn insert_block_before(
+        &mut self,
+        target_type: &str,
+        target_labels: &[&str],
+        block: Block,
+    ) -> Result<(), crate::error::HclError> {
+        let item_idx = self
+            .items
+            .iter()
+            .position(|item| match item {
+                DocumentItem::Block(b) => {
+                    b.type_ident.text == target_type
+                        && (target_labels.is_empty()
+                            || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
+                                == target_labels)
+                }
+                _ => false,
+            })
+            .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target_type.to_string()))?;
+
+        let block_idx = self
+            .blocks
+            .iter()
+            .position(|b| {
+                b.type_ident.text == target_type
+                    && (target_labels.is_empty()
+                        || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
+                            == target_labels)
+            })
+            .unwrap_or(self.blocks.len());
+
+        self.blocks.insert(block_idx, block.clone());
+        self.items.insert(item_idx, DocumentItem::Block(block));
+        Ok(())
+    }
+
+    /// Inserts a block after a target block matching the specified type and labels.
+    ///
+    /// # Arguments
+    /// * `target_type` - The block type identifier of the target block.
+    /// * `target_labels` - The labels of the target block.
+    /// * `block` - The block to insert.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::HclError::CstNodeNotFound`] if the target block is not found.
+    pub fn insert_block_after(
+        &mut self,
+        target_type: &str,
+        target_labels: &[&str],
+        block: Block,
+    ) -> Result<(), crate::error::HclError> {
+        let item_idx = self
+            .items
+            .iter()
+            .position(|item| match item {
+                DocumentItem::Block(b) => {
+                    b.type_ident.text == target_type
+                        && (target_labels.is_empty()
+                            || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
+                                == target_labels)
+                }
+                _ => false,
+            })
+            .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target_type.to_string()))?;
+
+        let block_idx = self
+            .blocks
+            .iter()
+            .position(|b| {
+                b.type_ident.text == target_type
+                    && (target_labels.is_empty()
+                        || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
+                            == target_labels)
+            })
+            .map_or(self.blocks.len(), |i| i + 1);
+
+        self.blocks.insert(block_idx, block.clone());
+        self.items.insert(item_idx + 1, DocumentItem::Block(block));
+        Ok(())
+    }
+
+    /// Walks all tokens in the document with the provided visitor function.
+    ///
+    /// # Arguments
+    /// * `visitor` - A mutable visitor closure invoked for each token in traversal order.
+    pub fn walk_tokens<F: FnMut(&Token)>(&self, mut visitor: F) {
+        self.walk_tokens_inner(&mut visitor);
+    }
+
+    fn walk_tokens_inner<F: FnMut(&Token)>(&self, visitor: &mut F) {
+        for tok in &self.leading.tokens {
+            visitor(tok);
+        }
+        for item in &self.items {
+            match item {
+                DocumentItem::Attribute(attr) => {
+                    for tok in &attr.leading.tokens {
+                        visitor(tok);
+                    }
+                    visitor(&attr.name);
+                    for tok in &attr.equals_leading.tokens {
+                        visitor(tok);
+                    }
+                    visitor(&attr.equals);
+                    for tok in &attr.expr_tokens {
+                        visitor(tok);
+                    }
+                    for tok in &attr.trailing.tokens {
+                        visitor(tok);
+                    }
+                }
+                DocumentItem::Block(block) => {
+                    for tok in &block.leading.tokens {
+                        visitor(tok);
+                    }
+                    visitor(&block.type_ident);
+                    for tok in &block.labels {
+                        visitor(tok);
+                    }
+                    visitor(&block.open_brace);
+                    block.body.walk_tokens_inner(visitor);
+                    visitor(&block.close_brace);
+                    for tok in &block.trailing.tokens {
+                        visitor(tok);
+                    }
+                }
+                DocumentItem::Trivia(stream) => {
+                    for tok in &stream.tokens {
+                        visitor(tok);
+                    }
+                }
+            }
+        }
+        for tok in &self.trailing.tokens {
+            visitor(tok);
+        }
+    }
+
+    /// Walks all tokens in the document mutably with the provided visitor function.
+    ///
+    /// # Arguments
+    /// * `visitor` - A mutable visitor closure invoked for each token in traversal order.
+    pub fn walk_tokens_mut<F: FnMut(&mut Token)>(&mut self, mut visitor: F) {
+        self.walk_tokens_mut_inner(&mut visitor);
+    }
+
+    fn walk_tokens_mut_inner<F: FnMut(&mut Token)>(&mut self, visitor: &mut F) {
+        for tok in &mut self.leading.tokens {
+            visitor(tok);
+        }
+        for item in &mut self.items {
+            match item {
+                DocumentItem::Attribute(attr) => {
+                    for tok in &mut attr.leading.tokens {
+                        visitor(tok);
+                    }
+                    visitor(&mut attr.name);
+                    for tok in &mut attr.equals_leading.tokens {
+                        visitor(tok);
+                    }
+                    visitor(&mut attr.equals);
+                    for tok in &mut attr.expr_tokens {
+                        visitor(tok);
+                    }
+                    for tok in &mut attr.trailing.tokens {
+                        visitor(tok);
+                    }
+                }
+                DocumentItem::Block(block) => {
+                    for tok in &mut block.leading.tokens {
+                        visitor(tok);
+                    }
+                    visitor(&mut block.type_ident);
+                    for tok in &mut block.labels {
+                        visitor(tok);
+                    }
+                    visitor(&mut block.open_brace);
+                    block.body.walk_tokens_mut_inner(visitor);
+                    visitor(&mut block.close_brace);
+                    for tok in &mut block.trailing.tokens {
+                        visitor(tok);
+                    }
+                }
+                DocumentItem::Trivia(stream) => {
+                    for tok in &mut stream.tokens {
+                        visitor(tok);
+                    }
+                }
+            }
+        }
+        for tok in &mut self.trailing.tokens {
+            visitor(tok);
+        }
+    }
 }
 
 impl Default for Document {
@@ -585,5 +856,137 @@ mod tests {
         let mut doc_no_item_block = Document::new();
         doc_no_item_block.blocks.push(blk2);
         assert!(doc_no_item_block.remove_block("config", &[]).is_some());
+    }
+
+    #[test]
+    fn test_surgical_insertions_and_walk_tokens() {
+        let span = Span::new(0, 1, 1, 1, 1, 2);
+        let make_attr = |name: &str| {
+            let mut leading = TokenStream::new();
+            leading.push(Token::new(TokenKind::Whitespace, "  ", span.clone()));
+            let mut equals_leading = TokenStream::new();
+            equals_leading.push(Token::new(TokenKind::Whitespace, " ", span.clone()));
+            let mut trailing = TokenStream::new();
+            trailing.push(Token::new(TokenKind::Newline, "\n", span.clone()));
+            Attribute {
+                leading,
+                name: Token::new(TokenKind::Ident, name, span.clone()),
+                equals_leading,
+                equals: Token::new(TokenKind::Assign, "=", span.clone()),
+                expr_tokens: vec![Token::new(TokenKind::Number, "1", span.clone())],
+                trailing,
+            }
+        };
+        let make_block = |typ: &str, label: &str| {
+            let mut leading = TokenStream::new();
+            leading.push(Token::new(TokenKind::Whitespace, "  ", span.clone()));
+            let mut trailing = TokenStream::new();
+            trailing.push(Token::new(TokenKind::Newline, "\n", span.clone()));
+            Block {
+                leading,
+                type_ident: Token::new(TokenKind::Ident, typ, span.clone()),
+                labels: if label.is_empty() {
+                    vec![]
+                } else {
+                    vec![Token::new(TokenKind::Ident, label, span.clone())]
+                },
+                open_brace: Token::new(TokenKind::OBrace, "{", span.clone()),
+                body: Box::new(Document::new()),
+                close_brace: Token::new(TokenKind::CBrace, "}", span.clone()),
+                trailing,
+            }
+        };
+
+        let mut doc = Document::new();
+        // Insert a trivia item first so attribute search traverses non-attribute items
+        let mut lead_trivia = TokenStream::new();
+        lead_trivia.push(Token::new(TokenKind::Comment, "# preamble\n", span.clone()));
+        doc.items.push(DocumentItem::Trivia(lead_trivia));
+
+        let a2 = make_attr("a2");
+        doc.attributes.push(a2.clone());
+        doc.items.push(DocumentItem::Attribute(a2));
+
+        // 1. insert_attribute_before
+        let a1 = make_attr("a1");
+        assert!(doc.insert_attribute_before("a2", a1).is_ok());
+        assert_eq!(doc.attributes[0].name.text, "a1");
+        assert_eq!(doc.attributes[1].name.text, "a2");
+
+        // 2. insert_attribute_after
+        let a3 = make_attr("a3");
+        assert!(doc.insert_attribute_after("a2", a3).is_ok());
+        assert_eq!(doc.attributes[2].name.text, "a3");
+
+        // 3. Error on missing target
+        assert!(
+            doc.insert_attribute_before("nonexistent", make_attr("err"))
+                .is_err()
+        );
+        assert!(
+            doc.insert_attribute_after("nonexistent", make_attr("err"))
+                .is_err()
+        );
+
+        // 4. insert_block_before & insert_block_after with mixed items (attributes + blocks)
+        let b2 = make_block("resource", "b2");
+        doc.blocks.push(b2.clone());
+        doc.items.push(DocumentItem::Block(b2));
+
+        let b1 = make_block("resource", "b1");
+        assert!(doc.insert_block_before("resource", &["b2"], b1).is_ok());
+        assert_eq!(doc.blocks[0].labels[0].text, "b1");
+
+        let b3 = make_block("resource", "b3");
+        assert!(doc.insert_block_after("resource", &["b2"], b3).is_ok());
+        assert_eq!(doc.blocks[2].labels[0].text, "b3");
+
+        // Error on missing target block
+        assert!(
+            doc.insert_block_before("missing", &[], make_block("b", ""))
+                .is_err()
+        );
+        assert!(
+            doc.insert_block_after("missing", &[], make_block("b", ""))
+                .is_err()
+        );
+
+        // 0-label block insertion
+        let blk_zero = make_block("locals", "");
+        doc.blocks.push(blk_zero.clone());
+        doc.items.push(DocumentItem::Block(blk_zero));
+        assert!(
+            doc.insert_block_before("locals", &[], make_block("locals_before", ""))
+                .is_ok()
+        );
+        assert!(
+            doc.insert_block_after("locals", &[], make_block("locals_after", ""))
+                .is_ok()
+        );
+
+        // remove_block with non-empty matching and non-matching labels
+        assert!(doc.remove_block("resource", &["wrong"]).is_none());
+        assert!(doc.remove_block("resource", &["b1"]).is_some());
+
+        // 5. walk_tokens and walk_tokens_mut
+        let mut trivia_stream = TokenStream::new();
+        trivia_stream.push(Token::new(TokenKind::Comment, "# trivia\n", span.clone()));
+        doc.items.push(DocumentItem::Trivia(trivia_stream));
+        doc.leading
+            .push(Token::new(TokenKind::Whitespace, " ", span.clone()));
+        doc.trailing
+            .push(Token::new(TokenKind::Newline, "\n", span));
+
+        let mut token_count = 0;
+        doc.walk_tokens(|_| {
+            token_count += 1;
+        });
+        assert!(token_count > 0);
+
+        let mut visited_kinds = Vec::new();
+        doc.walk_tokens_mut(|tok| {
+            visited_kinds.push(tok.kind.clone());
+        });
+        assert_eq!(visited_kinds.len(), token_count);
     }
 }

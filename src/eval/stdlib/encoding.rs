@@ -103,19 +103,29 @@ fn textdecodebase64_func() -> Function {
             let s = coerce_to_string(&args[0], "textdecodebase64 data")?;
             let encoding = coerce_to_string(&args[1], "textdecodebase64 encoding")?;
 
-            if encoding.to_lowercase() != "utf-8" {
-                return Err(format!(
-                    "textdecodebase64 only supports UTF-8, got {encoding}"
-                ));
-            }
+            let enc = encoding_rs::Encoding::for_label(encoding.as_bytes())
+                .ok_or_else(|| format!("unsupported encoding: {encoding}"))?;
 
             let bytes = BASE64_STANDARD
                 .decode(&s)
                 .map_err(|e| format!("invalid base64: {e}"))?;
-            let res = String::from_utf8(bytes)
-                .map_err(|e| format!("textdecodebase64 result is not valid UTF-8: {e}"))?;
+            let (res, had_errors) = if enc == encoding_rs::UTF_16LE || enc == encoding_rs::UTF_16BE
+            {
+                enc.decode_without_bom_handling(&bytes)
+            } else {
+                let (cow, _, had_err) = enc.decode(&bytes);
+                (cow, had_err)
+            };
+            if had_errors {
+                return Err(format!(
+                    "textdecodebase64 result is not valid for encoding {encoding}"
+                ));
+            }
 
-            Ok(Value::new(Type::String, ValueData::String(res)))
+            Ok(Value::new(
+                Type::String,
+                ValueData::String(res.into_owned()),
+            ))
         }),
         signature: None,
     }
@@ -135,13 +145,32 @@ fn textencodebase64_func() -> Function {
             let s = coerce_to_string(&args[0], "textencodebase64 data")?;
             let encoding = coerce_to_string(&args[1], "textencodebase64 encoding")?;
 
-            if encoding.to_lowercase() != "utf-8" {
-                return Err(format!(
-                    "textencodebase64 only supports UTF-8, got {encoding}"
-                ));
-            }
+            let enc = encoding_rs::Encoding::for_label(encoding.as_bytes())
+                .ok_or_else(|| format!("unsupported encoding: {encoding}"))?;
 
-            let res = BASE64_STANDARD.encode(s.as_bytes());
+            let encoded_bytes = if enc == encoding_rs::UTF_16LE {
+                let mut b = Vec::with_capacity(s.len() * 2);
+                for u in s.encode_utf16() {
+                    b.extend_from_slice(&u.to_le_bytes());
+                }
+                b
+            } else if enc == encoding_rs::UTF_16BE {
+                let mut b = Vec::with_capacity(s.len() * 2);
+                for u in s.encode_utf16() {
+                    b.extend_from_slice(&u.to_be_bytes());
+                }
+                b
+            } else {
+                let (bytes, _, had_errors) = enc.encode(&s);
+                if had_errors {
+                    return Err(format!(
+                        "character in input string cannot be represented in encoding {encoding}"
+                    ));
+                }
+                bytes.into_owned()
+            };
+
+            let res = BASE64_STANDARD.encode(&encoded_bytes);
 
             Ok(Value::new(Type::String, ValueData::String(res)))
         }),
@@ -709,6 +738,39 @@ mod tests {
                 .as_ref(),
             &ValueData::String("hello".to_string())
         );
+        // Multi-charset: UTF-16LE for "hello" -> "aABlAGwAbABvAA==" or similar
+        let utf16le_enc = eval_func("textencodebase64", &[str_val("hello"), str_val("UTF-16LE")])
+            .expect("expected value");
+        let utf16le_dec = eval_func("textdecodebase64", &[utf16le_enc, str_val("UTF-16LE")])
+            .expect("expected value");
+        assert_eq!(
+            utf16le_dec.data.as_ref(),
+            &ValueData::String("hello".to_string())
+        );
+
+        // Multi-charset: UTF-16BE
+        let be_encoded = eval_func("textencodebase64", &[str_val("hello"), str_val("UTF-16BE")])
+            .expect("expected value");
+        let be_decoded = eval_func("textdecodebase64", &[be_encoded, str_val("UTF-16BE")])
+            .expect("expected value");
+        assert_eq!(
+            be_decoded.data.as_ref(),
+            &ValueData::String("hello".to_string())
+        );
+
+        // Windows-1252 / ISO-8859-1
+        let w1252_enc = eval_func(
+            "textencodebase64",
+            &[str_val("Café"), str_val("windows-1252")],
+        )
+        .expect("expected value");
+        let w1252_dec = eval_func("textdecodebase64", &[w1252_enc, str_val("windows-1252")])
+            .expect("expected value");
+        assert_eq!(
+            w1252_dec.data.as_ref(),
+            &ValueData::String("Café".to_string())
+        );
+
         assert!(eval_func("textdecodebase64", &[]).is_err());
         assert!(
             eval_func("textdecodebase64", &[unk_val(), str_val("utf-8")])
@@ -722,9 +784,18 @@ mod tests {
         );
         assert!(eval_func("textdecodebase64", &[str_val("aGVsbG8="), non_str.clone()]).is_err());
         assert!(eval_func("textdecodebase64", &[non_str.clone(), str_val("utf-8")]).is_err());
-        assert!(eval_func("textdecodebase64", &[str_val("aGVsbG8="), str_val("ascii")]).is_err()); // bad encoding
+        assert!(
+            eval_func(
+                "textdecodebase64",
+                &[str_val("aGVsbG8="), str_val("unsupported-charset-xyz")]
+            )
+            .is_err()
+        ); // bad encoding
         assert!(eval_func("textdecodebase64", &[str_val("invalid!"), str_val("utf-8")]).is_err()); // decode error
-        assert!(eval_func("textdecodebase64", &[str_val("/w=="), str_val("utf-8")]).is_err()); // utf8 error
+        // Invalid byte for UTF-16LE (odd number of bytes)
+        assert!(eval_func("textdecodebase64", &[str_val("AQ=="), str_val("UTF-16LE")]).is_err());
+        // Invalid byte for UTF-16BE (odd number of bytes)
+        assert!(eval_func("textdecodebase64", &[str_val("AQ=="), str_val("UTF-16BE")]).is_err());
     }
 
     #[test]
@@ -737,6 +808,28 @@ mod tests {
                 .as_ref(),
             &ValueData::String("aGVsbG8=".to_string())
         );
+        // Multi-charset Shift_JIS test
+        let sjis_enc = eval_func(
+            "textencodebase64",
+            &[str_val("こんにちは"), str_val("Shift_JIS")],
+        )
+        .expect("shift_jis encode ok");
+        let sjis_dec = eval_func("textdecodebase64", &[sjis_enc, str_val("Shift_JIS")])
+            .expect("shift_jis decode ok");
+        assert_eq!(
+            sjis_dec.data.as_ref(),
+            &ValueData::String("こんにちは".to_string())
+        );
+
+        // Character cannot be represented in ISO-8859-1 (emoji)
+        assert!(
+            eval_func(
+                "textencodebase64",
+                &[str_val("hello 🚀"), str_val("ISO-8859-1")]
+            )
+            .is_err()
+        );
+
         assert!(eval_func("textencodebase64", &[]).is_err());
         assert!(
             eval_func("textencodebase64", &[unk_val(), str_val("utf-8")])
@@ -750,7 +843,13 @@ mod tests {
         );
         assert!(eval_func("textencodebase64", &[str_val("hello"), non_str.clone()]).is_err());
         assert!(eval_func("textencodebase64", &[non_str, str_val("utf-8")]).is_err());
-        assert!(eval_func("textencodebase64", &[str_val("hello"), str_val("ascii")]).is_err()); // bad encoding
+        assert!(
+            eval_func(
+                "textencodebase64",
+                &[str_val("hello"), str_val("unsupported-charset-xyz")]
+            )
+            .is_err()
+        ); // bad encoding
     }
 
     #[test]

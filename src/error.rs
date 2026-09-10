@@ -93,6 +93,46 @@ pub enum HclError {
     /// An error that occurs during cty JSON serialization or deserialization.
     #[display("cty JSON error: {_0}")]
     CtyJson(#[error(ignore)] String),
+    /// An error that occurs during Unicode processing or grapheme cluster segmentation.
+    #[display("Unicode error: {_0}")]
+    Unicode(#[error(ignore)] String),
+    /// An error that occurs when an unsupported character encoding is requested.
+    #[display("Unsupported encoding: {_0}")]
+    UnsupportedEncoding(#[error(ignore)] String),
+    /// An error that occurs when character encoding conversion fails.
+    #[display("Encoding conversion error from {from} to {to}: {reason}")]
+    EncodingConversion {
+        /// The source encoding.
+        from: String,
+        /// The target encoding.
+        to: String,
+        /// The reason for failure.
+        reason: String,
+    },
+    /// An error that occurs when a referenced CST node is not found.
+    #[display("CST node not found: {_0}")]
+    CstNodeNotFound(#[error(ignore)] String),
+    /// An error that occurs when attempting an invalid CST positioning or insertion.
+    #[display("CST invalid position: {_0}")]
+    CstInvalidPosition(#[error(ignore)] String),
+    /// An error that occurs when a requested capsule method does not exist.
+    #[display("Capsule method '{method}' not found on capsule type '{capsule_type}'")]
+    CapsuleMethodNotFound {
+        /// The capsule type name.
+        capsule_type: &'static str,
+        /// The method name.
+        method: String,
+    },
+    /// An error that occurs when a capsule method execution fails.
+    #[display("Capsule method '{method}' on capsule type '{capsule_type}' failed: {reason}")]
+    CapsuleMethodError {
+        /// The capsule type name.
+        capsule_type: &'static str,
+        /// The method name.
+        method: String,
+        /// The error reason.
+        reason: String,
+    },
     /// A linting diagnostic or rule violation.
     #[display("Lint warning: {_0}")]
     Lint(#[error(ignore)] String),
@@ -104,6 +144,62 @@ mod tests {
 
     #[test]
     fn test_hcl_error_display() {
+        let err_cm_nf = HclError::CapsuleMethodNotFound {
+            capsule_type: "matrix",
+            method: "invert".to_string(),
+        };
+        assert!(
+            err_cm_nf
+                .to_string()
+                .contains("Capsule method 'invert' not found on capsule type 'matrix'")
+        );
+
+        let err_cm_err = HclError::CapsuleMethodError {
+            capsule_type: "matrix",
+            method: "invert".to_string(),
+            reason: "singular matrix".to_string(),
+        };
+        assert!(
+            err_cm_err.to_string().contains(
+                "Capsule method 'invert' on capsule type 'matrix' failed: singular matrix"
+            )
+        );
+
+        let err_cst_nf = HclError::CstNodeNotFound("target_attr".to_string());
+        assert!(
+            err_cst_nf
+                .to_string()
+                .contains("CST node not found: target_attr")
+        );
+
+        let err_cst_pos = HclError::CstInvalidPosition("out of bounds".to_string());
+        assert!(
+            err_cst_pos
+                .to_string()
+                .contains("CST invalid position: out of bounds")
+        );
+
+        let err_enc = HclError::UnsupportedEncoding("ebcdic".to_string());
+        assert!(err_enc.to_string().contains("Unsupported encoding: ebcdic"));
+
+        let err_conv = HclError::EncodingConversion {
+            from: "UTF-8".to_string(),
+            to: "ASCII".to_string(),
+            reason: "unrepresentable character".to_string(),
+        };
+        assert!(
+            err_conv.to_string().contains(
+                "Encoding conversion error from UTF-8 to ASCII: unrepresentable character"
+            )
+        );
+
+        let err_u = HclError::Unicode("invalid grapheme".to_string());
+        assert!(
+            err_u
+                .to_string()
+                .contains("Unicode error: invalid grapheme")
+        );
+
         let err = HclError::Lex("invalid character".to_string());
         assert!(err.to_string().contains("Lexical error: invalid character"));
 

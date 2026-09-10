@@ -53,6 +53,115 @@ impl std::fmt::Debug for ValueData {
     }
 }
 
+/// Trait for user-defined, strongly-typed marks that can be attached to a [`Value`].
+pub trait AnyValueMark: std::any::Any + Send + Sync + std::fmt::Debug + std::fmt::Display {
+    /// Returns the mark as a trait object with `'static` lifetime for downcasting.
+    fn as_any(&self) -> &dyn std::any::Any;
+    /// Compares equality with another `AnyValueMark`.
+    fn dyn_eq(&self, other: &dyn AnyValueMark) -> bool;
+    /// Feeds this mark into the given hasher.
+    fn dyn_hash(&self, state: &mut dyn std::hash::Hasher);
+    /// Returns the type name or identifier of this mark.
+    fn mark_name(&self) -> &'static str;
+}
+
+/// An open-ended, type-erased container holding an arbitrary user-defined mark.
+#[derive(Clone)]
+pub struct TypedMark(pub Arc<dyn AnyValueMark>);
+
+impl TypedMark {
+    /// Creates a new `TypedMark` wrapping the given typed mark.
+    ///
+    /// # Arguments
+    /// * `mark` - The mark implementing `AnyValueMark`.
+    #[must_use]
+    pub fn new<M: AnyValueMark + Clone + 'static>(mark: M) -> Self {
+        Self(Arc::new(mark))
+    }
+}
+
+impl std::fmt::Debug for TypedMark {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TypedMark({:?})", self.0)
+    }
+}
+
+impl std::fmt::Display for TypedMark {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl PartialEq for TypedMark {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.dyn_eq(&*other.0)
+    }
+}
+
+impl Eq for TypedMark {}
+
+impl std::hash::Hash for TypedMark {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.as_any().type_id().hash(state);
+        self.0.dyn_hash(state);
+    }
+}
+
+impl PartialOrd for TypedMark {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TypedMark {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.0.dyn_eq(&*other.0) {
+            return std::cmp::Ordering::Equal;
+        }
+        let type_id_a = self.0.as_any().type_id();
+        let type_id_b = other.0.as_any().type_id();
+        type_id_a.cmp(&type_id_b).then_with(|| {
+            self.0.mark_name().cmp(other.0.mark_name()).then_with(|| {
+                let s_a = self.0.to_string();
+                let s_b = other.0.to_string();
+                s_a.cmp(&s_b).then_with(|| {
+                    (Arc::as_ptr(&self.0) as *const () as usize)
+                        .cmp(&(Arc::as_ptr(&other.0) as *const () as usize))
+                })
+            })
+        })
+    }
+}
+
+impl<T> AnyValueMark for T
+where
+    T: std::any::Any
+        + Send
+        + Sync
+        + std::fmt::Debug
+        + std::fmt::Display
+        + Eq
+        + std::hash::Hash
+        + 'static,
+{
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn dyn_eq(&self, other: &dyn AnyValueMark) -> bool {
+        if let Some(other_concrete) = other.as_any().downcast_ref::<T>() {
+            self == other_concrete
+        } else {
+            false
+        }
+    }
+    fn dyn_hash(&self, mut state: &mut dyn std::hash::Hasher) {
+        std::hash::Hash::hash(self, &mut state);
+    }
+    fn mark_name(&self) -> &'static str {
+        std::any::type_name::<T>()
+    }
+}
+
 /// A mark associated with a [`Value`].
 ///
 /// Marks allow tracking metadata such as sensitivity through expression evaluation.
@@ -62,6 +171,8 @@ pub enum ValueMark {
     Sensitive,
     /// A custom mark with an identifying string.
     Custom(String),
+    /// An open-ended, type-erased custom mark.
+    Typed(TypedMark),
 }
 
 impl ValueMark {
@@ -73,6 +184,15 @@ impl ValueMark {
     pub fn custom(name: impl Into<String>) -> Self {
         Self::Custom(name.into())
     }
+
+    /// Creates a new typed mark wrapping an arbitrary user-defined type.
+    ///
+    /// # Arguments
+    /// * `mark` - The mark implementing `AnyValueMark`.
+    #[must_use]
+    pub fn typed<M: AnyValueMark + Clone + 'static>(mark: M) -> Self {
+        Self::Typed(TypedMark::new(mark))
+    }
 }
 
 impl std::fmt::Display for ValueMark {
@@ -80,6 +200,7 @@ impl std::fmt::Display for ValueMark {
         match self {
             Self::Sensitive => write!(f, "sensitive"),
             Self::Custom(s) => write!(f, "{s}"),
+            Self::Typed(t) => write!(f, "{t}"),
         }
     }
 }
@@ -316,6 +437,77 @@ impl Value {
     #[must_use]
     pub fn has_mark(&self, mark: &ValueMark) -> bool {
         self.marks.contains(mark)
+    }
+
+    /// Attaches an arbitrary strongly-typed mark to this value.
+    ///
+    /// # Arguments
+    /// * `mark` - The strongly typed mark to attach.
+    #[must_use]
+    pub fn mark_typed<M: AnyValueMark + Clone + 'static>(&self, mark: M) -> Self {
+        let mut new_val = self.clone();
+        new_val.marks.insert(ValueMark::Typed(TypedMark::new(mark)));
+        new_val
+    }
+
+    /// Retrieves a reference to a strongly-typed mark attached to this value if present.
+    #[must_use]
+    pub fn get_mark<M: AnyValueMark + 'static>(&self) -> Option<&M> {
+        for m in &self.marks {
+            if let ValueMark::Typed(tm) = m {
+                if let Some(concrete) = tm.0.as_any().downcast_ref::<M>() {
+                    return Some(concrete);
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns `true` if this value has a strongly-typed mark of type `M`.
+    #[must_use]
+    pub fn has_mark_type<M: AnyValueMark + 'static>(&self) -> bool {
+        self.get_mark::<M>().is_some()
+    }
+
+    /// Calls a registered method on this capsule value.
+    ///
+    /// If any argument is unknown, returns an unknown [`Value`].
+    /// Marks present on this value are propagated to the result.
+    ///
+    /// # Arguments
+    /// * `name` - The method name.
+    /// * `args` - The arguments passed to the method.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::HclError::Capsule`] if this value is not a capsule,
+    /// [`crate::error::HclError::CapsuleMethodNotFound`] if the method does not exist,
+    /// or the error returned by the method.
+    pub fn call_method(&self, name: &str, args: &[Value]) -> Result<Value, crate::error::HclError> {
+        let (any, ops) = match (self.as_capsule_any(), self.ty().capsule_ops()) {
+            (Some(any), Some(ops)) => (any, ops),
+            _ => {
+                return Err(crate::error::HclError::Capsule(format!(
+                    "cannot call method '{name}' on non-capsule type {}",
+                    self.ty()
+                )));
+            }
+        };
+
+        if args.iter().any(Value::is_unknown) {
+            return Ok(Value::unknown(Type::Dynamic));
+        }
+
+        let method =
+            ops.methods
+                .get(name)
+                .ok_or_else(|| crate::error::HclError::CapsuleMethodNotFound {
+                    capsule_type: ops.type_name,
+                    method: name.to_string(),
+                })?;
+
+        let mut res = (method)(any, args)?;
+        res.marks.extend(self.marks.clone());
+        Ok(res)
     }
 
     /// Checks if this value or any nested element is marked as [`ValueMark::Sensitive`].
@@ -3201,5 +3393,255 @@ mod tests {
                 .transform(&mut transformer)
                 .is_err()
         );
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    struct EphemeralMark {
+        generation: u32,
+    }
+
+    impl std::fmt::Display for EphemeralMark {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "ephemeral:{}", self.generation)
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    struct TaintMark;
+
+    impl std::fmt::Display for TaintMark {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "tainted")
+        }
+    }
+
+    #[test]
+    fn test_typed_value_marks() {
+        let val = Value::new(Type::String, ValueData::String("secure_data".into()));
+        assert!(!val.has_mark_type::<EphemeralMark>());
+        assert!(val.get_mark::<EphemeralMark>().is_none());
+
+        let marked_eph = val.mark_typed(EphemeralMark { generation: 42 });
+        assert!(marked_eph.has_mark_type::<EphemeralMark>());
+        assert_eq!(
+            marked_eph.get_mark::<EphemeralMark>(),
+            Some(&EphemeralMark { generation: 42 })
+        );
+        assert!(!marked_eph.has_mark_type::<TaintMark>());
+        assert!(marked_eph.get_mark::<TaintMark>().is_none());
+
+        // ValueMark::typed constructor and display
+        let custom_tm = ValueMark::typed(TaintMark);
+        assert_eq!(format!("{custom_tm}"), "tainted");
+
+        let marked_both = marked_eph.mark(custom_tm.clone());
+        assert!(marked_both.has_mark_type::<EphemeralMark>());
+        assert!(marked_both.has_mark_type::<TaintMark>());
+        assert!(marked_both.has_mark(&custom_tm));
+
+        let sensitive_val = val
+            .mark(ValueMark::Sensitive)
+            .mark(ValueMark::custom("tag"));
+        assert!(sensitive_val.get_mark::<EphemeralMark>().is_none());
+        assert!(!sensitive_val.has_mark_type::<EphemeralMark>());
+
+        // TypedMark equality, hashing, display, debug, ord
+        let tm1 = TypedMark::new(EphemeralMark { generation: 1 });
+        let tm2 = TypedMark::new(EphemeralMark { generation: 1 });
+        let tm3 = TypedMark::new(EphemeralMark { generation: 2 });
+        let tm_other = TypedMark::new(TaintMark);
+
+        assert_eq!(tm1, tm2);
+        assert_ne!(tm1, tm3);
+        assert_ne!(tm1, tm_other);
+        assert_eq!(format!("{tm1}"), "ephemeral:1");
+        assert!(format!("{tm1:?}").contains("EphemeralMark"));
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        tm1.hash(&mut h1);
+        tm2.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+
+        let mut h_other = DefaultHasher::new();
+        tm_other.hash(&mut h_other);
+        assert_ne!(h_other.finish(), 0);
+
+        // AnyValueMark dynamic dispatch coverage
+        let any_mark: Box<dyn AnyValueMark> = Box::new(TaintMark);
+        let mut h_any = DefaultHasher::new();
+        any_mark.dyn_hash(&mut h_any);
+        assert_eq!(any_mark.mark_name(), std::any::type_name::<TaintMark>());
+        assert!(any_mark.dyn_eq(&TaintMark));
+        assert!(!any_mark.dyn_eq(&EphemeralMark { generation: 1 }));
+
+        // Fallback pointer ordering when Display strings match but Eq is false
+        #[derive(Clone, Debug)]
+        struct SameDisplayDiffEq {
+            name: String,
+            id: u32,
+        }
+        impl PartialEq for SameDisplayDiffEq {
+            fn eq(&self, other: &Self) -> bool {
+                self.id == other.id
+            }
+        }
+        impl Eq for SameDisplayDiffEq {}
+        impl std::hash::Hash for SameDisplayDiffEq {
+            fn hash<H: Hasher>(&self, state: &mut H) {
+                self.id.hash(state);
+            }
+        }
+        impl std::fmt::Display for SameDisplayDiffEq {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.name)
+            }
+        }
+
+        let m1 = TypedMark::new(SameDisplayDiffEq {
+            name: "same".into(),
+            id: 1,
+        });
+        let m2 = TypedMark::new(SameDisplayDiffEq {
+            name: "same".into(),
+            id: 2,
+        });
+        assert_ne!(m1, m2);
+        assert_ne!(m1.cmp(&m2), std::cmp::Ordering::Equal);
+
+        let mut h_m1 = DefaultHasher::new();
+        m1.hash(&mut h_m1);
+        let mut h_m2 = DefaultHasher::new();
+        m2.hash(&mut h_m2);
+        assert_ne!(h_m1.finish(), h_m2.finish());
+
+        // Ord and PartialOrd ordering
+        assert_eq!(tm1.partial_cmp(&tm2), Some(std::cmp::Ordering::Equal));
+        assert_eq!(tm1.cmp(&tm3), std::cmp::Ordering::Less);
+        assert!(tm1 < tm3);
+        assert!(tm1.cmp(&tm2).is_eq());
+
+        // Unmarking
+        let (unmarked, removed) = marked_both.unmark();
+        assert!(!unmarked.has_mark_type::<EphemeralMark>());
+        assert!(!unmarked.has_mark_type::<TaintMark>());
+        assert_eq!(removed.len(), 2);
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Counter(i32);
+
+    #[test]
+    fn test_capsule_methods() {
+        let eq_fn: crate::types::ty::CapsuleEqualsFn = std::sync::Arc::new(|a, b| {
+            let c1 = a.downcast_ref::<Counter>().expect("counter");
+            let c2 = b.downcast_ref::<Counter>().expect("counter");
+            c1 == c2
+        });
+        let hash_fn: crate::types::ty::CapsuleHashFn = std::sync::Arc::new(|a| {
+            let c = a.downcast_ref::<Counter>().expect("counter");
+            c.0 as u64
+        });
+
+        let mut ops = crate::types::ty::CapsuleOps::new("Counter", eq_fn, hash_fn);
+        let inc_method: crate::types::ty::CapsuleMethodFn = std::sync::Arc::new(|any, args| {
+            let c = any
+                .downcast_ref::<Counter>()
+                .ok_or_else(|| crate::error::HclError::Capsule("invalid counter".into()))?;
+            let delta = if args.is_empty() {
+                1
+            } else {
+                match &*args[0].data {
+                    ValueData::Number(n) => {
+                        use bigdecimal::num_traits::ToPrimitive;
+                        n.0.to_i32()
+                            .ok_or_else(|| crate::error::HclError::Capsule("overflow".into()))?
+                    }
+                    _ => return Err(crate::error::HclError::Capsule("expected number".into())),
+                }
+            };
+            Ok(Value::new(
+                Type::Number,
+                ValueData::Number((c.0 + delta).into()),
+            ))
+        });
+        ops = ops.with_method("increment", inc_method);
+
+        let c1 = Counter(10);
+        let c2 = Counter(10);
+        let c3 = Counter(20);
+        assert!((ops.equals)(&c1, &c2));
+        assert!(!(ops.equals)(&c1, &c3));
+        assert_eq!((ops.hash)(&c1), (ops.hash)(&c2));
+
+        let ops_arc = std::sync::Arc::new(ops);
+        let cap_ty = Type::capsule_with_ops::<Counter>("Counter", ops_arc.clone());
+        let cap_val = Value::new(cap_ty, ValueData::Capsule(std::sync::Arc::new(Counter(10))));
+
+        // 1. Valid method invocation
+        let delta_val = Value::new(Type::Number, ValueData::Number(5.into()));
+        let res = cap_val
+            .call_method("increment", &[delta_val])
+            .expect("method call ok");
+        assert_eq!(res.to_string(), "15");
+
+        // 2. Unknown argument propagation
+        let unk_arg = Value::unknown(Type::Number);
+        let unk_res = cap_val
+            .call_method("increment", &[unk_arg])
+            .expect("unknown propagation ok");
+        assert!(unk_res.is_unknown());
+
+        // 3. Mark propagation
+        let marked_cap = cap_val.mark(ValueMark::Sensitive);
+        let marked_res = marked_cap
+            .call_method("increment", &[])
+            .expect("call with default arg ok");
+        assert!(marked_res.is_sensitive());
+        assert_eq!(marked_res.to_string(), "(sensitive value)");
+        assert_eq!(marked_res.unmark().0.to_string(), "11");
+
+        // 4. Method not found error
+        let err = cap_val
+            .call_method("decrement", &[])
+            .expect_err("should not find decrement");
+        assert_eq!(
+            err,
+            crate::error::HclError::CapsuleMethodNotFound {
+                capsule_type: "Counter",
+                method: "decrement".to_string(),
+            }
+        );
+
+        // 5. Calling method on non-capsule type
+        let str_val = Value::new(Type::String, ValueData::String("text".into()));
+        assert!(str_val.call_method("trim", &[]).is_err());
+
+        // 6. Calling method on capsule without ops
+        let no_ops_ty = Type::capsule::<Counter>("Counter");
+        let no_ops_val = Value::new(
+            no_ops_ty,
+            ValueData::Capsule(std::sync::Arc::new(Counter(10))),
+        );
+        assert!(no_ops_val.call_method("increment", &[]).is_err());
+
+        // 7. Method execution error paths
+        let str_arg = Value::new(Type::String, ValueData::String("not_a_num".into()));
+        let err_bad_arg = cap_val.call_method("increment", &[str_arg]);
+        assert!(err_bad_arg.is_err());
+
+        let huge_num = Value::new(
+            Type::Number,
+            ValueData::Number(
+                crate::number::Number::from(i64::MAX) * crate::number::Number::from(i64::MAX),
+            ),
+        );
+        let err_overflow = cap_val.call_method("increment", &[huge_num]);
+        assert!(err_overflow.is_err());
+
+        let bad_any = "not a counter";
+        assert!((ops_arc.methods["increment"])(&bad_any, &[]).is_err());
     }
 }

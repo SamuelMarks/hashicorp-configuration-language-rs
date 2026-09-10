@@ -7,8 +7,8 @@ use crate::types::{Type, Value, ValueData};
 use bigdecimal::BigDecimal;
 use bigdecimal::num_traits::ToPrimitive;
 use std::collections::{BTreeMap, BTreeSet};
-
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[must_use]
 /// Get all collection functions
@@ -626,7 +626,8 @@ fn length_func() -> Function {
             }
 
             let len = match &*args[0].data {
-                ValueData::String(s) => s.chars().count(), // Length of string is number of chars (unicode)
+                // Extended grapheme clusters count (Unicode UAX #29 parity with official go-cty)
+                ValueData::String(s) => s.graphemes(true).count(),
                 ValueData::Array(arr) => arr.len(),
                 ValueData::Set(set) => set.len(),
                 ValueData::Object(obj) => obj.len(),

@@ -1,6 +1,7 @@
 //! Type definitions matching `HashiCorp`'s `cty`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use crate::error::HclError;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Represents an HCL Type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -97,6 +98,16 @@ pub type CapsuleAttrGetFn = std::sync::Arc<
     dyn Fn(&dyn std::any::Any, &str) -> Result<crate::types::val::Value, String> + Send + Sync,
 >;
 
+/// Method execution closure for capsule values: `(capsule_any, args) -> Result<Value, HclError>`.
+pub type CapsuleMethodFn = std::sync::Arc<
+    dyn Fn(
+            &dyn std::any::Any,
+            &[crate::types::val::Value],
+        ) -> Result<crate::types::val::Value, HclError>
+        + Send
+        + Sync,
+>;
+
 /// Compares two optional Arc references by pointer equality.
 ///
 /// # Arguments
@@ -144,6 +155,8 @@ pub struct CapsuleOps {
     pub index_get: Option<CapsuleIndexGetFn>,
     /// Optional attribute retrieval operation hook (`capsule.attr`).
     pub attr_get: Option<CapsuleAttrGetFn>,
+    /// Named member method functions callable on capsule values (`capsule.method(...)`).
+    pub methods: HashMap<String, CapsuleMethodFn>,
 }
 
 impl CapsuleOps {
@@ -173,6 +186,7 @@ impl CapsuleOps {
             cmp: None,
             index_get: None,
             attr_get: None,
+            methods: HashMap::new(),
         }
     }
 
@@ -318,6 +332,20 @@ impl CapsuleOps {
         self.attr_get = Some(op);
         self
     }
+
+    /// Registers a named method on the capsule type (`capsule.method(...)`).
+    ///
+    /// # Arguments
+    /// * `name` - The method name.
+    /// * `method` - Method execution closure.
+    ///
+    /// # Returns
+    /// The updated `CapsuleOps` instance.
+    #[must_use]
+    pub fn with_method(mut self, name: impl Into<String>, method: CapsuleMethodFn) -> Self {
+        self.methods.insert(name.into(), method);
+        self
+    }
 }
 
 impl std::fmt::Debug for CapsuleOps {
@@ -347,6 +375,13 @@ impl PartialEq for CapsuleOps {
             && opt_arc_ptr_eq(self.cmp.as_ref(), other.cmp.as_ref())
             && opt_arc_ptr_eq(self.index_get.as_ref(), other.index_get.as_ref())
             && opt_arc_ptr_eq(self.attr_get.as_ref(), other.attr_get.as_ref())
+            && self.methods.len() == other.methods.len()
+            && self.methods.iter().all(|(k, v)| {
+                other
+                    .methods
+                    .get(k)
+                    .is_some_and(|ov| std::sync::Arc::ptr_eq(v, ov))
+            })
     }
 }
 
@@ -832,6 +867,9 @@ mod tests {
         assert!(diff_conv_to(&(), &Type::Dynamic).is_none());
         let diff_conv_from: CapsuleConversionFromFn = std::sync::Arc::new(|_| None);
         assert!(diff_conv_from(&crate::types::val::Value::null(Type::Dynamic)).is_none());
+        let diff_method: CapsuleMethodFn =
+            std::sync::Arc::new(|_, _| Ok(crate::types::val::Value::null(Type::Dynamic)));
+        assert!(diff_method(&(), &[]).is_ok());
 
         let ops_diff_add = ops_full.clone().with_add(diff_bin.clone());
         assert_ne!(ops_full, ops_diff_add);
@@ -855,6 +893,20 @@ mod tests {
         assert_ne!(ops_full, ops_diff_conv_to);
         let ops_diff_conv_from = ops_full.clone().with_conversion_from(diff_conv_from);
         assert_ne!(ops_full, ops_diff_conv_from);
+        let ops_diff_method = ops_full.clone().with_method("test_m", diff_method.clone());
+        assert_ne!(ops_full, ops_diff_method);
+
+        // Debug formatting
+        assert!(format!("{ops_full:?}").contains("CapsuleOps"));
+
+        // Compare ops with equal methods
+        let ops_same_method = ops_full.clone().with_method("m1", diff_method.clone());
+        let ops_same_method_2 = ops_full.clone().with_method("m1", diff_method.clone());
+        assert_eq!(ops_same_method, ops_same_method_2);
+
+        // Compare ops with different method names
+        let ops_diff_mname = ops_full.clone().with_method("m2", diff_method);
+        assert_ne!(ops_same_method, ops_diff_mname);
 
         let cap_with_ops =
             Type::capsule_with_ops::<i32>("cap_ops", std::sync::Arc::new(ops_full.clone()));

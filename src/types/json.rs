@@ -195,6 +195,32 @@ pub fn encode_typed_value(val: &Value) -> Result<JsonValue, HclError> {
     }))
 }
 
+/// Encodes an HCL [`Value`] into a JSON value, preserving sensitivity and custom marks in a `@cty.marks` envelope.
+///
+/// If the value has no marks, returns the plain JSON value representation.
+///
+/// # Arguments
+/// * `val` - The value to encode.
+///
+/// # Errors
+/// Returns [`HclError::CtyJson`] if serialization fails.
+pub fn encode_value_to_json_with_marks(val: &Value) -> Result<JsonValue, HclError> {
+    let raw = encode_value_to_json(val)?;
+    if val.marks.is_empty() {
+        Ok(raw)
+    } else {
+        let marks: Vec<JsonValue> = val
+            .marks
+            .iter()
+            .map(|m| JsonValue::String(m.to_string()))
+            .collect();
+        let mut map = Map::new();
+        map.insert("@cty.marks".to_string(), JsonValue::Array(marks));
+        map.insert("value".to_string(), raw);
+        Ok(JsonValue::Object(map))
+    }
+}
+
 /// Decodes an HCL [`Value`] from JSON conforming to the given [`Type`].
 ///
 /// # Arguments
@@ -204,10 +230,29 @@ pub fn encode_typed_value(val: &Value) -> Result<JsonValue, HclError> {
 /// # Errors
 /// Returns [`HclError::CtyJson`] if the JSON data cannot be coerced to the expected type.
 pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclError> {
-    if let Some(obj) = val.as_object()
-        && obj.contains_key("__unknown")
-    {
-        return Ok(Value::unknown(ty.clone()));
+    if let Some(obj) = val.as_object() {
+        if obj.contains_key("__unknown") {
+            return Ok(Value::unknown(ty.clone()));
+        }
+        if let (Some(marks_val), Some(inner_val)) = (obj.get("@cty.marks"), obj.get("value")) {
+            let mut decoded = decode_value_from_json(inner_val, ty)?;
+            if let Some(arr) = marks_val.as_array() {
+                for m in arr {
+                    if let Some(s) = m.as_str() {
+                        if s == "sensitive" {
+                            decoded
+                                .marks
+                                .insert(crate::types::val::ValueMark::Sensitive);
+                        } else {
+                            decoded
+                                .marks
+                                .insert(crate::types::val::ValueMark::custom(s));
+                        }
+                    }
+                }
+            }
+            return Ok(decoded);
+        }
     }
 
     match (val, ty) {
@@ -716,5 +761,86 @@ mod tests {
         assert!(decode_typed_value(&json!({"value": "something"})).is_err());
         assert!(decode_typed_value(&json!({"type": "string"})).is_err());
         assert!(decode_typed_value(&json!({"type": ["list", "bad"], "value": []})).is_err());
+    }
+
+    #[test]
+    fn test_cty_json_marked_values_roundtrip() {
+        use crate::types::val::ValueMark;
+
+        // Plain value
+        let val_plain = Value::new(Type::String, ValueData::String("unmarked".into()));
+        let json_plain = encode_value_to_json_with_marks(&val_plain).expect("encode ok");
+        assert_eq!(json_plain, json!("unmarked"));
+
+        // Sensitive value
+        let val_sens = val_plain.mark(ValueMark::Sensitive);
+        let json_sens = encode_value_to_json_with_marks(&val_sens).expect("encode ok");
+        assert_eq!(
+            json_sens,
+            json!({
+                "@cty.marks": ["sensitive"],
+                "value": "unmarked"
+            })
+        );
+
+        let dec_sens = decode_value_from_json(&json_sens, &Type::String).expect("decode ok");
+        assert_eq!(
+            dec_sens.data.as_ref(),
+            &ValueData::String("unmarked".into())
+        );
+        assert!(dec_sens.has_mark(&ValueMark::Sensitive));
+
+        // Custom marked value
+        let val_custom = val_plain.mark(ValueMark::custom("encrypted"));
+        let json_custom = encode_value_to_json_with_marks(&val_custom).expect("encode ok");
+        let dec_custom = decode_value_from_json(&json_custom, &Type::String).expect("decode ok");
+        assert!(dec_custom.has_mark(&ValueMark::custom("encrypted")));
+
+        // Envelope with non-array @cty.marks
+        let json_invalid_marks = json!({
+            "@cty.marks": "not_an_array",
+            "value": "unmarked"
+        });
+        let dec_invalid_marks =
+            decode_value_from_json(&json_invalid_marks, &Type::String).expect("decode ok");
+        assert_eq!(
+            dec_invalid_marks.data.as_ref(),
+            &ValueData::String("unmarked".into())
+        );
+        assert!(dec_invalid_marks.marks.is_empty());
+
+        // Envelope with array containing non-string items and empty array
+        let json_mixed_marks = json!({
+            "@cty.marks": [123, null, true, "sensitive", "custom_tag"],
+            "value": "unmarked"
+        });
+        let dec_mixed_marks =
+            decode_value_from_json(&json_mixed_marks, &Type::String).expect("decode ok");
+        assert!(dec_mixed_marks.has_mark(&ValueMark::Sensitive));
+        assert!(dec_mixed_marks.has_mark(&ValueMark::custom("custom_tag")));
+
+        let json_empty_marks = json!({
+            "@cty.marks": [],
+            "value": "unmarked"
+        });
+        let dec_empty_marks =
+            decode_value_from_json(&json_empty_marks, &Type::String).expect("decode ok");
+        assert!(dec_empty_marks.marks.is_empty());
+
+        // Inner value decoding failure inside marked envelope
+        let json_err_inner = json!({
+            "@cty.marks": ["sensitive"],
+            "value": "not_a_boolean"
+        });
+        assert!(decode_value_from_json(&json_err_inner, &Type::Bool).is_err());
+
+        // Encoding failure inside encode_value_to_json_with_marks
+        let eq_fn: crate::types::ty::CapsuleEqualsFn = std::sync::Arc::new(|_, _| true);
+        let hash_fn: crate::types::ty::CapsuleHashFn = std::sync::Arc::new(|_| 0);
+        let ops = crate::types::ty::CapsuleOps::new("NonJsonCapsule", eq_fn, hash_fn);
+        let cap_ty = Type::capsule_with_ops::<()>("NonJsonCapsule", std::sync::Arc::new(ops));
+        let cap_val = Value::new(cap_ty, ValueData::Capsule(std::sync::Arc::new(())))
+            .mark(ValueMark::Sensitive);
+        assert!(encode_value_to_json_with_marks(&cap_val).is_err());
     }
 }

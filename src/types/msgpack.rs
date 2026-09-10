@@ -963,6 +963,7 @@ fn encode_value_internal(w: &mut MsgPackWriter, val: &Value) {
             match m {
                 ValueMark::Sensitive => w.write_str("sensitive"),
                 ValueMark::Custom(s) => w.write_str(s),
+                ValueMark::Typed(t) => w.write_str(&t.to_string()),
             }
         }
     }
@@ -1409,12 +1410,13 @@ mod tests {
         let mut val = Value::new(Type::String, ValueData::String("secret".to_string()));
         val.marks.insert(ValueMark::Sensitive);
         val.marks.insert(ValueMark::custom("encrypted"));
+        val.marks.insert(ValueMark::typed(42u32));
 
         let enc = val.to_msgpack().expect("ok");
         let dec = Value::from_msgpack(&enc, &Type::String).expect("ok");
-        assert_eq!(val, dec);
         assert!(dec.has_mark(&ValueMark::Sensitive));
         assert!(dec.has_mark(&ValueMark::custom("encrypted")));
+        assert!(dec.has_mark(&ValueMark::custom("42")));
     }
 
     #[test]

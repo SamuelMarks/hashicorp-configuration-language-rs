@@ -5,6 +5,7 @@ use crate::types::{Type, Value, ValueData};
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Return all string standard library functions.
 #[must_use]
@@ -427,7 +428,7 @@ fn strrev_func() -> Function {
             let s = coerce_to_string(&args[0], "strrev")?;
             Ok(Value::new(
                 Type::String,
-                ValueData::String(s.chars().rev().collect()),
+                ValueData::String(s.graphemes(true).rev().collect()),
             ))
         }),
         signature: None,
@@ -457,9 +458,9 @@ fn infer_substr_refinement(str_val: &Value, off_val: &Value, len_val: &Value) ->
     let len_u = len as usize;
     let r = str_val.refinement()?;
     if let Some(ref p) = r.string_prefix {
-        let p_chars: Vec<char> = p.chars().collect();
-        if off_u + len_u <= p_chars.len() {
-            let res: String = p_chars[off_u..off_u + len_u].iter().collect();
+        let p_graphemes: Vec<&str> = p.graphemes(true).collect();
+        if off_u + len_u <= p_graphemes.len() {
+            let res: String = p_graphemes[off_u..off_u + len_u].concat();
             return Some(Value::new(Type::String, ValueData::String(res)));
         }
     }
@@ -521,26 +522,26 @@ fn substr_func() -> Function {
                 _ => return Err("substr length must be number".to_string()),
             };
 
-            let chars: Vec<char> = s.chars().collect();
-            let char_len = chars.len() as isize;
+            let graphemes: Vec<&str> = s.graphemes(true).collect();
+            let grapheme_len = graphemes.len() as isize;
 
             if offset < 0 {
-                offset += char_len;
+                offset += grapheme_len;
             }
             if offset < 0 {
                 offset = 0;
             }
-            if offset > char_len {
-                offset = char_len;
+            if offset > grapheme_len {
+                offset = grapheme_len;
             }
 
             let end = if length < 0 {
-                char_len
+                grapheme_len
             } else {
-                std::cmp::min(offset + length, char_len)
+                std::cmp::min(offset + length, grapheme_len)
             };
 
-            let res_str: String = chars[offset as usize..end as usize].iter().collect();
+            let res_str: String = graphemes[offset as usize..end as usize].concat();
             Ok(Value::new(Type::String, ValueData::String(res_str)))
         }),
         signature: None,

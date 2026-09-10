@@ -364,14 +364,7 @@ impl<'a> Parser<'a> {
 
         let mut span = Span::new(0, 0, 0, 0, 0, 0);
         if let (Some(first), Some(last)) = (first_span, last_span) {
-            span = Span::new(
-                first.start_byte,
-                last.end_byte,
-                first.start_line,
-                first.start_col,
-                last.end_line,
-                last.end_col,
-            );
+            span = first.merge(&last);
         }
 
         Body {
@@ -426,14 +419,7 @@ impl<'a> Parser<'a> {
         Some(Attribute {
             name: ident.text,
             expr,
-            span: Span::new(
-                ident.span.start_byte,
-                end_span.end_byte,
-                ident.span.start_line,
-                ident.span.start_col,
-                end_span.end_line,
-                end_span.end_col,
-            ),
+            span: ident.span.merge(&end_span),
             name_span: ident.span,
             equals_span: assign_tok.span,
             leading_comments,
@@ -628,14 +614,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let span = Span::new(
-            ident.span.start_byte,
-            close_brace_span.end_byte,
-            ident.span.start_line,
-            ident.span.start_col,
-            close_brace_span.end_line,
-            close_brace_span.end_col,
-        );
+        let span = ident.span.merge(&close_brace_span);
 
         Some(
             FunctionBlock::new(name, params, return_type, result_expr, span)
@@ -712,14 +691,7 @@ impl<'a> Parser<'a> {
             open_brace.span
         };
 
-        let span = Span::new(
-            ident.span.start_byte,
-            close_brace_span.end_byte,
-            ident.span.start_line,
-            ident.span.start_col,
-            close_brace_span.end_line,
-            close_brace_span.end_col,
-        );
+        let span = ident.span.merge(&close_brace_span);
 
         let Some(for_each_attr) = inner_body.attributes.get("for_each") else {
             #[rustfmt::skip]
@@ -802,14 +774,7 @@ impl<'a> Parser<'a> {
             open_brace.span
         };
 
-        let span = Span::new(
-            ident.span.start_byte,
-            close_brace_span.end_byte,
-            ident.span.start_line,
-            ident.span.start_col,
-            close_brace_span.end_line,
-            close_brace_span.end_col,
-        );
+        let span = ident.span.merge(&close_brace_span);
 
         let Some(condition_attr) = inner_body.attributes.get("condition") else {
             #[rustfmt::skip]
@@ -951,14 +916,7 @@ impl<'a> Parser<'a> {
             block_type: ident.text,
             labels,
             body,
-            span: Span::new(
-                ident.span.start_byte,
-                close_brace_span.end_byte,
-                ident.span.start_line,
-                ident.span.start_col,
-                close_brace_span.end_line,
-                close_brace_span.end_col,
-            ),
+            span: ident.span.merge(&close_brace_span),
             type_span: ident.span,
             label_spans,
             open_brace_span: open_brace.span,

@@ -74,31 +74,34 @@ impl ReplSession {
     fn handle_meta_command(&mut self, cmd: &str) -> Result<Option<String>, String> {
         if cmd == ":help" {
             return Ok(Some(
-                "Available REPL commands:
-  :set <var> = <expr>  Bind a variable
-  :type <expr>         Show the inferred type of an expression
-  :functions           List all built-in standard library functions
-  :load <file.hcl>     Load an HCL file into the session
-  :clear               Reset all variable bindings
-  :help                Show this help message
-  :quit | :exit        Exit the REPL"
+                "Available REPL commands:\n  :set <var> = <expr>  Bind a variable\n  :vars                List all bound variables\n  :type <expr>         Show the inferred type of an expression\n  :funcs | :functions  List all built-in standard library functions\n  :load <file.hcl>     Load an HCL file into the session\n  :reset | :clear      Reset all variable bindings\n  :help                Show this help message\n  :quit | :exit        Exit the REPL"
                     .to_string(),
             ));
         }
 
-        if cmd == ":clear" {
+        if cmd == ":clear" || cmd == ":reset" {
             self.variables.clear();
             return Ok(Some("Session context reset.".to_string()));
         }
 
-        if cmd == ":functions" {
+        if cmd == ":vars" {
+            if self.variables.is_empty() {
+                return Ok(Some("No variables defined.".to_string()));
+            }
+            let mut keys: Vec<&String> = self.variables.keys().collect();
+            keys.sort();
+            let mut out = format!("Bound variables ({}):\n", keys.len());
+            for k in keys {
+                let v = &self.variables[k];
+                out.push_str(&format!("  {k}: {} = {v}\n", v.ty()));
+            }
+            return Ok(Some(out.trim_end().to_string()));
+        }
+
+        if cmd == ":functions" || cmd == ":funcs" {
             let mut fn_names: Vec<&String> = stdlib_map().keys().collect();
             fn_names.sort();
-            let mut out = format!(
-                "Available functions ({}):
-",
-                fn_names.len()
-            );
+            let mut out = format!("Available functions ({}):\n", fn_names.len());
             for name in fn_names {
                 let fn_obj = &stdlib_map()[name];
                 let sig_str = fn_obj.signature.as_ref().map_or_else(
@@ -113,10 +116,7 @@ impl ReplSession {
                         format!("{name}({params})")
                     },
                 );
-                out.push_str(&format!(
-                    "  {sig_str}
-"
-                ));
+                out.push_str(&format!("  {sig_str}\n"));
             }
             return Ok(Some(out.trim_end().to_string()));
         }
@@ -250,6 +250,61 @@ impl ReplSession {
         }
 
         paren_count <= 0 && brace_count <= 0 && brack_count <= 0 && !in_quote
+    }
+
+    /// Provides auto-completion candidates for a given prefix string.
+    ///
+    /// Matches against meta-commands, language keywords, bound variables, and standard library functions.
+    ///
+    /// # Arguments
+    /// * `prefix` - The text prefix to match.
+    #[must_use]
+    pub fn complete_token(&self, prefix: &str) -> Vec<String> {
+        let mut candidates = Vec::new();
+
+        if prefix.starts_with(':') {
+            let commands = [
+                ":clear",
+                ":exit",
+                ":funcs",
+                ":functions",
+                ":help",
+                ":load",
+                ":quit",
+                ":reset",
+                ":set",
+                ":type",
+                ":vars",
+            ];
+            for cmd in commands {
+                if cmd.starts_with(prefix) {
+                    candidates.push((*cmd).to_string());
+                }
+            }
+            return candidates;
+        }
+
+        for kw in ["false", "null", "true"] {
+            if kw.starts_with(prefix) {
+                candidates.push((*kw).to_string());
+            }
+        }
+
+        for var in self.variables.keys() {
+            if var.starts_with(prefix) {
+                candidates.push(var.clone());
+            }
+        }
+
+        for fn_name in stdlib_map().keys() {
+            if fn_name.starts_with(prefix) {
+                candidates.push(fn_name.clone());
+            }
+        }
+
+        candidates.sort();
+        candidates.dedup();
+        candidates
     }
 
     /// Runs the interactive loop with given reader and writer streams.
@@ -453,6 +508,50 @@ mod tests {
         let clear_res = session.eval_line(":clear").expect("clear ok");
         assert!(clear_res.as_deref().is_some_and(|s| s.contains("reset")));
         assert!(session.variables.is_empty());
+
+        // :vars on empty
+        let vars_empty = session.eval_line(":vars").expect("vars ok");
+        assert_eq!(vars_empty, Some("No variables defined.".to_string()));
+
+        // Populate variable and test :vars
+        let _ = session.eval_line("my_var = 123").expect("eval ok");
+        let vars_populated = session.eval_line(":vars").expect("vars ok");
+        assert!(
+            vars_populated
+                .as_deref()
+                .is_some_and(|s| s.contains("my_var: number = 123"))
+        );
+
+        // :funcs alias
+        let funcs_res = session.eval_line(":funcs").expect("funcs ok");
+        assert!(funcs_res.as_deref().is_some_and(|s| s.contains("abs(")));
+
+        // :reset alias
+        let reset_res = session.eval_line(":reset").expect("reset ok");
+        assert!(reset_res.as_deref().is_some_and(|s| s.contains("reset")));
+        assert!(session.variables.is_empty());
+
+        // complete_token testing
+        assert!(session.complete_token(":v").contains(&":vars".to_string()));
+        assert!(session.complete_token(":f").contains(&":funcs".to_string()));
+        assert!(session.complete_token("tr").contains(&"true".to_string()));
+        assert!(
+            session
+                .complete_token("sub")
+                .contains(&"substr".to_string())
+        );
+
+        let _ = session.eval_line("custom_val = 999").expect("assign ok");
+        assert!(
+            session
+                .complete_token("custom")
+                .contains(&"custom_val".to_string())
+        );
+        assert!(
+            !session
+                .complete_token("nonexistent")
+                .contains(&"custom_val".to_string())
+        );
 
         // :quit
         let quit_res = session.eval_line(":quit").expect("quit ok");

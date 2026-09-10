@@ -2356,6 +2356,7 @@ pub(crate) fn expand_derive_capsule_type(input: DeriveInput) -> proc_macro2::Tok
                         cmp: None,
                         index_get: None,
                         attr_get: None,
+                        methods: std::collections::HashMap::new(),
                     })
                 });
                 OPS.clone()
