@@ -545,7 +545,57 @@ fn test_parser_expr_valid_conditional() {
 fn test_parser_for_expr_valid() {
     use crate::parse::parser::Parser;
     let mut p = Parser::new("[for k, v in a: v if true]");
-    let _ = p.parse_expression();
+    assert!(p.parse_expression().is_some());
+
+    let mut p_single = Parser::new("[for v in a: v]");
+    assert!(p_single.parse_expression().is_some());
+
+    let mut p_obj = Parser::new("{for k, v in a: k => v... if true}");
+    assert!(p_obj.parse_expression().is_some());
+
+    let mut p_obj_single = Parser::new("{for v in a: v => v}");
+    assert!(p_obj_single.parse_expression().is_some());
+
+    // Tuple errors
+    let mut err1 = Parser::new("[for 123 in a: v]");
+    assert!(err1.parse_expression().is_none());
+
+    let mut err2 = Parser::new("[for k, 123 in a: v]");
+    assert!(err2.parse_expression().is_none());
+
+    let mut err3 = Parser::new("[for x bad a: x]");
+    assert!(err3.parse_expression().is_none());
+
+    let mut err4 = Parser::new("[for x in a bad x]");
+    assert!(err4.parse_expression().is_none());
+
+    let mut err5 = Parser::new("[for x in a: x bad]");
+    assert!(err5.parse_expression().is_none());
+
+    // Object errors
+    let mut err_o1 = Parser::new("{for 123 in a: k => v}");
+    assert!(err_o1.parse_expression().is_none());
+
+    let mut err_o2 = Parser::new("{for k, 123 in a: k => v}");
+    assert!(err_o2.parse_expression().is_none());
+
+    let mut err_o3 = Parser::new("{for k bad a: k => v}");
+    assert!(err_o3.parse_expression().is_none());
+
+    let mut err_o3_non_ident = Parser::new("{for k = a: k => v}");
+    assert!(err_o3_non_ident.parse_expression().is_none());
+
+    let mut err_o4 = Parser::new("{for k in a bad k => v}");
+    assert!(err_o4.parse_expression().is_none());
+
+    let mut err_o5 = Parser::new("{for k in a: k bad v}");
+    assert!(err_o5.parse_expression().is_none());
+
+    let mut err_o6 = Parser::new("{for k in a: k => v bad}");
+    assert!(err_o6.parse_expression().is_none());
+
+    let mut err_o_eof_after_val = Parser::new("{for k, v in a: k => v");
+    assert!(err_o_eof_after_val.parse_expression().is_none());
 }
 
 #[test]
@@ -1472,6 +1522,28 @@ fn test_parse_func_call_expand_final_rules() {
         panic!("expected func call");
     }
 
+    // 1b. Success: foo(a, b,) - trailing comma before close paren
+    let src_trailing = "val = foo(a, b,)";
+    let mut p_trailing = Parser::new(src_trailing);
+    let body_trailing = p_trailing.parse_body();
+    assert!(!p_trailing.errors().has_errors());
+    if let Expression::FuncCall(fc, _) = &body_trailing.attributes["val"].expr {
+        assert_eq!(fc.args.len(), 2);
+    } else {
+        panic!("expected func call");
+    }
+
+    // 1c. Success: foo(a\n, b\n) - newlines after argument expressions
+    let src_newlines = "val = foo(\n  a\n,  b\n)";
+    let mut p_newlines = Parser::new(src_newlines);
+    let body_newlines = p_newlines.parse_body();
+    assert!(!p_newlines.errors().has_errors());
+    if let Expression::FuncCall(fc, _) = &body_newlines.attributes["val"].expr {
+        assert_eq!(fc.args.len(), 2);
+    } else {
+        panic!("expected func call");
+    }
+
     // 2. Failure: foo(a..., b) - ellipsis not on final argument
     let src_bad_pos = "val = foo(a..., b)";
     let mut p_bad_pos = Parser::new(src_bad_pos);
@@ -2246,4 +2318,47 @@ fn test_parser_parentheses_empty_expression() {
     let expr = parser.parse_expression();
     assert!(expr.is_none());
     assert!(parser.errors().has_errors());
+}
+
+/// Tests multiline expressions with newlines between tokens in comprehensions, calls, and parenthesized conditionals.
+#[test]
+fn test_multiline_newlines_in_expressions() {
+    let tuple_input = "[\nfor\nk,\nv\nin\ncollection\n:\nk\nif\ntrue\n]";
+    let mut p_tuple = Parser::new(tuple_input);
+    assert!(p_tuple.parse_expression().is_some());
+
+    let obj_input = "{\nfor\nk,\nv\nin\ncollection\n:\nk\n=>\nv...\nif\ntrue\n}";
+    let mut p_obj = Parser::new(obj_input);
+    assert!(p_obj.parse_expression().is_some());
+
+    let cond_input = "(\ntrue ?\n1 :\n2\n)";
+    let mut p_cond = Parser::new(cond_input);
+    assert!(p_cond.parse_expression().is_some());
+
+    let call_empty = "func(\n)";
+    let mut p_call1 = Parser::new(call_empty);
+    assert!(p_call1.parse_expression().is_some());
+
+    let call_expand = "func(\nargs...\n)";
+    let mut p_call2 = Parser::new(call_expand);
+    assert!(p_call2.parse_expression().is_some());
+
+    let call_multi = "func(\n1,\n2,\n)";
+    let mut p_call3 = Parser::new(call_multi);
+    assert!(p_call3.parse_expression().is_some());
+
+    // Infix newline after operator inside parens
+    let infix_input = "(1 +\n 2)";
+    let mut p_infix = Parser::new(infix_input);
+    assert!(p_infix.parse_expression().is_some());
+
+    // Conditional with newline before colon inside parens
+    let cond_colon_newline = "(true ? 1\n : 2)";
+    let mut p_cond_col = Parser::new(cond_colon_newline);
+    assert!(p_cond_col.parse_expression().is_some());
+
+    // Function call with trailing comma and newline before CParen
+    let call_trailing_comma = "func(1,\n)";
+    let mut p_call_trail = Parser::new(call_trailing_comma);
+    assert!(p_call_trail.parse_expression().is_some());
 }

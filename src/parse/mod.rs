@@ -15,6 +15,11 @@ pub mod merge;
 /// Multi-file parser cache and file manager.
 pub mod file_manager;
 
+pub use file_manager::{FileManager, HclParser};
+pub use merge::{
+    MergeOptions, block_priority, merge_bodies, merge_bodies_with_options, merge_directory,
+    merge_directory_with_options, merge_files,
+};
 pub use parser::{Parser, strip_heredoc_indentation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

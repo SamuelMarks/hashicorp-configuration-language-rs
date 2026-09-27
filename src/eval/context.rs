@@ -254,6 +254,110 @@ impl<'a> Context<'a> {
         self.variables.insert(name.into(), value);
     }
 
+    /// Sets a variable within a named namespace object (such as `"var"`, `"local"`, or `"path"`).
+    ///
+    /// If the namespace object does not exist in `variables`, a new object is initialized.
+    ///
+    /// # Arguments
+    /// * `namespace` - The namespace name (e.g. `"var"`, `"local"`).
+    /// * `name` - The attribute name within the namespace.
+    /// * `value` - The value to store.
+    pub fn set_namespace_variable(
+        &mut self,
+        namespace: &str,
+        name: impl Into<String>,
+        value: Value,
+    ) {
+        let name_str = name.into();
+        if let Some(ns_val) = self.variables.get_mut(namespace)
+            && let crate::types::ValueData::Object(map) = &mut *ns_val.data
+        {
+            map.insert(name_str, value);
+            return;
+        }
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(name_str, value);
+        self.variables.insert(
+            namespace.to_string(),
+            Value::new(
+                crate::types::Type::object(std::collections::BTreeMap::new()),
+                crate::types::ValueData::Object(map),
+            ),
+        );
+    }
+
+    /// Sets a variable in the `"var"` namespace scope (`var.<name>`).
+    ///
+    /// # Arguments
+    /// * `name` - The variable name.
+    /// * `value` - The variable value.
+    pub fn set_var(&mut self, name: impl Into<String>, value: Value) {
+        self.set_namespace_variable("var", name, value);
+    }
+
+    /// Sets a local variable in the `"local"` namespace scope (`local.<name>`).
+    ///
+    /// # Arguments
+    /// * `name` - The local variable name.
+    /// * `value` - The local value.
+    pub fn set_local(&mut self, name: impl Into<String>, value: Value) {
+        self.set_namespace_variable("local", name, value);
+    }
+
+    /// Configures the `"path"` namespace scope with standard filesystem paths (`path.root`, `path.cwd`).
+    ///
+    /// # Arguments
+    /// * `root` - The root directory of the configuration.
+    /// * `cwd` - The current working directory.
+    pub fn set_path_scopes(&mut self, root: impl Into<String>, cwd: impl Into<String>) {
+        self.set_namespace_variable(
+            "path",
+            "root",
+            Value::new(
+                crate::types::Type::String,
+                crate::types::ValueData::String(root.into()),
+            ),
+        );
+        self.set_namespace_variable(
+            "path",
+            "cwd",
+            Value::new(
+                crate::types::Type::String,
+                crate::types::ValueData::String(cwd.into()),
+            ),
+        );
+    }
+
+    /// Sets a deeply nested variable path (e.g. `["source", "qemu", "vm"]`).
+    ///
+    /// # Arguments
+    /// * `segments` - The slice of path segment identifiers.
+    /// * `value` - The value to assign at the leaf position.
+    pub fn set_nested_scope(&mut self, segments: &[&str], value: Value) {
+        if segments.is_empty() {
+            return;
+        }
+        if segments.len() == 1 {
+            self.set_variable(segments[0], value);
+            return;
+        }
+        let mut curr = value;
+        for &seg in segments[1..].iter().rev() {
+            let mut map = std::collections::BTreeMap::new();
+            map.insert(seg.to_string(), curr);
+            curr = Value::new(
+                crate::types::Type::object(std::collections::BTreeMap::new()),
+                crate::types::ValueData::Object(map),
+            );
+        }
+        let root = segments[0];
+        if let Some(existing) = self.variables.get_mut(root) {
+            merge_nested_values(existing, curr);
+        } else {
+            self.variables.insert(root.to_string(), curr);
+        }
+    }
+
     /// Returns the names of all variables accessible from this context and its parents.
     #[must_use]
     pub fn variable_names(&self) -> Vec<String> {
@@ -488,6 +592,22 @@ impl<'a> Context<'a> {
     }
 }
 
+fn merge_nested_values(dest: &mut Value, src: Value) {
+    if let (crate::types::ValueData::Object(d_map), crate::types::ValueData::Object(s_map)) =
+        (&mut *dest.data, &*src.data)
+    {
+        for (k, v) in s_map.clone() {
+            if let Some(existing_child) = d_map.get_mut(&k) {
+                merge_nested_values(existing_child, v);
+            } else {
+                d_map.insert(k, v);
+            }
+        }
+    } else {
+        *dest = src;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,13 +645,84 @@ mod tests {
     #[test]
     fn test_context_variables_fallback() {
         let mut ctx = Context::new();
+        assert_eq!(ctx.variable_names(), Vec::<String>::new());
         ctx.set_variable("foo", Value::new(Type::Bool, ValueData::Bool(true)));
+        assert_eq!(ctx.variable_names(), vec!["foo".to_string()]);
+
         let child = Context::new_child(&ctx);
+        assert_eq!(child.get_variable("missing_everywhere"), None);
+
         let mut child2 = Context::new_child(&child);
         assert!(child2.get_variable("foo").is_some());
         assert!(child2.get_variable("bar").is_none());
+        assert_eq!(child2.get_variable("missing_everywhere"), None);
         child2.set_variable("bar", Value::new(Type::Bool, ValueData::Bool(false)));
         assert!(child2.get_variable("bar").is_some());
+    }
+
+    #[test]
+    fn test_context_scoped_namespaces() {
+        let mut ctx = Context::new();
+        ctx.set_var(
+            "my_var",
+            Value::new(Type::String, ValueData::String("val".into())),
+        );
+        ctx.set_var("second_var", Value::new(Type::Bool, ValueData::Bool(true)));
+        ctx.set_local(
+            "my_local",
+            Value::new(Type::Number, ValueData::Number(42.into())),
+        );
+        ctx.set_path_scopes("/root/dir", "/cwd/dir");
+
+        let var_val = ctx.get_variable("var").expect("var scope");
+        assert!(var_val.to_string().contains("my_var"));
+        assert!(var_val.to_string().contains("second_var"));
+
+        let local_val = ctx.get_variable("local").expect("local scope");
+        assert!(local_val.to_string().contains("my_local"));
+
+        let path_val = ctx.get_variable("path").expect("path scope");
+        assert!(path_val.to_string().contains("/root/dir"));
+        assert!(path_val.to_string().contains("/cwd/dir"));
+
+        // Nested scopes
+        ctx.set_nested_scope(&[], Value::new(Type::Bool, ValueData::Bool(false)));
+        ctx.set_nested_scope(&["single"], Value::new(Type::Bool, ValueData::Bool(true)));
+        assert!(ctx.get_variable("single").is_some());
+
+        ctx.set_nested_scope(
+            &["source", "qemu", "vm"],
+            Value::new(Type::String, ValueData::String("qemu_img".into())),
+        );
+        ctx.set_nested_scope(
+            &["source", "qemu", "arch"],
+            Value::new(Type::String, ValueData::String("x86_64".into())),
+        );
+        let source_val = ctx.get_variable("source").expect("source scope");
+        assert!(source_val.to_string().contains("qemu_img"));
+        assert!(source_val.to_string().contains("x86_64"));
+
+        // Overwrite non-object value with nested object
+        ctx.set_nested_scope(
+            &["overwrite_prim"],
+            Value::new(Type::Number, ValueData::Number(10.into())),
+        );
+        ctx.set_nested_scope(
+            &["overwrite_prim", "child"],
+            Value::new(Type::Bool, ValueData::Bool(true)),
+        );
+        let prim_obj = ctx.get_variable("overwrite_prim").expect("obj exists");
+        assert!(prim_obj.to_string().contains("child"));
+
+        // Overwrite a non-object namespace variable
+        ctx.set_variable("scalar_ns", Value::new(Type::Bool, ValueData::Bool(true)));
+        ctx.set_namespace_variable(
+            "scalar_ns",
+            "key",
+            Value::new(Type::String, ValueData::String("val".into())),
+        );
+        let scalar_obj = ctx.get_variable("scalar_ns").expect("scalar_ns exists");
+        assert!(scalar_obj.to_string().contains("key"));
     }
 
     #[test]
@@ -551,6 +742,12 @@ mod tests {
         let found = child2.get_function("test_func").expect("expected value");
         assert!((found.func)(&[]).is_ok());
         assert!(child2.get_function("missing_func").is_none());
+        assert!(ctx.get_function("missing_func").is_none());
+        let stdlib_ctx = Context::with_stdlib();
+        assert!(stdlib_ctx.get_function("missing_stdlib_func").is_none());
+        let mut no_stdlib_ctx = Context::new();
+        no_stdlib_ctx.stdlib_enabled = false;
+        assert!(no_stdlib_ctx.get_function("missing_func").is_none());
     }
 
     #[test]

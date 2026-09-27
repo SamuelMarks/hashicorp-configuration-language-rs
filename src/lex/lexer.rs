@@ -18,6 +18,7 @@ pub struct Lexer<'a> {
     inner: logos::Lexer<'a, TokenKind>,
     line_starts: Vec<usize>,
     file: Option<std::sync::Arc<str>>,
+    source_len: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -46,6 +47,7 @@ impl<'a> Lexer<'a> {
             inner: TokenKind::lexer(input),
             line_starts,
             file,
+            source_len: input.len(),
         }
     }
 
@@ -118,10 +120,8 @@ impl<'a> Lexer<'a> {
         if let Some(end) = heredoc_end {
             let full_match = &remainder[..end];
 
-            // Advance the underlying lexer by this exact byte count.
-            let span_start = self.inner.span().start; // Get current absolute start BEFORE bump
+            let span_start = self.source_len - remainder.len();
             self.inner.bump(end);
-
             let span_end = span_start + end;
 
             let (start_line, start_col) = self.line_col(span_start);
@@ -142,18 +142,110 @@ impl<'a> Lexer<'a> {
 
         None
     }
+
+    /// Attempt to parse a quoted string literal, correctly handling nested interpolations
+    /// `${ ... }` and directives `%{ ... }` that may contain nested quotes and braces.
+    fn parse_quoted_string(&mut self) -> Option<Token> {
+        let remainder = self.inner.remainder();
+        let bytes = remainder.as_bytes();
+        if bytes.is_empty() || bytes[0] != b'"' {
+            return None;
+        }
+
+        let mut idx = 1;
+        let mut interp_depth = 0;
+
+        while idx < bytes.len() {
+            let b = bytes[idx];
+            if b == b'\\' {
+                idx += 1;
+                if idx < bytes.len() {
+                    idx += 1;
+                }
+                continue;
+            }
+
+            if interp_depth > 0 {
+                if b == b'"' {
+                    // Inner string inside interpolation: scan until closing quote
+                    idx += 1;
+                    while idx < bytes.len() {
+                        if bytes[idx] == b'\\' {
+                            idx += 2;
+                        } else if bytes[idx] == b'"' {
+                            idx += 1;
+                            break;
+                        } else {
+                            idx += 1;
+                        }
+                    }
+                    continue;
+                }
+                if b == b'{' {
+                    interp_depth += 1;
+                    idx += 1;
+                } else if b == b'}' {
+                    interp_depth -= 1;
+                    idx += 1;
+                } else {
+                    idx += 1;
+                }
+            } else if (b == b'$' || b == b'%') && idx + 1 < bytes.len() && bytes[idx + 1] == b'{' {
+                // Check for escape: $${ or %%{
+                if idx > 1 && bytes[idx - 1] == b && bytes[idx - 2] != b'\\' {
+                    idx += 2;
+                } else {
+                    interp_depth = 1;
+                    idx += 2;
+                }
+            } else if b == b'"' {
+                idx += 1;
+                let full_match = &remainder[..idx];
+                let span_start = self.source_len - remainder.len();
+                self.inner.bump(idx);
+                let span_end = span_start + idx;
+
+                let (start_line, start_col) = self.line_col(span_start);
+                let (end_line, end_col) = self.line_col(span_end);
+
+                let span = Span::new_with_file(
+                    span_start,
+                    span_end,
+                    start_line,
+                    start_col,
+                    end_line,
+                    end_col,
+                    self.file.clone(),
+                );
+
+                return Some(Token::new(TokenKind::String, full_match.to_string(), span));
+            } else {
+                idx += 1;
+            }
+        }
+
+        None
+    }
 }
 
 impl Iterator for Lexer<'_> {
     type Item = Result<Token, LexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Intercept Heredoc `<<` parsing before standard lexer handles `<`
         let remainder = self.inner.remainder();
+
+        // Intercept Heredoc `<<` parsing before standard lexer handles `<`
         if remainder.starts_with("<<")
             && let Some(heredoc_token) = self.parse_heredoc()
         {
             return Some(Ok(heredoc_token));
+        }
+
+        // Intercept Quoted Strings `"` to handle nested interpolations with quotes
+        if remainder.starts_with('"')
+            && let Some(str_token) = self.parse_quoted_string()
+        {
+            return Some(Ok(str_token));
         }
 
         let res = self.inner.next()?;
@@ -509,5 +601,69 @@ mod tests {
         assert_eq!(t5.span.end_byte, 20);
 
         assert!(lex.next().is_none());
+    }
+
+    #[test]
+    fn test_quoted_string_edge_cases() {
+        let mut lex_empty = Lexer::new("");
+        assert!(lex_empty.parse_quoted_string().is_none());
+
+        let mut lex_non_quote = Lexer::new("not_a_quote");
+        assert!(lex_non_quote.parse_quoted_string().is_none());
+
+        // Trailing backslash in outer string
+        let mut lex_trailing_slash = Lexer::new("\"hello\\");
+        assert!(lex_trailing_slash.parse_quoted_string().is_none());
+
+        // Escaped quotes inside interpolation
+        let input_escaped = "\"prefix-${ \"hello \\\" world\" }-suffix\"";
+        let mut lex_escaped = Lexer::new(input_escaped);
+        let tok = lex_escaped.next().expect("some").expect("ok");
+        assert_eq!(tok.kind, TokenKind::String);
+        assert_eq!(tok.text, input_escaped);
+
+        // Trailing backslash inside inner string
+        let mut lex_inner_slash = Lexer::new("\"${ \"unterminated\\");
+        assert!(lex_inner_slash.parse_quoted_string().is_none());
+
+        // Unterminated inner string without trailing backslash
+        let mut lex_inner_plain = Lexer::new("\"${ \"unterminated string");
+        assert!(lex_inner_plain.parse_quoted_string().is_none());
+
+        // Escaped $${ and %%{
+        let input_escaped_interp = "\"prefix $${escaped} and %%{directive}\"";
+        let mut lex_interp = Lexer::new(input_escaped_interp);
+        let tok_interp = lex_interp.next().expect("some").expect("ok");
+        assert_eq!(tok_interp.kind, TokenKind::String);
+
+        // Escaped with backslash before $$
+        let input_bs_dollar = "\"bs \\$${not_escaped}\"";
+        let mut lex_bs = Lexer::new(input_bs_dollar);
+        let tok_bs = lex_bs.next().expect("some").expect("ok");
+        assert_eq!(tok_bs.kind, TokenKind::String);
+
+        // Directive %{
+        let input_directive = "\"%{if true}content%{endif}\"";
+        let mut lex_dir = Lexer::new(input_directive);
+        let tok_dir = lex_dir.next().expect("some").expect("ok");
+        assert_eq!(tok_dir.kind, TokenKind::String);
+
+        // Unclosed interpolation
+        let mut lex_unclosed_interp = Lexer::new("\"${unclosed");
+        assert!(lex_unclosed_interp.parse_quoted_string().is_none());
+
+        // Literal dollar and percent not followed by '{'
+        let input_dollar = "\"cost is $100 and 50% off or trailing $\"";
+        let mut lex_dollar = Lexer::new(input_dollar);
+        let tok_dollar = lex_dollar.next().expect("some").expect("ok");
+        assert_eq!(tok_dollar.kind, TokenKind::String);
+        assert_eq!(tok_dollar.text, input_dollar);
+
+        // Unclosed string ending in literal $ or % at EOF (idx + 1 < bytes.len() is false)
+        let mut lex_unclosed_dollar = Lexer::new("\"unclosed $");
+        assert!(lex_unclosed_dollar.parse_quoted_string().is_none());
+
+        let mut lex_unclosed_percent = Lexer::new("\"unclosed %");
+        assert!(lex_unclosed_percent.parse_quoted_string().is_none());
     }
 }

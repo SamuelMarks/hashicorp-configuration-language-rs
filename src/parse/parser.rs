@@ -125,6 +125,7 @@ pub struct Parser<'a> {
     leading_comments: Vec<String>,
     trailing_comment: Option<String>,
     last_line: usize,
+    paren_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -168,6 +169,7 @@ impl<'a> Parser<'a> {
             leading_comments,
             trailing_comment,
             last_line,
+            paren_depth: 0,
         }
     }
 
@@ -386,7 +388,20 @@ impl<'a> Parser<'a> {
     ) -> Option<Attribute> {
         let assign_tok = self.advance_token(); // We know it's Assign
 
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
         let Some(expr) = self.parse_expression() else {
+            if !self.diags.has_errors() {
+                let bad_span = self.current_span_or(assign_tok.span);
+                #[rustfmt::skip]
+                self.diags.push(Diagnostic::error(
+                    "Expected expression".to_string(),
+                    "An expression was expected after '='.".to_string(),
+                    bad_span,
+                ));
+            }
             self.recover_after_body_item();
             return None;
         };
@@ -993,6 +1008,290 @@ impl<'a> Parser<'a> {
         Some(left)
     }
 
+    fn parse_for_tuple(&mut self, open_span: &Span) -> Option<Expression> {
+        self.advance(); // consume "for"
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+        let first_var = self.advance_token();
+        if first_var.kind != TokenKind::Ident {
+            self.diags.push(Diagnostic::error(
+                "Expected identifier".to_string(),
+                "Expected identifier after 'for' in tuple comprehension.".to_string(),
+                first_var.span,
+            ));
+            return None;
+        }
+
+        let (key_var, val_var) = if self.peek_kind() == Some(TokenKind::Comma) {
+            self.advance(); // consume comma
+            while self.peek_kind() == Some(TokenKind::Newline) {
+                self.advance();
+            }
+            let second_var = self.advance_token();
+            if second_var.kind != TokenKind::Ident {
+                self.diags.push(Diagnostic::error(
+                    "Expected identifier".to_string(),
+                    "Expected second identifier after ',' in for expression.".to_string(),
+                    second_var.span,
+                ));
+                return None;
+            }
+            (Some(first_var.text), second_var.text)
+        } else {
+            (None, first_var.text)
+        };
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let in_tok = self.advance_token();
+        if in_tok.kind != TokenKind::Ident || in_tok.text != "in" {
+            self.diags.push(Diagnostic::error(
+                "Expected `in`".to_string(),
+                "Expected `in` after iterator variable in for expression.".to_string(),
+                in_tok.span,
+            ));
+            return None;
+        }
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let collection = self.parse_expression()?;
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let colon = self.advance_token();
+        if colon.kind != TokenKind::Colon {
+            self.diags.push(Diagnostic::error(
+                "Expected `:`".to_string(),
+                "Expected `:` to introduce value expression in for comprehension.".to_string(),
+                colon.span,
+            ));
+            return None;
+        }
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let val_expr = self.parse_expression()?;
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let cond_expr = if let Some(t) = &self.current
+            && t.kind == TokenKind::Ident
+            && t.text == "if"
+        {
+            self.advance(); // consume "if"
+            while self.peek_kind() == Some(TokenKind::Newline) {
+                self.advance();
+            }
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let close_tok = self.advance_token();
+        if close_tok.kind != TokenKind::CBrack {
+            self.diags.push(Diagnostic::error(
+                "Expected `]`".to_string(),
+                "Expected `]` to close tuple comprehension.".to_string(),
+                close_tok.span,
+            ));
+            return None;
+        }
+
+        let span = Span::new(
+            open_span.start_byte,
+            close_tok.span.end_byte,
+            open_span.start_line,
+            open_span.start_col,
+            close_tok.span.end_line,
+            close_tok.span.end_col,
+        );
+
+        Some(Expression::ForExpr(
+            Box::new(crate::ast::expr::ForExpr {
+                key_var,
+                val_var,
+                collection: Box::new(collection),
+                key_expr: None,
+                val_expr: Box::new(val_expr),
+                cond_expr,
+                grouping: false,
+            }),
+            span,
+        ))
+    }
+
+    fn parse_for_object(&mut self, open_span: &Span) -> Option<Expression> {
+        self.advance(); // consume "for"
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+        let first_var = self.advance_token();
+        if first_var.kind != TokenKind::Ident {
+            self.diags.push(Diagnostic::error(
+                "Expected identifier".to_string(),
+                "Expected identifier after 'for' in object comprehension.".to_string(),
+                first_var.span,
+            ));
+            return None;
+        }
+
+        let (key_var, val_var) = if self.peek_kind() == Some(TokenKind::Comma) {
+            self.advance(); // consume comma
+            while self.peek_kind() == Some(TokenKind::Newline) {
+                self.advance();
+            }
+            let second_var = self.advance_token();
+            if second_var.kind != TokenKind::Ident {
+                self.diags.push(Diagnostic::error(
+                    "Expected identifier".to_string(),
+                    "Expected second identifier after ',' in for expression.".to_string(),
+                    second_var.span,
+                ));
+                return None;
+            }
+            (Some(first_var.text), second_var.text)
+        } else {
+            (None, first_var.text)
+        };
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let in_tok = self.advance_token();
+        if in_tok.kind != TokenKind::Ident || in_tok.text != "in" {
+            self.diags.push(Diagnostic::error(
+                "Expected `in`".to_string(),
+                "Expected `in` after iterator variable in for expression.".to_string(),
+                in_tok.span,
+            ));
+            return None;
+        }
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let collection = self.parse_expression()?;
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let colon = self.advance_token();
+        if colon.kind != TokenKind::Colon {
+            self.diags.push(Diagnostic::error(
+                "Expected `:`".to_string(),
+                "Expected `:` to introduce key expression in object comprehension.".to_string(),
+                colon.span,
+            ));
+            return None;
+        }
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let key_expr = self.parse_expression()?;
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let arrow = self.advance_token();
+        if arrow.kind != TokenKind::FatArrow {
+            self.diags.push(Diagnostic::error(
+                "Expected `=>`".to_string(),
+                "Expected `=>` between key and value expressions in object comprehension."
+                    .to_string(),
+                arrow.span,
+            ));
+            return None;
+        }
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let val_expr = self.parse_expression()?;
+
+        let grouping = if self.peek_kind() == Some(TokenKind::Ellipsis) {
+            self.advance(); // consume "..."
+            true
+        } else {
+            false
+        };
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let cond_expr = if let Some(t) = &self.current
+            && t.kind == TokenKind::Ident
+            && t.text == "if"
+        {
+            self.advance(); // consume "if"
+            while self.peek_kind() == Some(TokenKind::Newline) {
+                self.advance();
+            }
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        while self.peek_kind() == Some(TokenKind::Newline) {
+            self.advance();
+        }
+
+        let close_tok = self.advance_token();
+        if close_tok.kind != TokenKind::CBrace {
+            self.diags.push(Diagnostic::error(
+                "Expected `}`".to_string(),
+                "Expected `}` to close object comprehension.".to_string(),
+                close_tok.span,
+            ));
+            return None;
+        }
+
+        let span = Span::new(
+            open_span.start_byte,
+            close_tok.span.end_byte,
+            open_span.start_line,
+            open_span.start_col,
+            close_tok.span.end_line,
+            close_tok.span.end_col,
+        );
+
+        Some(Expression::ForExpr(
+            Box::new(crate::ast::expr::ForExpr {
+                key_var,
+                val_var,
+                collection: Box::new(collection),
+                key_expr: Some(Box::new(key_expr)),
+                val_expr: Box::new(val_expr),
+                cond_expr,
+                grouping,
+            }),
+            span,
+        ))
+    }
+
     /// Parses the content of a string or heredoc into template parts.
     pub(crate) fn parse_template(
         diags: &mut Diagnostics,
@@ -1232,27 +1531,39 @@ impl<'a> Parser<'a> {
                                 }
                                 'u' => {
                                     i += 1;
-                                    let code =
-                                        u32::from_str_radix(&content[i..i + 4], 16).unwrap_or(0);
-                                    if let Some(ch) = char::from_u32(code) {
-                                        literal_content.push(ch);
+                                    if i + 4 <= content.len() {
+                                        let code = u32::from_str_radix(&content[i..i + 4], 16)
+                                            .unwrap_or(0);
+                                        if let Some(ch) = char::from_u32(code) {
+                                            literal_content.push(ch);
+                                        } else {
+                                            #[rustfmt::skip]
+                                            diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Invalid Unicode scalar value.".to_string(), span.clone()));
+                                        }
+                                        i += 4;
                                     } else {
                                         #[rustfmt::skip]
-                                        diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Invalid Unicode scalar value.".to_string(), span.clone()));
+                                        diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Expected 4 hexadecimal digits after \\u.".to_string(), span.clone()));
+                                        i = content.len();
                                     }
-                                    i += 4;
                                 }
                                 'U' => {
                                     i += 1;
-                                    let code =
-                                        u32::from_str_radix(&content[i..i + 8], 16).unwrap_or(0);
-                                    if let Some(ch) = char::from_u32(code) {
-                                        literal_content.push(ch);
+                                    if i + 8 <= content.len() {
+                                        let code = u32::from_str_radix(&content[i..i + 8], 16)
+                                            .unwrap_or(0);
+                                        if let Some(ch) = char::from_u32(code) {
+                                            literal_content.push(ch);
+                                        } else {
+                                            #[rustfmt::skip]
+                                            diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Invalid Unicode scalar value.".to_string(), span.clone()));
+                                        }
+                                        i += 8;
                                     } else {
                                         #[rustfmt::skip]
-                                        diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Invalid Unicode scalar value.".to_string(), span.clone()));
+                                        diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Expected 8 hexadecimal digits after \\U.".to_string(), span.clone()));
+                                        i = content.len();
                                     }
-                                    i += 8;
                                 }
                                 _ => {
                                     literal_content.push(c);
@@ -1497,7 +1808,16 @@ impl<'a> Parser<'a> {
                 Some(Expression::Variable(name, span))
             }
             TokenKind::OParen => {
-                let inner = self.parse_expression()?;
+                self.paren_depth += 1;
+                while self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
+                let inner = self.parse_expression();
+                while self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
+                self.paren_depth = self.paren_depth.saturating_sub(1);
+                let inner = inner?;
                 let cparen = self.advance_token();
                 if cparen.kind != TokenKind::CParen {
                     #[rustfmt::skip]
@@ -1515,6 +1835,15 @@ impl<'a> Parser<'a> {
                 Some(Expression::Parentheses(Box::new(inner), span))
             }
             TokenKind::OBrack => {
+                while self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
+                if let Some(t) = &self.current
+                    && t.kind == TokenKind::Ident
+                    && t.text == "for"
+                {
+                    return self.parse_for_tuple(&tok.span);
+                }
                 let mut elements = Vec::new();
                 let end_span = loop {
                     if self.peek_kind() == Some(TokenKind::CBrack) {
@@ -1554,6 +1883,15 @@ impl<'a> Parser<'a> {
                 Some(Expression::Tuple(elements, span))
             }
             TokenKind::OBrace => {
+                while self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
+                if let Some(t) = &self.current
+                    && t.kind == TokenKind::Ident
+                    && t.text == "for"
+                {
+                    return self.parse_for_object(&tok.span);
+                }
                 let mut elements = Vec::new();
                 let end_span = loop {
                     if self.peek_kind() == Some(TokenKind::CBrace) {
@@ -1657,6 +1995,9 @@ impl<'a> Parser<'a> {
             | TokenKind::And
             | TokenKind::Or => {
                 let prec = crate::parse::Precedence::from_token(&tok.kind);
+                while self.paren_depth > 0 && self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
                 let right = self.parse_expression_precedence(prec)?;
                 let op = match tok.kind {
                     TokenKind::Plus => crate::ast::expr::BinaryOp::Add,
@@ -1689,12 +2030,21 @@ impl<'a> Parser<'a> {
                 ))
             }
             TokenKind::Question => {
+                while self.paren_depth > 0 && self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
                 let true_expr = self.parse_expression()?;
+                while self.paren_depth > 0 && self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
                 let colon = self.advance()?;
                 if colon.kind != TokenKind::Colon {
                     #[rustfmt::skip]
                     self.diags.push(Diagnostic::error( "Expected `:`".to_string(), "Expected `:` for the conditional expression.".to_string(), colon.span, ));
                     return None;
+                }
+                while self.paren_depth > 0 && self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
                 }
                 let false_expr =
                     self.parse_expression_precedence(crate::parse::Precedence::Conditional)?;
@@ -1858,23 +2208,37 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let mut args = Vec::new();
+                while self.peek_kind() == Some(TokenKind::Newline) {
+                    self.advance();
+                }
                 let (cparen_tok, expand_final) = if self.peek_kind() == Some(TokenKind::CParen) {
                     (self.advance_token(), false)
                 } else {
                     let mut expand = false;
                     let cparen = loop {
-                        {
-                            let expr = self.parse_expression()?;
-                            args.push(expr);
+                        let expr = self.parse_expression()?;
+                        args.push(expr);
+
+                        while self.peek_kind() == Some(TokenKind::Newline) {
+                            self.advance();
                         }
 
                         match self.peek_kind() {
                             Some(TokenKind::Comma) => {
                                 self.advance();
+                                while self.peek_kind() == Some(TokenKind::Newline) {
+                                    self.advance();
+                                }
+                                if self.peek_kind() == Some(TokenKind::CParen) {
+                                    break self.advance_token();
+                                }
                             }
                             Some(TokenKind::Ellipsis) => {
                                 self.advance();
                                 expand = true;
+                                while self.peek_kind() == Some(TokenKind::Newline) {
+                                    self.advance();
+                                }
                                 let next = self.advance_token();
                                 if next.kind != TokenKind::CParen {
                                     #[rustfmt::skip]

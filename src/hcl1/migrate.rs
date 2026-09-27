@@ -215,3 +215,315 @@ fn translate_expression(
         }
     }
 }
+
+pub(crate) fn compile_regex(pattern: &str) -> regex::Regex {
+    match regex::Regex::new(pattern) {
+        Ok(re) => re,
+        Err(_) => compile_regex("$^"),
+    }
+}
+
+static RE_USER: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*user\s*`([^`]+)`\s*\}\}"));
+static RE_ENV: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*env\s*`([^`]+)`\s*\}\}"));
+static RE_TS: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*timestamp\s*\}\}"));
+static RE_PATH: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*(?:pwd|template_dir)\s*\}\}"));
+static RE_BUILD_NAME: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*build_name\s*\}\}"));
+static RE_BUILD_TYPE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*build_type\s*\}\}"));
+
+/// Translates legacy Packer and Terraform template interpolations (`"{{ ... }}"`)
+/// into modern canonical HCL2 syntax (`"${...}"` or bare expressions).
+///
+/// Supported patterns:
+/// - `{{ user `name` }}` -> `${var.name}`
+/// - `{{ env `NAME` }}` -> `${env("NAME")}`
+/// - `{{ timestamp }}` -> `${timestamp()}`
+/// - `{{ pwd }}` / `{{ template_dir }}` -> `${path.root}`
+/// - `{{ build_name }}` -> `${build.name}`
+/// - `{{ build_type }}` -> `${build.type}`
+///
+/// # Arguments
+/// * `input` - The input string containing legacy interpolations.
+#[must_use]
+pub fn translate_legacy_interpolations(input: &str) -> String {
+    let s1 = RE_USER.replace_all(input, |caps: &regex::Captures| {
+        format!("${{var.{}}}", &caps[1])
+    });
+    let s2 = RE_ENV.replace_all(&s1, |caps: &regex::Captures| {
+        format!("${{env(\"{}\")}}", &caps[1])
+    });
+    let s3 = RE_TS.replace_all(&s2, |_caps: &regex::Captures| "${timestamp()}");
+    let s4 = RE_PATH.replace_all(&s3, |_caps: &regex::Captures| "${path.root}");
+    let s5 = RE_BUILD_NAME.replace_all(&s4, |_caps: &regex::Captures| "${build.name}");
+    let s6 = RE_BUILD_TYPE.replace_all(&s5, |_caps: &regex::Captures| "${build.type}");
+    s6.into_owned()
+}
+
+/// Migrates a legacy JSON template (such as Packer JSON) into a canonical HCL2 [`Body`].
+///
+/// Converts:
+/// - `"variables"` map into `variable "<name>" { default = ... }` blocks
+/// - `"builders"` array into `source "<type>" "<name>" { ... }` blocks
+/// - `"provisioners"` array into `provisioner "<type>" { ... }` blocks
+/// - Top-level attributes and legacy `{{ ... }}` interpolations into canonical HCL2.
+///
+/// # Arguments
+/// * `json_str` - The JSON template string.
+///
+/// # Errors
+/// Returns [`HclError::Parse`] if JSON decoding fails.
+pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnostic>), HclError> {
+    let root: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| HclError::Parse(format!("Invalid JSON template: {e}")))?;
+
+    let serde_json::Value::Object(map) = root else {
+        return Err(HclError::Parse(
+            "JSON template root must be an object".to_string(),
+        ));
+    };
+
+    let empty_span = Span::new(0, 0, 0, 0, 0, 0);
+    let mut body = Body::new(empty_span.clone());
+    let mut diags = Vec::new();
+
+    for (k, v) in map {
+        match k.as_str() {
+            "variables" => {
+                if let serde_json::Value::Object(vars) = v {
+                    for (var_name, var_val) in vars {
+                        let mut var_body = Body::new(empty_span.clone());
+                        let default_expr = json_to_expr(&var_val, &empty_span, &mut diags);
+                        var_body.attributes.insert(
+                            "default".to_string(),
+                            Attribute {
+                                name: "default".to_string(),
+                                expr: default_expr,
+                                span: empty_span.clone(),
+                                name_span: empty_span.clone(),
+                                equals_span: empty_span.clone(),
+                                leading_comments: Vec::new(),
+                                trailing_comment: None,
+                            },
+                        );
+                        body.blocks.push(Block {
+                            block_type: "variable".to_string(),
+                            labels: vec![var_name.clone()],
+                            body: var_body,
+                            span: empty_span.clone(),
+                            type_span: empty_span.clone(),
+                            label_spans: vec![empty_span.clone()],
+                            open_brace_span: empty_span.clone(),
+                            close_brace_span: empty_span.clone(),
+                            leading_comments: Vec::new(),
+                            trailing_comment: None,
+                        });
+                        diags.push(MigrationDiagnostic::new(
+                            format!("Migrated legacy variable '{var_name}' into HCL2 'variable \"{var_name}\"' block"),
+                            empty_span.clone(),
+                            None::<String>,
+                        ));
+                    }
+                }
+            }
+            "builders" => {
+                if let serde_json::Value::Array(builders) = v {
+                    for b_val in builders {
+                        if let serde_json::Value::Object(b_map) = b_val {
+                            let builder_type = b_map
+                                .get("type")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("unknown")
+                                .to_string();
+                            let builder_name = b_map
+                                .get("name")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or(&builder_type)
+                                .to_string();
+
+                            let mut b_body = Body::new(empty_span.clone());
+                            for (bk, bv) in b_map {
+                                if bk != "type" && bk != "name" {
+                                    let expr = json_to_expr(&bv, &empty_span, &mut diags);
+                                    b_body.attributes.insert(
+                                        bk.clone(),
+                                        Attribute {
+                                            name: bk.clone(),
+                                            expr,
+                                            span: empty_span.clone(),
+                                            name_span: empty_span.clone(),
+                                            equals_span: empty_span.clone(),
+                                            leading_comments: Vec::new(),
+                                            trailing_comment: None,
+                                        },
+                                    );
+                                }
+                            }
+                            body.blocks.push(Block {
+                                block_type: "source".to_string(),
+                                labels: vec![builder_type.clone(), builder_name.clone()],
+                                body: b_body,
+                                span: empty_span.clone(),
+                                type_span: empty_span.clone(),
+                                label_spans: vec![empty_span.clone(), empty_span.clone()],
+                                open_brace_span: empty_span.clone(),
+                                close_brace_span: empty_span.clone(),
+                                leading_comments: Vec::new(),
+                                trailing_comment: None,
+                            });
+                            diags.push(MigrationDiagnostic::new(
+                                format!("Migrated legacy builder '{builder_type}.{builder_name}' into HCL2 'source' block"),
+                                empty_span.clone(),
+                                None::<String>,
+                            ));
+                        }
+                    }
+                }
+            }
+            "provisioners" => {
+                if let serde_json::Value::Array(provisioners) = v {
+                    for p_val in provisioners {
+                        if let serde_json::Value::Object(p_map) = p_val {
+                            let prov_type = p_map
+                                .get("type")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("shell")
+                                .to_string();
+
+                            let mut p_body = Body::new(empty_span.clone());
+                            for (pk, pv) in p_map {
+                                if pk != "type" {
+                                    let expr = json_to_expr(&pv, &empty_span, &mut diags);
+                                    p_body.attributes.insert(
+                                        pk.clone(),
+                                        Attribute {
+                                            name: pk.clone(),
+                                            expr,
+                                            span: empty_span.clone(),
+                                            name_span: empty_span.clone(),
+                                            equals_span: empty_span.clone(),
+                                            leading_comments: Vec::new(),
+                                            trailing_comment: None,
+                                        },
+                                    );
+                                }
+                            }
+                            body.blocks.push(Block {
+                                block_type: "provisioner".to_string(),
+                                labels: vec![prov_type.clone()],
+                                body: p_body,
+                                span: empty_span.clone(),
+                                type_span: empty_span.clone(),
+                                label_spans: vec![empty_span.clone()],
+                                open_brace_span: empty_span.clone(),
+                                close_brace_span: empty_span.clone(),
+                                leading_comments: Vec::new(),
+                                trailing_comment: None,
+                            });
+                            diags.push(MigrationDiagnostic::new(
+                                format!(
+                                    "Migrated legacy provisioner '{prov_type}' into HCL2 block"
+                                ),
+                                empty_span.clone(),
+                                None::<String>,
+                            ));
+                        }
+                    }
+                }
+            }
+            other => {
+                let expr = json_to_expr(&v, &empty_span, &mut diags);
+                body.attributes.insert(
+                    other.to_string(),
+                    Attribute {
+                        name: other.to_string(),
+                        expr,
+                        span: empty_span.clone(),
+                        name_span: empty_span.clone(),
+                        equals_span: empty_span.clone(),
+                        leading_comments: Vec::new(),
+                        trailing_comment: None,
+                    },
+                );
+            }
+        }
+    }
+
+    Ok((body, diags))
+}
+
+fn json_to_expr(
+    val: &serde_json::Value,
+    span: &Span,
+    diags: &mut Vec<MigrationDiagnostic>,
+) -> Expression {
+    match val {
+        serde_json::Value::Null => Expression::Null(span.clone()),
+        serde_json::Value::Bool(b) => Expression::Bool(*b, span.clone()),
+        serde_json::Value::Number(n) => {
+            let num = Number::from_str(&n.to_string()).unwrap_or(Number::from(0_i64));
+            Expression::Number(num, span.clone())
+        }
+        serde_json::Value::String(s) => {
+            let translated = translate_legacy_interpolations(s);
+            if translated != *s {
+                diags.push(MigrationDiagnostic::new(
+                    format!("Translated legacy interpolation in string `{s}`"),
+                    span.clone(),
+                    Some(translated.clone()),
+                ));
+            }
+            if translated.contains("${") {
+                let trimmed = translated.trim();
+                let single_interp = trimmed.starts_with("${")
+                    && trimmed.ends_with('}')
+                    && trimmed.matches("${").count() == 1;
+
+                if single_interp {
+                    let inner = &trimmed[2..trimmed.len() - 1].trim();
+                    let mut parser = crate::parse::parser::Parser::new(inner);
+                    if let Some(parsed) = parser.parse_expression() {
+                        parsed
+                    } else {
+                        let mut p_diags = crate::diagnostic::Diagnostics::new();
+                        let quoted = format!("\"{translated}\"");
+                        let parts = crate::parse::parser::Parser::parse_template(
+                            &mut p_diags,
+                            &quoted,
+                            span,
+                        );
+                        Expression::Template(parts, span.clone())
+                    }
+                } else {
+                    let mut p_diags = crate::diagnostic::Diagnostics::new();
+                    let quoted = format!("\"{translated}\"");
+                    let parts =
+                        crate::parse::parser::Parser::parse_template(&mut p_diags, &quoted, span);
+                    Expression::Template(parts, span.clone())
+                }
+            } else {
+                Expression::String(translated, span.clone())
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            let elements = arr
+                .iter()
+                .map(|item| json_to_expr(item, span, diags))
+                .collect();
+            Expression::Tuple(elements, span.clone())
+        }
+        serde_json::Value::Object(obj) => {
+            let mut pairs = Vec::with_capacity(obj.len());
+            for (k, v) in obj {
+                let k_expr = Expression::String(k.clone(), span.clone());
+                let v_expr = json_to_expr(v, span, diags);
+                pairs.push((k_expr, v_expr));
+            }
+            Expression::Object(pairs, span.clone())
+        }
+    }
+}

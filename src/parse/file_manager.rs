@@ -1,6 +1,6 @@
 //! Multi-file parser cache and file manager.
 //!
-//! Provides [`HclParser`](crate::parse::file_manager::HclParser) (and its alias [`FileManager`](crate::parse::file_manager::FileManager)) for loading, caching,
+//! Provides [`HclParser`] (and its alias [`FileManager`]) for loading, caching,
 //! and merging HCL and JSON configuration files across projects.
 
 use crate::ast::structure::Body;
@@ -242,6 +242,109 @@ impl HclParser {
         let source = self.get_source(filename).map_or("", |s| s);
         writer.format_diagnostics(diags, filename, source)
     }
+
+    /// Discovers, parses, and caches all matching configuration files in a directory.
+    ///
+    /// # Arguments
+    /// * `path` - The directory path containing configuration files.
+    /// * `extensions` - Suffix or extension patterns to match (e.g. `&["pkr.hcl", "hcl"]`).
+    ///
+    /// # Errors
+    /// Returns [`Diagnostics`] if directory reading or file parsing fails.
+    pub fn parse_directory<P: AsRef<std::path::Path>>(
+        &mut self,
+        path: P,
+        extensions: &[&str],
+    ) -> Result<Body, Diagnostics> {
+        self.parse_directory_impl(path.as_ref(), extensions)
+    }
+
+    /// Internal non-generic implementation of directory parsing operating on a borrowed path.
+    fn parse_directory_impl(
+        &mut self,
+        dir_path: &std::path::Path,
+        extensions: &[&str],
+    ) -> Result<Body, Diagnostics> {
+        let entries = match fs::read_dir(dir_path) {
+            Ok(e) => e,
+            Err(err) => {
+                let mut diags = Diagnostics::new();
+                diags.push(
+                    Diagnostic::error(
+                        "Failed to read directory",
+                        format!("Could not read directory '{}': {err}", dir_path.display()),
+                        Span::new(0, 0, 1, 1, 1, 1),
+                    )
+                    .with_error(HclError::Io(err.to_string())),
+                );
+                return Err(diags);
+            }
+        };
+
+        let mut file_paths = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let file_name = entry.file_name();
+            let name_str = file_name.to_string_lossy();
+            if name_str.starts_with('.') {
+                continue;
+            }
+
+            let matches_ext = extensions.is_empty()
+                || extensions.iter().any(|ext| {
+                    let clean_ext = ext.trim_start_matches('.');
+                    name_str.ends_with(ext)
+                        || (!ext.starts_with('.') && name_str.ends_with(&format!(".{clean_ext}")))
+                });
+
+            if matches_ext {
+                file_paths.push(entry.path());
+            }
+        }
+
+        file_paths.sort();
+
+        let mut diags = Diagnostics::new();
+        for file_path in file_paths {
+            let display_name = file_path.to_string_lossy().to_string();
+            if let Err(d) = self.parse_hcl_file(&display_name) {
+                for diag in d.errors() {
+                    diags.push(diag.clone());
+                }
+            }
+        }
+
+        if diags.has_errors() {
+            return Err(diags);
+        }
+
+        self.merge_all()
+    }
+
+    /// Formats all diagnostics across all loaded file buffers using a [`DiagnosticWriter`].
+    ///
+    /// For each diagnostic, resolves the source buffer matching `diag.subject.file`.
+    ///
+    /// # Arguments
+    /// * `diags` - The diagnostics to format.
+    /// * `writer` - The diagnostic writer to use for formatting.
+    #[must_use]
+    pub fn format_all_diagnostics(&self, diags: &Diagnostics, writer: &DiagnosticWriter) -> String {
+        let mut out = String::new();
+        for (i, diag) in diags.errors().iter().enumerate() {
+            if i > 0 {
+                out.push('\n');
+            }
+            let filename = diag.subject.file.as_deref().unwrap_or("");
+            let source = self.get_source(filename).unwrap_or("");
+            out.push_str(&writer.format_diagnostic(diag, filename, source));
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -410,5 +513,79 @@ bar = 20
         mgr.associate_buffer_path(1, "main.tf");
         assert_eq!(mgr.get_buffer_path(1), Some("main.tf"));
         assert_eq!(mgr.get_buffer_path(2), None);
+    }
+
+    #[test]
+    fn test_file_manager_parse_directory_and_format_all_diagnostics() {
+        let temp_dir = std::env::temp_dir().join(format!("test_fm_dir_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("create tempdir");
+
+        let p1 = temp_dir.join("a.hcl");
+        let p2 = temp_dir.join("b.hcl");
+        let sub_dir = temp_dir.join("sub_dir");
+        let hidden = temp_dir.join(".hidden.hcl");
+        let non_matching = temp_dir.join("ignored.txt");
+
+        fs::create_dir(&sub_dir).expect("create sub_dir");
+        fs::write(&p1, "val_a = \"hello\"\n").expect("write a");
+        fs::write(&p2, "val_b = \"world\"\n").expect("write b");
+        fs::write(&hidden, "hidden = 1\n").expect("write hidden");
+        fs::write(&non_matching, "attr_txt = 1\n").expect("write ignored");
+
+        let mut mgr = FileManager::new();
+        let body = mgr
+            .parse_directory(&temp_dir, &["hcl"])
+            .expect("parse directory ok");
+        assert_eq!(body.attributes.len(), 2);
+        assert_eq!(mgr.file_count(), 2);
+
+        // Test with leading dot and empty extensions
+        let mut mgr_dot = FileManager::new();
+        let body_dot = mgr_dot
+            .parse_directory(&temp_dir, &[".hcl"])
+            .expect("parse directory dot ok");
+        assert_eq!(body_dot.attributes.len(), 2);
+
+        let mut mgr_all = FileManager::new();
+        let body_all = mgr_all
+            .parse_directory(&temp_dir, &[])
+            .expect("parse directory all ok");
+        assert_eq!(body_all.attributes.len(), 3);
+
+        // Test format_all_diagnostics
+        let mut diags = Diagnostics::new();
+        let span_a = Span::new(0, 5, 1, 1, 1, 6).with_file(p1.to_str().expect("p1 str"));
+        diags.push(Diagnostic::error("Test error A", "Detail A", span_a));
+
+        let span_b = Span::new(0, 5, 1, 1, 1, 6).with_file(p2.to_str().expect("p2 str"));
+        diags.push(Diagnostic::warning("Test warning B", "Detail B", span_b));
+
+        let writer = DiagnosticWriter::plain();
+        let formatted = mgr.format_all_diagnostics(&diags, &writer);
+        assert!(formatted.contains("Test error A"));
+        assert!(formatted.contains("Test warning B"));
+        assert!(formatted.contains("val_a = \"hello\""));
+        assert!(formatted.contains("val_b = \"world\""));
+
+        // Test parse error in one directory file
+        let bad_hcl = temp_dir.join("c_bad.hcl");
+        fs::write(&bad_hcl, "bad = = parse error").expect("write bad");
+        let mut mgr_err = FileManager::new();
+        let err_parse = mgr_err
+            .parse_directory(&temp_dir, &["hcl"])
+            .expect_err("parse error expected");
+        assert!(err_parse.has_errors());
+        let _ = fs::remove_file(&bad_hcl);
+
+        // Test non-existent directory error
+        let bad_dir = temp_dir.join("missing");
+        let mut bad_mgr = FileManager::new();
+        let err = bad_mgr
+            .parse_directory(bad_dir, &["hcl"])
+            .expect_err("should fail");
+        assert!(err.has_errors());
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

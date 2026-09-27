@@ -513,3 +513,148 @@ fn test_hcl1_migrate_exhaustive_coverage() {
     };
     assert!(migrate_hcl1_to_hcl2(&body_bad_block).is_err());
 }
+
+#[test]
+fn test_translate_legacy_interpolations() {
+    use crate::hcl1::migrate::translate_legacy_interpolations;
+
+    assert_eq!(
+        translate_legacy_interpolations("{{ user `admin` }}"),
+        "${var.admin}"
+    );
+    assert_eq!(
+        translate_legacy_interpolations("{{ env `SECRET` }}"),
+        "${env(\"SECRET\")}"
+    );
+    assert_eq!(
+        translate_legacy_interpolations("img-{{ timestamp }}"),
+        "img-${timestamp()}"
+    );
+    assert_eq!(
+        translate_legacy_interpolations("{{ pwd }}/scripts"),
+        "${path.root}/scripts"
+    );
+    assert_eq!(
+        translate_legacy_interpolations("{{ template_dir }}/files"),
+        "${path.root}/files"
+    );
+    assert_eq!(
+        translate_legacy_interpolations("{{ build_name }}-{{ build_type }}"),
+        "${build.name}-${build.type}"
+    );
+
+    // Cover compile_regex fallback
+    let re_fallback = crate::hcl1::migrate::compile_regex("invalid ( regex");
+    assert!(!re_fallback.is_match("test"));
+
+    // Diagnostic derive coverage
+    let diag = crate::hcl1::migrate::MigrationDiagnostic::new(
+        "test msg",
+        crate::span::Span::new(0, 0, 0, 0, 0, 0),
+        Some("suggestion"),
+    );
+    let _ = format!("{diag:?}");
+    let _ = diag.clone();
+    assert_eq!(diag, diag);
+
+    let d_none = crate::hcl1::migrate::MigrationDiagnostic::new(
+        "test msg",
+        crate::span::Span::new(0, 0, 0, 0, 0, 0),
+        None::<String>,
+    );
+    assert_ne!(diag, d_none);
+}
+
+#[test]
+fn test_migrate_legacy_json_templates() {
+    use crate::hcl1::migrate::migrate_legacy_json;
+
+    let json = r#"{
+        "variables": {
+            "iso_url": "ubuntu.iso",
+            "iso_checksum": "{{ env `ISO_CHECKSUM` }}",
+            "null_var": null,
+            "bool_var": true,
+            "nested": {
+                "key": "val"
+            }
+        },
+        "builders": [
+            {
+                "type": "qemu",
+                "name": "vm",
+                "disk_size": 20480,
+                "vm_name": "vm-{{ user `iso_url` }}-{{ timestamp }}"
+            },
+            {
+                "disk_size": 1024
+            }
+        ],
+        "provisioners": [
+            {
+                "type": "shell",
+                "inline": ["echo hello"]
+            },
+            {
+                "inline": ["echo default shell"]
+            }
+        ],
+        "description": "Bento image",
+        "fallback_template": "prefix-{{ user `10 /` }}",
+        "bad_single_interp": "{{ user `10 /` }}",
+        "multi_interp": "${a} and ${b}",
+        "unclosed_interp": "${unclosed"
+    }"#;
+
+    let (body, diags) = migrate_legacy_json(json).expect("migrate json ok");
+    assert_ne!(diags.len(), 0);
+
+    // Check variable blocks
+    let vars: Vec<&crate::ast::structure::Block> = body
+        .blocks
+        .iter()
+        .filter(|b| b.block_type == "variable")
+        .collect();
+    assert_eq!(vars.len(), 5);
+
+    // Check source blocks
+    let sources: Vec<&crate::ast::structure::Block> = body
+        .blocks
+        .iter()
+        .filter(|b| b.block_type == "source")
+        .collect();
+    assert_eq!(sources.len(), 2);
+    assert_eq!(sources[0].labels, vec!["qemu", "vm"]);
+    assert_eq!(sources[1].labels, vec!["unknown", "unknown"]);
+
+    // Check provisioner blocks
+    let provs: Vec<&crate::ast::structure::Block> = body
+        .blocks
+        .iter()
+        .filter(|b| b.block_type == "provisioner")
+        .collect();
+    assert_eq!(provs.len(), 2);
+    assert_eq!(provs[0].labels, vec!["shell"]);
+    assert_eq!(provs[1].labels, vec!["shell"]);
+
+    // Check description attribute
+    assert!(body.attributes.contains_key("description"));
+
+    // Check error on non-object root or invalid JSON
+    assert!(migrate_legacy_json("invalid json").is_err());
+    assert!(migrate_legacy_json("[\"not an object\"]").is_err());
+
+    // Non-standard values
+    let non_std = r#"{
+        "variables": "not_an_object",
+        "builders": "not_an_array",
+        "provisioners": "not_an_array"
+    }"#;
+    assert!(migrate_legacy_json(non_std).is_ok());
+
+    let non_std_items = r#"{
+        "builders": ["not_an_obj"],
+        "provisioners": ["not_an_obj"]
+    }"#;
+    assert!(migrate_legacy_json(non_std_items).is_ok());
+}

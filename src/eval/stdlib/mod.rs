@@ -26,6 +26,12 @@ pub mod network;
 pub mod numeric;
 /// String manipulation functions.
 pub mod string;
+/// Environment and system functions.
+pub mod system;
+
+pub use system::{
+    Environment, MockEnvironment, SystemEnvironment, env_func, env_func_with_provider,
+};
 
 /// Returns all built-in standard library functions aggregated across all categories.
 #[must_use]
@@ -40,6 +46,7 @@ pub fn all_functions() -> Vec<Function> {
     funcs.extend(network::functions());
     funcs.extend(numeric::functions());
     funcs.extend(string::functions());
+    funcs.extend(system::functions());
     funcs
 }
 

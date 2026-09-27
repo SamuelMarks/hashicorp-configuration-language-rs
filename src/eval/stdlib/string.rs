@@ -11,6 +11,7 @@ use unicode_segmentation::UnicodeSegmentation;
 #[must_use]
 pub fn functions() -> Vec<Function> {
     vec![
+        capitalize_func(),
         chomp_func(),
         endswith_func(),
         indent_func(),
@@ -543,6 +544,34 @@ fn substr_func() -> Function {
 
             let res_str: String = graphemes[offset as usize..end as usize].concat();
             Ok(Value::new(Type::String, ValueData::String(res_str)))
+        }),
+        signature: None,
+    }
+}
+
+fn capitalize_func() -> Function {
+    Function {
+        name: "capitalize".to_string(),
+        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+            if args.len() != 1 {
+                return Err(format!("capitalize expects 1 argument, got {}", args.len()));
+            }
+            if args[0].is_unknown() {
+                return Ok(Value::unknown(Type::String));
+            }
+
+            let s = coerce_to_string(&args[0], "capitalize")?;
+            let mut chars = s.chars();
+            let res = match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let mut r = String::new();
+                    r.extend(first.to_uppercase());
+                    r.extend(chars);
+                    r
+                }
+            };
+            Ok(Value::new(Type::String, ValueData::String(res)))
         }),
         signature: None,
     }
@@ -1314,6 +1343,31 @@ mod tests {
         assert!(eval_func("title", &[]).is_err());
         assert!(
             eval_func("title", &[unk_val()])
+                .expect("expected value")
+                .is_unknown()
+        );
+    }
+
+    #[test]
+    fn test_capitalize() {
+        assert_eq!(
+            eval_func("capitalize", &[str_val("hello world")])
+                .expect("expected value")
+                .data
+                .as_ref(),
+            &ValueData::String("Hello world".to_string())
+        );
+        assert_eq!(
+            eval_func("capitalize", &[str_val("")])
+                .expect("expected value")
+                .data
+                .as_ref(),
+            &ValueData::String(String::new())
+        );
+        assert!(eval_func("capitalize", &[]).is_err());
+        assert!(eval_func("capitalize", &[str_val("a"), str_val("b")]).is_err());
+        assert!(
+            eval_func("capitalize", &[unk_val()])
                 .expect("expected value")
                 .is_unknown()
         );

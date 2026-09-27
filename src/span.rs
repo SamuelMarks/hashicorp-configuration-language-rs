@@ -117,6 +117,16 @@ impl Span {
         }
     }
 
+    /// Returns a copy of this span associated with the specified source file.
+    ///
+    /// # Arguments
+    /// * `file` - Source file path or identifier.
+    #[must_use]
+    pub fn with_file(mut self, file: impl Into<Arc<str>>) -> Self {
+        self.file = Some(file.into());
+        self
+    }
+
     /// Checks whether this span contains the given spatial [`Position`].
     ///
     /// Evaluates byte offsets if available (`end_byte > start_byte`), and verifies
