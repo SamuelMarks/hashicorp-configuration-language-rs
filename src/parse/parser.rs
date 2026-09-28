@@ -409,7 +409,7 @@ impl<'a> Parser<'a> {
         let end_span = expr.span();
         let trailing_comment = self.trailing_comment.take();
 
-        // Must end with a newline or EOF.
+        // Must end with a newline, closing brace, or EOF.
         let next = self.peek_kind();
         match next {
             Some(TokenKind::Newline) | None => {
@@ -417,6 +417,7 @@ impl<'a> Parser<'a> {
                     self.advance(); // eat newline
                 }
             }
+            Some(TokenKind::CBrace) => {}
             Some(TokenKind::Comma) => {
                 let bad = self.advance_token();
                 #[rustfmt::skip]
@@ -506,6 +507,7 @@ impl<'a> Parser<'a> {
                     self.advance(); // eat newline
                 }
             }
+            Some(TokenKind::CBrace) => {}
             _ => {
                 let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]
@@ -561,7 +563,7 @@ impl<'a> Parser<'a> {
             // Error, missing result
             #[rustfmt::skip]
             self.diags.push(Diagnostic::error( "Missing result".to_string(), "A function definition must have a `result = ...` attribute.".to_string(), close_brace_span.clone(), ));
-            Expression::Null(close_brace_span.clone())
+            return None;
         };
 
         // Note: We could parse `return_type` attribute if it exists
@@ -911,7 +913,7 @@ impl<'a> Parser<'a> {
 
         let trailing_comment = self.trailing_comment.take();
 
-        // Must end with a newline or EOF.
+        // Must end with a newline, closing brace, or EOF.
         let next = self.peek_kind();
         match next {
             Some(TokenKind::Newline) | None => {
@@ -919,6 +921,7 @@ impl<'a> Parser<'a> {
                     self.advance(); // eat newline
                 }
             }
+            Some(TokenKind::CBrace) => {}
             _ => {
                 let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]

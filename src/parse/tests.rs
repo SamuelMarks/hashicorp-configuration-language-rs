@@ -169,6 +169,13 @@ fn test_parse_function_block_errors() {
     println!("{:?}", parser.errors().errors());
     assert!(parser.errors().has_errors());
 
+    // Function terminating with CBrace inside a block body
+    let mut parser = Parser::new("block { function \"f\" { result = 1 } }");
+    let body = parser.parse_body();
+    assert!(!parser.errors().has_errors());
+    assert_eq!(body.blocks.len(), 1);
+    assert_eq!(body.blocks[0].body.functions.len(), 1);
+
     // EOF before CBrace
     let mut parser = Parser::new("function \"add\" { result = 1 ");
     let b = parser.parse_body();

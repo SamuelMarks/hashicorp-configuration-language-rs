@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 
 /// Returns the path to the Bento sibling repository directory if it exists on disk.
 fn bento_dir() -> Option<PathBuf> {
+    if std::env::var("FORCE_MOCK_BENTO").is_ok() {
+        return None;
+    }
     let p = Path::new("../bento");
     if p.exists() && p.is_dir() {
         Some(p.to_path_buf())
@@ -46,7 +49,6 @@ fn test_bento_templates_directory_merge() {
                 first_type == "packer" || first_type == "variable",
                 "High priority blocks must appear first"
             );
-            return;
         }
     }
 
@@ -108,7 +110,6 @@ fn test_bento_os_pkrvars_and_dag_evaluation() {
                 let vars = parse_var_file(&windows_vars).expect("parse windows pkrvars");
                 assert!(!vars.is_empty());
             }
-            return;
         }
     }
 
