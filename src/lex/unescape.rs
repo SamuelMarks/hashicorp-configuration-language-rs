@@ -67,27 +67,35 @@ pub fn unescape_string(input: &str, span: &Span) -> Result<String, HclError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
     fn test_unescape_standard() {
         let span = Span::new(0, 0, 0, 0, 0, 0);
-        assert_eq!(unescape_string("a\\nb", &span).expect("ok"), "a\nb");
-        assert_eq!(unescape_string("a\\rb", &span).expect("ok"), "a\rb");
-        assert_eq!(unescape_string("a\\tb", &span).expect("ok"), "a\tb");
-        assert_eq!(unescape_string("a\\\"b", &span).expect("ok"), "a\"b");
-        assert_eq!(unescape_string("a\\\\b", &span).expect("ok"), "a\\b");
+        assert_eq!(unescape_string("a\\nb", &span).unwrap(), "a\nb");
+        assert_eq!(unescape_string("a\\rb", &span).unwrap(), "a\rb");
+        assert_eq!(unescape_string("a\\tb", &span).unwrap(), "a\tb");
+        assert_eq!(unescape_string("a\\\"b", &span).unwrap(), "a\"b");
+        assert_eq!(unescape_string("a\\\\b", &span).unwrap(), "a\\b");
         assert!(unescape_string("a\\ub", &span).is_err());
         assert!(unescape_string("a\\Ub", &span).is_err());
-        assert_eq!(unescape_string("a\\xb", &span).expect("ok"), "a\\xb");
-        assert_eq!(unescape_string("a\\", &span).expect("ok"), "a\\");
+        assert_eq!(unescape_string("a\\xb", &span).unwrap(), "a\\xb");
+        assert_eq!(unescape_string("a\\", &span).unwrap(), "a\\");
     }
 
     #[test]
     fn test_unescape_unicode() {
         let span = Span::new(0, 0, 0, 0, 0, 0);
-        assert_eq!(unescape_string("\\u00E9", &span).expect("ok"), "é");
-        assert_eq!(unescape_string("\\U0001F600", &span).expect("ok"), "😀");
+        assert_eq!(unescape_string("\\u00E9", &span).unwrap(), "é");
+        assert_eq!(unescape_string("\\U0001F600", &span).unwrap(), "😀");
         assert!(unescape_string("\\u", &span).is_err());
         assert!(unescape_string("\\U", &span).is_err());
         assert!(unescape_string("\\u00E", &span).is_err());

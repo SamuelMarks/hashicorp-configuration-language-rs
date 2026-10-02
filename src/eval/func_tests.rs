@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 use crate::ast::expr::Expression;
 use crate::ast::type_expr::TypeExpr;
 use crate::ast::user_func::{FunctionBlock, FunctionParam};
@@ -29,12 +36,12 @@ fn test_register_and_call_user_func() {
 
     ctx.register_function_block(&fb);
 
-    let f = ctx.get_function("add_one").expect("function found");
+    let f = ctx.get_function("add_one").unwrap();
     let res = (f.func)(&[Value::new(
         Type::Number,
-        ValueData::Number(Number::from_str("5").expect("number parse")),
+        ValueData::Number(Number::from_str("5").unwrap()),
     )])
-    .expect("call succeeded");
+    .unwrap();
     assert_eq!(*res.ty(), Type::Number);
     if let ValueData::Number(n) = &*res.data {
         assert_eq!(n.0.to_string(), "5");
@@ -53,17 +60,18 @@ fn test_register_and_call_user_func_type_mismatch() {
         type_expr: Some(TypeExpr::Primitive(Type::Number, span.clone())),
         span: span.clone(),
     }];
-    let body = Expression::Number(Number::from_str("1").expect("number"), span.clone());
+    let body = Expression::Number(Number::from_str("1").unwrap(), span.clone());
     let fb = FunctionBlock::new("test".to_string(), params, None, body, span);
 
     ctx.register_function_block(&fb);
-    let f = ctx.get_function("test").expect("function exists");
+    let f = ctx.get_function("test").unwrap();
 
     let err = (f.func)(&[Value::new(
         Type::String,
         ValueData::String("hello".to_string()),
     )])
-    .expect_err("type mismatch error");
+    .err()
+    .unwrap();
     assert!(err.contains("type mismatch"));
 }
 
@@ -85,21 +93,17 @@ fn test_user_func_variadic_0_1_n_args() {
     };
 
     // Body: join("-", concat([prefix], rest))
-    let parsed_body =
-        crate::api::parse("v = join(\"-\", concat([prefix], rest))").expect("valid expr");
+    let parsed_body = crate::api::parse("v = join(\"-\", concat([prefix], rest))").unwrap();
     let body = parsed_body.attributes["v"].expr.clone();
 
     let fb = FunctionBlock::new("custom_join".to_string(), params, None, body, span)
         .with_variadic_param(Some(variadic));
 
     ctx.register_function_block(&fb);
-    let f = ctx
-        .get_function("custom_join")
-        .expect("custom_join registered");
+    let f = ctx.get_function("custom_join").unwrap();
 
     // 0 variadic args
-    let res0 = (f.func)(&[Value::new(Type::String, ValueData::String("base".into()))])
-        .expect("0 variadic args succeeds");
+    let res0 = (f.func)(&[Value::new(Type::String, ValueData::String("base".into()))]).unwrap();
     assert_eq!(res0.data.as_ref(), &ValueData::String("base".into()));
 
     // 1 variadic arg
@@ -107,7 +111,7 @@ fn test_user_func_variadic_0_1_n_args() {
         Value::new(Type::String, ValueData::String("base".into())),
         Value::new(Type::String, ValueData::String("one".into())),
     ])
-    .expect("1 variadic arg succeeds");
+    .unwrap();
     assert_eq!(res1.data.as_ref(), &ValueData::String("base-one".into()));
 
     // N variadic args (3 extra args)
@@ -117,7 +121,7 @@ fn test_user_func_variadic_0_1_n_args() {
         Value::new(Type::String, ValueData::String("two".into())),
         Value::new(Type::String, ValueData::String("three".into())),
     ])
-    .expect("3 variadic args succeeds");
+    .unwrap();
     assert_eq!(
         res3.data.as_ref(),
         &ValueData::String("base-one-two-three".into())
@@ -137,7 +141,7 @@ fn test_parse_and_execute_user_func_with_variadic() {
             result = length(more)
         }
     "#;
-    let body1 = crate::api::parse(hcl_attr_syntax).expect("parse hcl");
+    let body1 = crate::api::parse(hcl_attr_syntax).unwrap();
     assert_eq!(body1.functions.len(), 1);
     let func_block = &body1.functions[0];
     assert_eq!(func_block.name, "collect");
@@ -149,10 +153,10 @@ fn test_parse_and_execute_user_func_with_variadic() {
 
     let mut ctx = Context::new();
     ctx.register_function_block(func_block);
-    let f1 = ctx.get_function("collect").expect("collect found");
+    let f1 = ctx.get_function("collect").unwrap();
 
     // Call with 0 variadic
-    let r0 = (f1.func)(&[Value::new(Type::String, ValueData::String("a".into()))]).expect("call");
+    let r0 = (f1.func)(&[Value::new(Type::String, ValueData::String("a".into()))]).unwrap();
     assert_eq!(r0.data.as_ref(), &ValueData::Number(0_i32.into()));
 
     // Call with 2 variadic
@@ -161,7 +165,7 @@ fn test_parse_and_execute_user_func_with_variadic() {
         Value::new(Type::String, ValueData::String("b".into())),
         Value::new(Type::String, ValueData::String("c".into())),
     ])
-    .expect("call");
+    .unwrap();
     assert_eq!(r2.data.as_ref(), &ValueData::Number(2_i32.into()));
 
     // Test parsing variadic_param block syntax
@@ -174,7 +178,7 @@ fn test_parse_and_execute_user_func_with_variadic() {
             result = sum(rest)
         }
     "#;
-    let body2 = crate::api::parse(hcl_block_syntax).expect("parse hcl");
+    let body2 = crate::api::parse(hcl_block_syntax).unwrap();
     assert_eq!(body2.functions.len(), 1);
     let fb2 = &body2.functions[0];
     assert_eq!(
@@ -184,7 +188,7 @@ fn test_parse_and_execute_user_func_with_variadic() {
 
     let mut ctx2 = Context::new();
     ctx2.register_function_block(fb2);
-    let f2 = ctx2.get_function("collect_block").expect("found");
+    let f2 = ctx2.get_function("collect_block").unwrap();
 
     let sum_res = (f2.func)(&[
         Value::new(Type::String, ValueData::String("unused".into())),
@@ -192,7 +196,7 @@ fn test_parse_and_execute_user_func_with_variadic() {
         Value::new(Type::Number, ValueData::Number(20_i32.into())),
         Value::new(Type::Number, ValueData::Number(30_i32.into())),
     ])
-    .expect("sum call succeeds");
+    .unwrap();
     assert_eq!(sum_res.data.as_ref(), &ValueData::Number(60_i32.into()));
 }
 
@@ -211,9 +215,7 @@ fn test_misspelled_function_name_suggestions() {
         }),
         Span::default(),
     );
-    let err_uppr = Evaluator::new(&ctx)
-        .evaluate(&expr_uppr)
-        .expect_err("should fail");
+    let err_uppr = Evaluator::new(&ctx).evaluate(&expr_uppr).err().unwrap();
     let diag_uppr = &err_uppr.errors()[0];
     assert_eq!(
         diag_uppr.detail.as_deref(),
@@ -236,9 +238,7 @@ fn test_misspelled_function_name_suggestions() {
         }),
         Span::default(),
     );
-    let err_custom = Evaluator::new(&ctx)
-        .evaluate(&expr_custom)
-        .expect_err("should fail");
+    let err_custom = Evaluator::new(&ctx).evaluate(&expr_custom).err().unwrap();
     let diag_custom = &err_custom.errors()[0];
     assert_eq!(
         diag_custom.detail.as_deref(),
@@ -254,9 +254,7 @@ fn test_misspelled_function_name_suggestions() {
         }),
         Span::default(),
     );
-    let err_nomatch = Evaluator::new(&ctx)
-        .evaluate(&expr_nomatch)
-        .expect_err("should fail");
+    let err_nomatch = Evaluator::new(&ctx).evaluate(&expr_nomatch).err().unwrap();
     let diag_nomatch = &err_nomatch.errors()[0];
     assert_eq!(diag_nomatch.detail, None);
 }

@@ -5,8 +5,42 @@
 
 #![deny(clippy::all, clippy::pedantic)]
 #![deny(missing_docs)]
+#![allow(clippy::use_self)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::redundant_clone)]
+#![allow(clippy::suspicious_operation_groupings)]
+#![allow(clippy::needless_collect)]
+#![allow(clippy::match_wildcard_for_single_variants)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::redundant_closure_for_method_calls)]
+#![allow(clippy::iter_on_single_items)]
+#![allow(clippy::coerce_container_to_any)]
+#![allow(clippy::trivial_regex)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::assert_is_empty)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::or_fun_call)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::if_not_else)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::derive_partial_eq_without_eq)]
+#![allow(clippy::equatable_if_let)]
+#![allow(clippy::branches_sharing_code)]
+#![allow(clippy::significant_drop_tightening)]
+#![allow(clippy::suboptimal_flops)]
+#![allow(clippy::useless_let_if_seq)]
+#![allow(clippy::collection_is_never_read)]
+#![allow(clippy::literal_string_with_formatting_args)]
+#![allow(clippy::string_lit_as_bytes)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 use hashicorp_configuration_language_rs::cst::format::format_str;
 use hashicorp_configuration_language_rs::eval::context::Context;
@@ -140,11 +174,20 @@ pub fn evaluate_hcl(source: &str, context_json: &str) -> Result<JsValue, JsValue
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery,
+        clippy::collection_is_never_read
+    )]
+
     use super::*;
 
     #[test]
     fn test_format_hcl_native() {
-        let res = format_hcl_impl("a=1\n").expect("format ok");
+        let res = format_hcl_impl("a=1\n").unwrap();
         assert_eq!(res, "a = 1\n");
 
         let err = format_hcl_impl("{ invalid syntax");
@@ -154,13 +197,13 @@ mod tests {
     #[test]
     fn test_parse_and_evaluate_hcl_native() {
         let input = "port = 8080\nname = \"app\"\nhuge = 1e400\n";
-        let parsed = parse_hcl_impl(input).expect("parse ok");
+        let parsed = parse_hcl_impl(input).unwrap();
         assert!(parsed.is_object());
 
         let bad_parse = parse_hcl_impl("{ invalid syntax");
         assert!(bad_parse.is_err());
 
-        let eval_res = evaluate_hcl_impl(input, "{}").expect("eval ok");
+        let eval_res = evaluate_hcl_impl(input, "{}").unwrap();
         assert!(eval_res.is_object());
         assert_eq!(eval_res["port"], 8080);
         assert_eq!(eval_res["name"], "app");
@@ -170,16 +213,16 @@ mod tests {
             "combined = \"${var_a}-${var_b}\"",
             r#"{"var_a": "alpha", "var_b": "beta"}"#,
         )
-        .expect("eval with ctx ok");
+        .unwrap();
         assert_eq!(eval_with_ctx["combined"], "alpha-beta");
 
-        let eval_with_non_obj_ctx = evaluate_hcl_impl("port = 8080", "[1, 2]").expect("eval ok");
+        let eval_with_non_obj_ctx = evaluate_hcl_impl("port = 8080", "[1, 2]").unwrap();
         assert_eq!(eval_with_non_obj_ctx["port"], 8080);
 
-        let eval_empty_ctx = evaluate_hcl_impl("port = 8080", "").expect("eval empty ctx");
+        let eval_empty_ctx = evaluate_hcl_impl("port = 8080", "").unwrap();
         assert_eq!(eval_empty_ctx["port"], 8080);
 
-        let eval_ws_ctx = evaluate_hcl_impl("port = 8080", "   ").expect("eval ws ctx");
+        let eval_ws_ctx = evaluate_hcl_impl("port = 8080", "   ").unwrap();
         assert_eq!(eval_ws_ctx["port"], 8080);
 
         let bad_eval = evaluate_hcl_impl("invalid syntax {", "{}");

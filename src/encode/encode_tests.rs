@@ -1,5 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 #[cfg(test)]
 mod tests {
+
     use crate::cst::builder::CstBody;
     use crate::decode::DecodeBody;
     use crate::diagnostic::Diagnostics;
@@ -196,9 +204,7 @@ mod tests {
 
         // 1. Encode into CstBody
         let mut body = CstBody::new();
-        original
-            .encode_into_body(&mut body)
-            .expect("encode succeeds");
+        original.encode_into_body(&mut body).unwrap();
 
         // Verify encoded attributes
         assert!(body.attributes().iter().any(|a| a.name == "host"));
@@ -229,11 +235,10 @@ mod tests {
         assert!(hcl_str.contains("services \"auth\" {"));
 
         // 3. Round-trip: Parse the generated HCL and decode back into ServerConfig!
-        let parsed_body = crate::api::parse(&hcl_str).expect("parse generated hcl");
+        let parsed_body = crate::api::parse(&hcl_str).unwrap();
         let mut ctx = crate::eval::context::Context::new();
         let decoded =
-            ServerConfig::decode_body(&parsed_body, &["production".to_string()], &mut ctx)
-                .expect("roundtrip decode succeeds");
+            ServerConfig::decode_body(&parsed_body, &["production".to_string()], &mut ctx).unwrap();
 
         assert_eq!(decoded, original);
 
@@ -243,9 +248,7 @@ mod tests {
             ..original.clone()
         };
         let mut body_no_timeout = CstBody::new();
-        no_timeout
-            .encode_into_body(&mut body_no_timeout)
-            .expect("encode succeeds");
+        no_timeout.encode_into_body(&mut body_no_timeout).unwrap();
         assert!(
             !body_no_timeout
                 .attributes()
@@ -275,9 +278,7 @@ mod tests {
         assert_eq!(success.extract_labels(), Vec::<String>::new());
         let mut body = CstBody::new();
         assert!(success.encode_into_body(&mut body).is_ok());
-        let blk = success
-            .encode_into_block("dummy", vec![])
-            .expect("encode succeeds");
+        let blk = success.encode_into_block("dummy", vec![]).unwrap();
         assert_eq!(blk.block_type, "dummy");
         assert!(encode_to_string(&success).is_ok());
 
@@ -328,7 +329,7 @@ mod tests {
             &encoded,
             crate::span::Span::new(0, 0, 0, 0, 0, 0),
         )
-        .expect("roundtrip decode succeeds");
+        .unwrap();
         assert_eq!(decoded, task);
 
         // Test with Option::None
@@ -346,7 +347,7 @@ mod tests {
             &encoded_no_desc,
             crate::span::Span::new(0, 0, 0, 0, 0, 0),
         )
-        .expect("roundtrip decode succeeds");
+        .unwrap();
         assert_eq!(decoded_no_desc, task_no_desc);
 
         // Test enum encode
@@ -426,7 +427,7 @@ mod tests {
         };
 
         // 1. Encode into string
-        let rendered = encode_to_string(&infra).expect("encode_to_string succeeds");
+        let rendered = encode_to_string(&infra).unwrap();
         assert!(rendered.contains("project_name = \"global-cloud\""));
         assert!(rendered.contains("version = 2"));
         assert!(rendered.contains("cluster \"prod\" {"));
@@ -441,13 +442,12 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = crate::eval::context::Context::new();
 
-        let decoded = ComplexInfrastructure::decode_body(&body, &[], &mut ctx)
-            .expect("roundtrip decode succeeds");
+        let decoded = ComplexInfrastructure::decode_body(&body, &[], &mut ctx).unwrap();
 
         assert_eq!(decoded.project_name, infra.project_name);
         assert_eq!(decoded.version, infra.version);
         assert_eq!(decoded.clusters.len(), infra.clusters.len());
-        let prod = decoded.clusters.get("prod").expect("prod cluster exists");
+        let prod = decoded.clusters.get("prod").unwrap();
         assert_eq!(
             prod.meta,
             ComplexCommonMeta {
@@ -456,25 +456,16 @@ mod tests {
             }
         );
         assert_eq!(prod.services.len(), 2);
-        assert_eq!(
-            prod.services.get("auth").expect("auth service exists").port,
-            8080
-        );
-        assert_eq!(
-            prod.services
-                .get("payments")
-                .expect("payments service exists")
-                .port,
-            9000
-        );
+        assert_eq!(prod.services.get("auth").unwrap().port, 8080);
+        assert_eq!(prod.services.get("payments").unwrap().port, 9000);
 
         // 3. Second round-trip encode -> verify idempotence
-        let second_rendered = encode_to_string(&decoded).expect("second encode succeeds");
+        let second_rendered = encode_to_string(&decoded).unwrap();
         let mut second_parser = crate::parse::parser::Parser::new(&second_rendered);
         let second_body = second_parser.parse_body();
         let mut second_ctx = crate::eval::context::Context::new();
-        let second_decoded = ComplexInfrastructure::decode_body(&second_body, &[], &mut second_ctx)
-            .expect("second decode succeeds");
+        let second_decoded =
+            ComplexInfrastructure::decode_body(&second_body, &[], &mut second_ctx).unwrap();
         assert_eq!(decoded.project_name, second_decoded.project_name);
         assert_eq!(decoded.version, second_decoded.version);
         assert_eq!(decoded.clusters, second_decoded.clusters);
@@ -503,7 +494,7 @@ mod tests {
         body.blocks.push(block2);
 
         let mut cst_body = CstBody::default();
-        body.encode_into_body(&mut cst_body).expect("encode ok");
+        body.encode_into_body(&mut cst_body).unwrap();
         assert_eq!(cst_body.blocks.len(), 2);
         assert!(
             cst_body.blocks[0]

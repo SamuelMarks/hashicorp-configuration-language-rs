@@ -1024,6 +1024,26 @@ fn formatlist_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery,
+        clippy::collection_is_never_read
+    )]
+
+    #[test]
+    fn test_capitalize_multi_char_uppercase() {
+        assert_eq!(
+            eval_func("capitalize", &[str_val("ß")])
+                .unwrap()
+                .data
+                .as_ref(),
+            &ValueData::String("SS".to_string())
+        );
+    }
+
     use super::*;
 
     use crate::number::Number;
@@ -1031,10 +1051,7 @@ mod tests {
     use std::str::FromStr;
 
     fn get_func(name: &str) -> Function {
-        functions()
-            .into_iter()
-            .find(|f| f.name == name)
-            .expect("expected value")
+        functions().into_iter().find(|f| f.name == name).unwrap()
     }
 
     fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
@@ -1049,9 +1066,7 @@ mod tests {
     fn num_val(s: &str) -> Value {
         Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str(s).expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
         )
     }
 
@@ -1078,17 +1093,13 @@ mod tests {
     fn test_chomp() {
         assert_eq!(
             eval_func("chomp", &[str_val("hello\n\n")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hello".to_string())
         );
         assert!(eval_func("chomp", &[]).is_err());
-        assert!(
-            eval_func("chomp", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("chomp", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("chomp", &[null_val()]).is_err());
     }
 
@@ -1096,7 +1107,7 @@ mod tests {
     fn test_indent() {
         assert_eq!(
             eval_func("indent", &[num_val("2"), str_val("foo\nbar")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("foo\n  bar".to_string())
@@ -1104,7 +1115,7 @@ mod tests {
         assert!(eval_func("indent", &[]).is_err());
         assert!(
             eval_func("indent", &[unk_val(), str_val("a")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("indent", &[num_val("2"), null_val()]).is_err());
@@ -1128,7 +1139,7 @@ mod tests {
                 "join",
                 &[str_val(","), list_val(vec![str_val("a"), str_val("b")])]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::String("a,b".to_string())
@@ -1143,7 +1154,7 @@ mod tests {
         assert!(eval_func("join", &[]).is_err());
         assert!(
             eval_func("join", &[unk_val(), list_val(vec![])])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("join", &[str_val(","), null_val()]).is_err()); // neither tuple nor list
@@ -1159,38 +1170,30 @@ mod tests {
     fn test_lower_upper() {
         assert_eq!(
             eval_func("lower", &[str_val("HeLlo")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hello".to_string())
         );
         assert!(eval_func("lower", &[]).is_err());
-        assert!(
-            eval_func("lower", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("lower", &[unk_val()]).unwrap().is_unknown());
 
         assert_eq!(
             eval_func("upper", &[str_val("HeLlo")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("HELLO".to_string())
         );
         assert!(eval_func("upper", &[]).is_err());
-        assert!(
-            eval_func("upper", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("upper", &[unk_val()]).unwrap().is_unknown());
     }
 
     #[test]
     fn test_replace() {
         assert_eq!(
             eval_func("replace", &[str_val("hello"), str_val("l"), str_val("x")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hexxo".to_string())
@@ -1201,7 +1204,7 @@ mod tests {
                 "replace",
                 &[str_val("hello"), str_val("/l+/"), str_val("x")]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::String("hexo".to_string())
@@ -1225,21 +1228,21 @@ mod tests {
         assert!(eval_func("replace", &[]).is_err());
         assert!(
             eval_func("replace", &[unk_val(), str_val("l"), str_val("x")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
 
     #[test]
     fn test_split() {
-        let res = eval_func("split", &[str_val(","), str_val("a,b,c")]).expect("expected value");
+        let res = eval_func("split", &[str_val(","), str_val("a,b,c")]).unwrap();
         assert_eq!(
             *res.data,
             ValueData::Array(vec![str_val("a"), str_val("b"), str_val("c")])
         );
 
         // empty separator
-        let res_empty = eval_func("split", &[str_val(""), str_val("abc")]).expect("expected value");
+        let res_empty = eval_func("split", &[str_val(""), str_val("abc")]).unwrap();
         // string.split("") has length 5 in rust: "", "a", "b", "c", "" or similar, let's just assert is_ok
         assert_eq!(
             std::mem::discriminant(&*res_empty.data),
@@ -1249,7 +1252,7 @@ mod tests {
         assert!(eval_func("split", &[]).is_err());
         assert!(
             eval_func("split", &[unk_val(), str_val("abc")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -1258,38 +1261,34 @@ mod tests {
     fn test_strrev() {
         assert_eq!(
             eval_func("strrev", &[str_val("hello")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("olleh".to_string())
         );
         assert!(eval_func("strrev", &[]).is_err());
-        assert!(
-            eval_func("strrev", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("strrev", &[unk_val()]).unwrap().is_unknown());
     }
 
     #[test]
     fn test_substr() {
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("1"), num_val("3")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("ell".to_string())
         );
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("-2"), num_val("2")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("lo".to_string())
         );
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("1"), num_val("-1")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("ello".to_string())
@@ -1298,7 +1297,7 @@ mod tests {
         // offset out of bounds
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("10"), num_val("1")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String(String::new())
@@ -1307,7 +1306,7 @@ mod tests {
         // length out of bounds
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("1"), num_val("10")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("ello".to_string())
@@ -1316,7 +1315,7 @@ mod tests {
         // negative offset larger than len
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("-10"), num_val("2")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("he".to_string())
@@ -1325,7 +1324,7 @@ mod tests {
         assert!(eval_func("substr", &[]).is_err());
         assert!(
             eval_func("substr", &[unk_val(), num_val("1"), num_val("1")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("substr", &[str_val("hello"), str_val("bad"), num_val("1")]).is_err());
@@ -1335,49 +1334,41 @@ mod tests {
     fn test_title() {
         assert_eq!(
             eval_func("title", &[str_val("hello world")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("Hello World".to_string())
         );
         assert!(eval_func("title", &[]).is_err());
-        assert!(
-            eval_func("title", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("title", &[unk_val()]).unwrap().is_unknown());
     }
 
     #[test]
     fn test_capitalize() {
         assert_eq!(
             eval_func("capitalize", &[str_val("hello world")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("Hello world".to_string())
         );
         assert_eq!(
             eval_func("capitalize", &[str_val("")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String(String::new())
         );
         assert!(eval_func("capitalize", &[]).is_err());
         assert!(eval_func("capitalize", &[str_val("a"), str_val("b")]).is_err());
-        assert!(
-            eval_func("capitalize", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("capitalize", &[unk_val()]).unwrap().is_unknown());
     }
 
     #[test]
     fn test_trim_functions() {
         assert_eq!(
             eval_func("trim", &[str_val("!hello!"), str_val("!")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hello".to_string())
@@ -1385,13 +1376,13 @@ mod tests {
         assert!(eval_func("trim", &[]).is_err());
         assert!(
             eval_func("trim", &[unk_val(), str_val("!")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         assert_eq!(
             eval_func("trimprefix", &[str_val("!hello!"), str_val("!")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hello!".to_string())
@@ -1399,13 +1390,13 @@ mod tests {
         assert!(eval_func("trimprefix", &[]).is_err());
         assert!(
             eval_func("trimprefix", &[unk_val(), str_val("!")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         assert_eq!(
             eval_func("trimsuffix", &[str_val("!hello!"), str_val("!")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("!hello".to_string())
@@ -1413,23 +1404,19 @@ mod tests {
         assert!(eval_func("trimsuffix", &[]).is_err());
         assert!(
             eval_func("trimsuffix", &[unk_val(), str_val("!")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         assert_eq!(
             eval_func("trimspace", &[str_val("  hello  ")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hello".to_string())
         );
         assert!(eval_func("trimspace", &[]).is_err());
-        assert!(
-            eval_func("trimspace", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("trimspace", &[unk_val()]).unwrap().is_unknown());
     }
 
     #[test]
@@ -1437,7 +1424,7 @@ mod tests {
         // no capture groups
         assert_eq!(
             eval_func("regex", &[str_val("a+"), str_val("aa")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("aa".to_string())
@@ -1456,7 +1443,7 @@ mod tests {
         assert!(eval_func("regex", &[]).is_err());
         assert!(
             eval_func("regex", &[unk_val(), str_val("aabb")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -1468,7 +1455,7 @@ mod tests {
                 str_val("hello"),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         let mut expected_map = std::collections::BTreeMap::new();
         expected_map.insert("first".to_string(), str_val("hello"));
         expected_map.insert("second".to_string(), Value::null(Type::String));
@@ -1478,7 +1465,7 @@ mod tests {
         assert!(eval_func("regex_replace", &[]).is_err());
         assert!(
             eval_func("regex_replace", &[unk_val(), str_val("a"), str_val("b")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -1509,7 +1496,7 @@ mod tests {
             "regex_replace",
             &[str_val("hello world"), str_val("world"), str_val("rust")],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(res_replace.to_string(), "\"hello rust\"");
 
         // Mixed named and unnamed capture groups error
@@ -1533,16 +1520,14 @@ mod tests {
             .is_err()
         );
 
-        let res =
-            eval_func("regexall", &[str_val("a+"), str_val("aabb aa")]).expect("expected value");
+        let res = eval_func("regexall", &[str_val("a+"), str_val("aabb aa")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
 
         // capture groups
-        let res_cap = eval_func("regexall", &[str_val("(a+)(b*)"), str_val("aabb aa")])
-            .expect("expected value");
+        let res_cap = eval_func("regexall", &[str_val("(a+)(b*)"), str_val("aabb aa")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res_cap.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -1556,7 +1541,7 @@ mod tests {
                 str_val("hello world"),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         let mut m1 = std::collections::BTreeMap::new();
         m1.insert("first".to_string(), str_val("hello"));
         m1.insert("second".to_string(), Value::null(Type::String));
@@ -1574,8 +1559,7 @@ mod tests {
         assert_eq!(*res_all_opt.data, ValueData::Array(expected_arr));
 
         // No match
-        let res_no =
-            eval_func("regexall", &[str_val("x"), str_val("aabb")]).expect("expected value");
+        let res_no = eval_func("regexall", &[str_val("x"), str_val("aabb")]).unwrap();
         assert_eq!(*res_no.data, ValueData::Array(vec![]));
 
         // Invalid regex
@@ -1584,7 +1568,7 @@ mod tests {
         assert!(eval_func("regexall", &[]).is_err());
         assert!(
             eval_func("regexall", &[unk_val(), str_val("aabb")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -1596,7 +1580,7 @@ mod tests {
                 "format",
                 &[str_val("hello %s %d"), str_val("world"), num_val("123")]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::String("hello world 123".to_string())
@@ -1606,16 +1590,13 @@ mod tests {
         assert!(eval_func("format", &[str_val("%s"), num_val("1.23")]).is_ok());
         // %%
         assert_eq!(
-            eval_func("format", &[str_val("%%")])
-                .expect("expected value")
-                .data
-                .as_ref(),
+            eval_func("format", &[str_val("%%")]).unwrap().data.as_ref(),
             &ValueData::String("%".to_string())
         );
         // %v and trailing %
         assert_eq!(
             eval_func("format", &[str_val("%v %"), str_val("val")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("val %".to_string())
@@ -1625,7 +1606,7 @@ mod tests {
         // unknown arg
         assert!(
             eval_func("format", &[str_val("%s"), unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -1634,12 +1615,12 @@ mod tests {
 
         assert!(
             eval_func("format", &[unk_val(), str_val("a")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("format", &[str_val("%s"), unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -1662,7 +1643,7 @@ mod tests {
                 list_val(vec![str_val("a"), str_val("b")]),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res.data,
             ValueData::Array(vec![
@@ -1671,8 +1652,7 @@ mod tests {
             ])
         );
 
-        let res2 =
-            eval_func("formatlist", &[str_val("hello %s"), str_val("a")]).expect("expected value");
+        let res2 = eval_func("formatlist", &[str_val("hello %s"), str_val("a")]).unwrap();
         assert_eq!(
             *res2.data,
             ValueData::Array(vec![Value::new(
@@ -1681,8 +1661,7 @@ mod tests {
             ),])
         );
 
-        let res_empty = eval_func("formatlist", &[str_val("hello %s"), list_val(vec![])])
-            .expect("expected value");
+        let res_empty = eval_func("formatlist", &[str_val("hello %s"), list_val(vec![])]).unwrap();
         assert_eq!(*res_empty.data, ValueData::Array(vec![]));
 
         assert!(eval_func("formatlist", &[]).is_err());
@@ -1701,7 +1680,7 @@ mod tests {
         );
         assert!(
             eval_func("formatlist", &[unk_val(), str_val("a")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -1716,23 +1695,21 @@ mod tests {
         assert!(eval_func("chomp", std::slice::from_ref(&null_str)).is_err());
 
         // 2. chomp with unknown, null, and carriage return
-        assert!(eval_func("chomp", &[unk_val()]).expect("ok").is_unknown());
+        assert!(eval_func("chomp", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("chomp", &[null_val()]).is_err());
         assert_eq!(
-            *eval_func("chomp", &[str_val("hello\r\n")])
-                .expect("ok")
-                .data,
+            *eval_func("chomp", &[str_val("hello\r\n")]).unwrap().data,
             ValueData::String("hello".to_string())
         );
         assert_eq!(
-            *eval_func("chomp", &[str_val("hello\r")]).expect("ok").data,
+            *eval_func("chomp", &[str_val("hello\r")]).unwrap().data,
             ValueData::String("hello".to_string())
         );
 
         // 3. indent error and unknown paths
         assert!(
             eval_func("indent", &[num_val("2"), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("indent", &[null_val(), str_val("foo")]).is_err());
@@ -1749,7 +1726,7 @@ mod tests {
         );
         assert_eq!(
             *eval_func("indent", &[num_val("2"), str_val("a\n\nb")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::String("a\n\n  b".to_string())
         );
@@ -1757,7 +1734,7 @@ mod tests {
         // 4. join errors and unknown paths
         assert!(
             eval_func("join", &[str_val(","), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("join", &[str_val(","), null_val()]).is_err());
@@ -1777,12 +1754,12 @@ mod tests {
         // 6. substr unknowns, large numbers, dynamic errors, and arg coercion errors
         assert!(
             eval_func("substr", &[str_val("hello"), num_val("0"), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("substr", &[str_val("hello"), unk_val(), num_val("2")])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
@@ -1827,13 +1804,13 @@ mod tests {
         // 7. trimprefix and trimsuffix when pattern does not match, and replace pattern edge cases
         assert_eq!(
             *eval_func("trimprefix", &[str_val("hello"), str_val("xyz")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::String("hello".to_string())
         );
         assert_eq!(
             *eval_func("trimsuffix", &[str_val("hello"), str_val("xyz")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::String("hello".to_string())
         );
@@ -1842,24 +1819,24 @@ mod tests {
                 "replace",
                 &[str_val("hello"), str_val("/unclosed"), str_val("x")]
             )
-            .expect("ok")
+            .unwrap()
             .data,
             ValueData::String("hello".to_string())
         );
         assert_eq!(
             *eval_func("replace", &[str_val("hello"), str_val("/"), str_val("x")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::String("hello".to_string())
         );
 
         // 8. regex and regexall optional capture groups returning null
-        let res_re = eval_func("regex", &[str_val("(a)|(b)"), str_val("a")]).expect("ok");
+        let res_re = eval_func("regex", &[str_val("(a)|(b)"), str_val("a")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res_re.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
-        let res_reall = eval_func("regexall", &[str_val("(a)|(b)"), str_val("a")]).expect("ok");
+        let res_reall = eval_func("regexall", &[str_val("(a)|(b)"), str_val("a")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res_reall.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -1868,7 +1845,7 @@ mod tests {
         // 9. format extra paths: fallback format verb and too many arguments
         assert_eq!(
             *eval_func("format", &[str_val("hex: %x"), num_val("10")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::String("hex: 10".to_string())
         );
@@ -1897,70 +1874,66 @@ mod tests {
         // 11. urlencode, startswith, endswith, strcontains
         assert_eq!(
             *eval_func("urlencode", &[str_val("hello world/foo?bar=1&baz=2")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::String("hello%20world%2Ffoo%3Fbar%3D1%26baz%3D2".to_string())
         );
-        assert!(
-            eval_func("urlencode", &[unk_val()])
-                .expect("ok")
-                .is_unknown()
-        );
+        assert!(eval_func("urlencode", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("urlencode", &[]).is_err());
 
         assert_eq!(
             *eval_func("startswith", &[str_val("hello world"), str_val("hello")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::Bool(true)
         );
         assert_eq!(
             *eval_func("startswith", &[str_val("hello world"), str_val("world")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::Bool(false)
         );
         assert!(
             eval_func("startswith", &[unk_val(), str_val("prefix")])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("startswith", &[str_val("s")]).is_err());
 
         assert_eq!(
             *eval_func("endswith", &[str_val("hello world"), str_val("world")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::Bool(true)
         );
         assert_eq!(
             *eval_func("endswith", &[str_val("hello world"), str_val("hello")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::Bool(false)
         );
         assert!(
             eval_func("endswith", &[unk_val(), str_val("suffix")])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("endswith", &[str_val("s")]).is_err());
 
         assert_eq!(
             *eval_func("strcontains", &[str_val("hello world"), str_val("lo wo")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::Bool(true)
         );
         assert_eq!(
             *eval_func("strcontains", &[str_val("hello world"), str_val("xyz")])
-                .expect("ok")
+                .unwrap()
                 .data,
             ValueData::Bool(false)
         );
         assert!(
             eval_func("strcontains", &[unk_val(), str_val("sub")])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("strcontains", &[str_val("s")]).is_err());
@@ -2049,26 +2022,23 @@ mod tests {
         // Prefix longer than offset + len
         let r_prefix = Refinement::not_null().with_prefix("hello_world");
         let unk_prefix = Value::unknown_refined(Type::String, r_prefix);
-        let res1 =
-            eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("5")]).expect("ok");
+        let res1 = eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("5")]).unwrap();
         assert_eq!(*res1.data, ValueData::String("hello".to_string()));
 
         // Prefix shorter than offset + len, offset == 0
-        let res2 =
-            eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("20")]).expect("ok");
+        let res2 = eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("20")]).unwrap();
         assert!(res2.is_unknown());
 
         // Prefix with offset > 0
-        let res3 =
-            eval_func("substr", &[unk_prefix.clone(), num_val("6"), num_val("5")]).expect("ok");
+        let res3 = eval_func("substr", &[unk_prefix.clone(), num_val("6"), num_val("5")]).unwrap();
         assert_eq!(*res3.data, ValueData::String("world".to_string()));
 
         // Negative offset or negative len
         let res_neg_off =
-            eval_func("substr", &[unk_prefix.clone(), num_val("-1"), num_val("5")]).expect("ok");
+            eval_func("substr", &[unk_prefix.clone(), num_val("-1"), num_val("5")]).unwrap();
         assert!(res_neg_off.is_unknown());
         let res_neg_len =
-            eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("-1")]).expect("ok");
+            eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("-1")]).unwrap();
         assert!(res_neg_len.is_unknown());
 
         // Length min and max refinements
@@ -2076,15 +2046,14 @@ mod tests {
         r_min_max.string_length_min = Some(10);
         r_min_max.string_length_max = Some(20);
         let unk_min_max = Value::unknown_refined(Type::String, r_min_max);
-        let res_min_max =
-            eval_func("substr", &[unk_min_max, num_val("2"), num_val("5")]).expect("ok");
+        let res_min_max = eval_func("substr", &[unk_min_max, num_val("2"), num_val("5")]).unwrap();
         assert!(res_min_max.is_unknown());
 
         let mut r_min_small = Refinement::not_null();
         r_min_small.string_length_min = Some(1);
         let unk_min_small = Value::unknown_refined(Type::String, r_min_small);
         let res_min_small =
-            eval_func("substr", &[unk_min_small, num_val("5"), num_val("3")]).expect("ok");
+            eval_func("substr", &[unk_min_small, num_val("5"), num_val("3")]).unwrap();
         assert!(res_min_small.is_unknown());
 
         // Uncoercible off_val and len_val
@@ -2094,12 +2063,12 @@ mod tests {
                 "substr",
                 &[unk_prefix.clone(), non_str.clone(), num_val("5")]
             )
-            .expect("ok")
+            .unwrap()
             .is_unknown()
         );
         assert!(
             eval_func("substr", &[unk_prefix.clone(), num_val("0"), non_str])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -2109,7 +2078,7 @@ mod tests {
                 "substr",
                 &[unk_prefix.clone(), num_val("1e100"), num_val("5")]
             )
-            .expect("ok")
+            .unwrap()
             .is_unknown()
         );
         assert!(
@@ -2117,26 +2086,26 @@ mod tests {
                 "substr",
                 &[unk_prefix.clone(), num_val("0"), num_val("1e100")]
             )
-            .expect("ok")
+            .unwrap()
             .is_unknown()
         );
 
         // Unrefined unknown
         assert!(
             eval_func("substr", &[unk_val(), num_val("0"), num_val("5")])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
 
         // Known string with unknown offset / length
         assert!(
             eval_func("substr", &[str_val("hello"), unk_val(), num_val("5")])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("substr", &[str_val("hello"), num_val("0"), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -2147,12 +2116,12 @@ mod tests {
                 "substr",
                 &[unk_prefix.clone(), corrupted_num.clone(), num_val("5")]
             )
-            .expect("ok")
+            .unwrap()
             .is_unknown()
         );
         assert!(
             eval_func("substr", &[unk_prefix.clone(), num_val("0"), corrupted_num])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -2162,7 +2131,7 @@ mod tests {
     fn test_string_branch_coverage_gaps() {
         // upper branch coverage
         assert!(eval_func("upper", &[]).is_err());
-        assert!(eval_func("upper", &[unk_val()]).expect("ok").is_unknown());
+        assert!(eval_func("upper", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("upper", &[null_val()]).is_err());
 
         // coerce_to_string on unknown value
@@ -2171,17 +2140,17 @@ mod tests {
         // endswith, startswith, strcontains with known first arg and unknown second arg
         assert!(
             eval_func("endswith", &[str_val("abc"), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("startswith", &[str_val("abc"), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("strcontains", &[str_val("abc"), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -2191,12 +2160,12 @@ mod tests {
         // infer_substr_refinement with unknown offset or length
         assert!(
             eval_func("substr", &[unk_val(), unk_val(), num_val("5")])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("substr", &[unk_val(), num_val("0"), unk_val()])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
     }

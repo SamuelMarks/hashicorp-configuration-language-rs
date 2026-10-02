@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::pedantic, clippy::nursery)]
 use crate::cst::splicing::{extract_source, splice_tokens};
 use crate::lex::token::{Token, TokenKind};
 use crate::span::Span;

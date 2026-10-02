@@ -44,6 +44,14 @@ impl From<serde_json::Error> for LspError {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -72,7 +80,8 @@ mod tests {
         assert!(from_io.to_string().contains("simulated io error"));
 
         let serde_err = serde_json::from_str::<serde_json::Value>("{ invalid")
-            .expect_err("expected json error");
+            .err()
+            .unwrap();
         let from_json = LspError::from(serde_err);
         assert!(from_json.to_string().contains("JSON error"));
     }

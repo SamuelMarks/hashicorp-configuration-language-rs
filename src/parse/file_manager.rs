@@ -349,6 +349,14 @@ impl HclParser {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::eval::context::Context;
     use crate::eval::evaluator::Evaluator;
@@ -364,7 +372,7 @@ mod tests {
         let hcl_src = "foo = 10
 bar = 20
 ";
-        let body = mgr.parse_hcl_string("vars.hcl", hcl_src).expect("parsed");
+        let body = mgr.parse_hcl_string("vars.hcl", hcl_src).unwrap();
         assert_eq!(body.attributes.len(), 2);
         assert_eq!(mgr.file_count(), 1);
         assert_eq!(mgr.filenames(), vec!["vars.hcl"]);
@@ -374,30 +382,26 @@ bar = 20
         assert_eq!(mgr.get_file("nonexistent"), None);
 
         let json_src = r#"{"baz": 30}"#;
-        let json_body = mgr
-            .parse_json_string("extra.json", json_src)
-            .expect("parsed json");
+        let json_body = mgr.parse_json_string("extra.json", json_src).unwrap();
         assert_eq!(json_body.attributes.len(), 1);
         assert_eq!(mgr.file_count(), 2);
         assert_eq!(mgr.filenames(), vec!["extra.json", "vars.hcl"]);
 
         // Merged evaluation
-        let merged = mgr.merge_all().expect("merge ok");
+        let merged = mgr.merge_all().unwrap();
         assert_eq!(merged.attributes.len(), 3);
 
         // Re-parsing existing file (Occupied entry branch)
-        let updated_body = mgr
-            .parse_hcl_string("vars.hcl", "foo = 15\n")
-            .expect("updated hcl");
+        let updated_body = mgr.parse_hcl_string("vars.hcl", "foo = 15\n").unwrap();
         assert_eq!(updated_body.attributes.len(), 1);
         let updated_json = mgr
             .parse_json_string("extra.json", r#"{"baz": 35}"#)
-            .expect("updated json");
+            .unwrap();
         assert_eq!(updated_json.attributes.len(), 1);
 
         let mut ctx = Context::new();
         for (k, attr) in &merged.attributes {
-            let (val, _) = Evaluator::new(&ctx).evaluate(&attr.expr).expect("eval");
+            let (val, _) = Evaluator::new(&ctx).evaluate(&attr.expr).unwrap();
             ctx.set_variable(k, val);
         }
         assert!(ctx.get_variable("foo").is_some());
@@ -429,17 +433,15 @@ bar = 20
             "port = 80
 ",
         )
-        .expect("ok");
+        .unwrap();
         mgr.parse_hcl_string(
             "b.hcl",
             "port = 8080
 ",
         )
-        .expect("ok");
+        .unwrap();
 
-        let err = mgr
-            .merge_all()
-            .expect_err("should have duplicate attribute error");
+        let err = mgr.merge_all().err().unwrap();
         assert_eq!(err.errors().len(), 1);
         assert!(
             err.errors()[0]
@@ -453,15 +455,11 @@ bar = 20
         let mut mgr = HclParser::new();
         let bad_hcl = "port = 
 ";
-        let err = mgr
-            .parse_hcl_string("bad.hcl", bad_hcl)
-            .expect_err("parse error");
+        let err = mgr.parse_hcl_string("bad.hcl", bad_hcl).err().unwrap();
         assert!(err.has_errors());
 
         let bad_json = "{ invalid json }";
-        let err_json = mgr
-            .parse_json_string("bad.json", bad_json)
-            .expect_err("json parse error");
+        let err_json = mgr.parse_json_string("bad.json", bad_json).err().unwrap();
         assert!(err_json.has_errors());
     }
 
@@ -470,22 +468,22 @@ bar = 20
         let temp_dir = std::env::temp_dir();
         let hcl_path_buf = temp_dir.join(format!("test_mgr_{}.hcl", std::process::id()));
         let json_path_buf = temp_dir.join(format!("test_mgr_{}.json", std::process::id()));
-        let hcl_path = hcl_path_buf.to_str().expect("hcl path str");
-        let json_path = json_path_buf.to_str().expect("json path str");
+        let hcl_path = hcl_path_buf.to_str().unwrap();
+        let json_path = json_path_buf.to_str().unwrap();
 
-        let mut f_hcl = fs::File::create(hcl_path).expect("create hcl");
-        writeln!(f_hcl, "enabled = true").expect("write hcl");
+        let mut f_hcl = fs::File::create(hcl_path).unwrap();
+        writeln!(f_hcl, "enabled = true").unwrap();
         drop(f_hcl);
 
-        let mut f_json = fs::File::create(json_path).expect("create json");
-        writeln!(f_json, r#"{{"count": 5}}"#).expect("write json");
+        let mut f_json = fs::File::create(json_path).unwrap();
+        writeln!(f_json, r#"{{"count": 5}}"#).unwrap();
         drop(f_json);
 
         let mut mgr = FileManager::new();
-        let body_hcl = mgr.parse_hcl_file(hcl_path).expect("parse hcl file");
+        let body_hcl = mgr.parse_hcl_file(hcl_path).unwrap();
         assert_eq!(body_hcl.attributes.len(), 1);
 
-        let body_json = mgr.parse_json_file(json_path).expect("parse json file");
+        let body_json = mgr.parse_json_file(json_path).unwrap();
         assert_eq!(body_json.attributes.len(), 1);
 
         assert_eq!(mgr.files().len(), 2);
@@ -519,7 +517,7 @@ bar = 20
     fn test_file_manager_parse_directory_and_format_all_diagnostics() {
         let temp_dir = std::env::temp_dir().join(format!("test_fm_dir_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
-        fs::create_dir_all(&temp_dir).expect("create tempdir");
+        fs::create_dir_all(&temp_dir).unwrap();
 
         let p1 = temp_dir.join("a.hcl");
         let p2 = temp_dir.join("b.hcl");
@@ -527,38 +525,32 @@ bar = 20
         let hidden = temp_dir.join(".hidden.hcl");
         let non_matching = temp_dir.join("ignored.txt");
 
-        fs::create_dir(&sub_dir).expect("create sub_dir");
-        fs::write(&p1, "val_a = \"hello\"\n").expect("write a");
-        fs::write(&p2, "val_b = \"world\"\n").expect("write b");
-        fs::write(&hidden, "hidden = 1\n").expect("write hidden");
-        fs::write(&non_matching, "attr_txt = 1\n").expect("write ignored");
+        fs::create_dir(&sub_dir).unwrap();
+        fs::write(&p1, "val_a = \"hello\"\n").unwrap();
+        fs::write(&p2, "val_b = \"world\"\n").unwrap();
+        fs::write(&hidden, "hidden = 1\n").unwrap();
+        fs::write(&non_matching, "attr_txt = 1\n").unwrap();
 
         let mut mgr = FileManager::new();
-        let body = mgr
-            .parse_directory(&temp_dir, &["hcl"])
-            .expect("parse directory ok");
+        let body = mgr.parse_directory(&temp_dir, &["hcl"]).unwrap();
         assert_eq!(body.attributes.len(), 2);
         assert_eq!(mgr.file_count(), 2);
 
         // Test with leading dot and empty extensions
         let mut mgr_dot = FileManager::new();
-        let body_dot = mgr_dot
-            .parse_directory(&temp_dir, &[".hcl"])
-            .expect("parse directory dot ok");
+        let body_dot = mgr_dot.parse_directory(&temp_dir, &[".hcl"]).unwrap();
         assert_eq!(body_dot.attributes.len(), 2);
 
         let mut mgr_all = FileManager::new();
-        let body_all = mgr_all
-            .parse_directory(&temp_dir, &[])
-            .expect("parse directory all ok");
+        let body_all = mgr_all.parse_directory(&temp_dir, &[]).unwrap();
         assert_eq!(body_all.attributes.len(), 3);
 
         // Test format_all_diagnostics
         let mut diags = Diagnostics::new();
-        let span_a = Span::new(0, 5, 1, 1, 1, 6).with_file(p1.to_str().expect("p1 str"));
+        let span_a = Span::new(0, 5, 1, 1, 1, 6).with_file(p1.to_str().unwrap());
         diags.push(Diagnostic::error("Test error A", "Detail A", span_a));
 
-        let span_b = Span::new(0, 5, 1, 1, 1, 6).with_file(p2.to_str().expect("p2 str"));
+        let span_b = Span::new(0, 5, 1, 1, 1, 6).with_file(p2.to_str().unwrap());
         diags.push(Diagnostic::warning("Test warning B", "Detail B", span_b));
 
         let writer = DiagnosticWriter::plain();
@@ -570,20 +562,16 @@ bar = 20
 
         // Test parse error in one directory file
         let bad_hcl = temp_dir.join("c_bad.hcl");
-        fs::write(&bad_hcl, "bad = = parse error").expect("write bad");
+        fs::write(&bad_hcl, "bad = = parse error").unwrap();
         let mut mgr_err = FileManager::new();
-        let err_parse = mgr_err
-            .parse_directory(&temp_dir, &["hcl"])
-            .expect_err("parse error expected");
+        let err_parse = mgr_err.parse_directory(&temp_dir, &["hcl"]).err().unwrap();
         assert!(err_parse.has_errors());
         let _ = fs::remove_file(&bad_hcl);
 
         // Test non-existent directory error
         let bad_dir = temp_dir.join("missing");
         let mut bad_mgr = FileManager::new();
-        let err = bad_mgr
-            .parse_directory(bad_dir, &["hcl"])
-            .expect_err("should fail");
+        let err = bad_mgr.parse_directory(bad_dir, &["hcl"]).err().unwrap();
         assert!(err.has_errors());
 
         let _ = fs::remove_dir_all(&temp_dir);

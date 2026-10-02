@@ -312,6 +312,14 @@ fn rsadecrypt_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use crate::eval::stdlib::crypto::*;
     use crate::number::Number;
     use crate::types::{Type, Value, ValueData};
@@ -350,7 +358,7 @@ mod tests {
         let s = Value::new(Type::String, ValueData::String("hello".to_string()));
         let c = Value::new(
             Type::Number,
-            ValueData::Number(std::str::FromStr::from_str("1e100").expect("expected value")),
+            ValueData::Number(std::str::FromStr::from_str("1e100").unwrap()),
         );
 
         let res = (f.func)(&[s, c]);
@@ -376,7 +384,7 @@ mod tests {
         assert!(eval_func("bcrypt", &[]).is_err());
         assert!(
             eval_func("bcrypt", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -387,7 +395,7 @@ mod tests {
                 ValueData::String("password".to_string()),
             )],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(res.ty(), &Type::String);
 
         let res = eval_func(
@@ -396,11 +404,11 @@ mod tests {
                 Value::new(Type::String, ValueData::String("password".to_string())),
                 Value::new(
                     Type::Number,
-                    ValueData::Number(Number::from_str("4").expect("expected value")),
+                    ValueData::Number(Number::from_str("4").unwrap()),
                 ),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(res.ty(), &Type::String);
 
         assert!(
@@ -420,7 +428,7 @@ mod tests {
         assert!(eval_func("md5", &[]).is_err());
         assert!(
             eval_func("md5", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -431,7 +439,7 @@ mod tests {
                 ValueData::String("hello".to_string()),
             )],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res.data,
             ValueData::String("5d41402abc4b2a76b9719d911017c592".to_string())
@@ -443,7 +451,7 @@ mod tests {
         assert!(eval_func("sha1", &[]).is_err());
         assert!(
             eval_func("sha1", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -454,7 +462,7 @@ mod tests {
                 ValueData::String("hello".to_string()),
             )],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res.data,
             ValueData::String("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string())
@@ -466,7 +474,7 @@ mod tests {
         assert!(eval_func("sha256", &[]).is_err());
         assert!(
             eval_func("sha256", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -477,7 +485,7 @@ mod tests {
                 ValueData::String("hello".to_string()),
             )],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res.data,
             ValueData::String(
@@ -491,7 +499,7 @@ mod tests {
         assert!(eval_func("sha512", &[]).is_err());
         assert!(
             eval_func("sha512", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -502,7 +510,7 @@ mod tests {
                 ValueData::String("hello".to_string()),
             )],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res.data,
             ValueData::String(
@@ -514,7 +522,7 @@ mod tests {
     #[test]
     fn test_uuidv4() {
         assert!(eval_func("uuidv4", &[Value::unknown(Type::String)]).is_err());
-        let res = eval_func("uuidv4", &[]).expect("expected value");
+        let res = eval_func("uuidv4", &[]).unwrap();
         assert_eq!(res.ty(), &Type::String);
     }
 
@@ -526,7 +534,7 @@ mod tests {
                 "uuidv5",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -540,7 +548,7 @@ mod tests {
                 Value::new(Type::String, ValueData::String("test".to_string())),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(res.ty(), &Type::String);
 
         assert!(
@@ -563,23 +571,23 @@ mod tests {
                 "rsadecrypt",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
         let mut rng = OsRng;
-        let priv_key = RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate a key");
+        let priv_key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
 
         let priv_key_pem = priv_key
             .to_pkcs1_pem(rsa::pkcs8::LineEnding::LF)
-            .expect("expected value")
+            .unwrap()
             .to_string();
 
         let data = b"hello world";
         let enc_data = priv_key
             .to_public_key()
             .encrypt(&mut rng, rsa::Pkcs1v15Encrypt, data)
-            .expect("failed to encrypt");
+            .unwrap();
         let b64_enc_data = BASE64_STANDARD.encode(enc_data);
 
         let res = eval_func(
@@ -589,14 +597,14 @@ mod tests {
                 Value::new(Type::String, ValueData::String(priv_key_pem)),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(*res.data, ValueData::String("hello world".to_string()));
     }
 
     #[test]
     #[should_panic(expected = "Function notexist not found")]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).expect("expected value");
+        eval_func("notexist", &[]).unwrap();
     }
 
     #[test]
@@ -606,7 +614,7 @@ mod tests {
         let num_val = |s: &str| {
             Value::new(
                 Type::Number,
-                ValueData::Number(std::str::FromStr::from_str(s).expect("expected value")),
+                ValueData::Number(std::str::FromStr::from_str(s).unwrap()),
             )
         };
 
@@ -622,14 +630,14 @@ mod tests {
         assert!(eval_func("base64sha256", &[]).is_err());
         assert!(
             eval_func("base64sha256", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("base64sha256", &[str_val("hello")]).is_ok());
         assert!(eval_func("base64sha512", &[]).is_err());
         assert!(
             eval_func("base64sha512", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("base64sha512", &[str_val("hello")]).is_ok());
@@ -640,7 +648,7 @@ mod tests {
         // Line 53
         assert!(
             eval_func("bcrypt", &[str_val("hello"), Value::unknown(Type::Number),])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -656,7 +664,7 @@ mod tests {
                     Value::unknown(Type::String),
                 ]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -678,7 +686,7 @@ mod tests {
                 "rsadecrypt",
                 &[str_val("ciphertext"), Value::unknown(Type::String)]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -699,10 +707,10 @@ mod tests {
         use rand::rngs::OsRng;
         use rsa::{RsaPrivateKey, pkcs8::EncodePrivateKey};
         let mut rng = OsRng;
-        let priv_key = RsaPrivateKey::new(&mut rng, 512).expect("failed to generate a key");
+        let priv_key = RsaPrivateKey::new(&mut rng, 512).unwrap();
         let priv_key_pem = priv_key
             .to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
-            .expect("expected value")
+            .unwrap()
             .to_string();
 
         // Line 246: rsadecrypt with invalid RSA key
@@ -732,7 +740,7 @@ mod tests {
         let enc_non_utf8 = priv_key
             .to_public_key()
             .encrypt(&mut rng, rsa::Pkcs1v15Encrypt, &non_utf8_data)
-            .expect("failed to encrypt");
+            .unwrap();
         let b64_non_utf8 = BASE64_STANDARD.encode(enc_non_utf8);
         assert!(
             eval_func(
@@ -746,14 +754,14 @@ mod tests {
         let enc_data = priv_key
             .to_public_key()
             .encrypt(&mut rng, rsa::Pkcs1v15Encrypt, b"test")
-            .expect("failed to encrypt");
+            .unwrap();
         let b64_enc_data = BASE64_STANDARD.encode(enc_data);
 
         let res = eval_func(
             "rsadecrypt",
             &[str_val(&b64_enc_data), str_val(&priv_key_pem)],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(*res.data, ValueData::String("test".to_string()));
 
         // Error handling for non-string first arguments

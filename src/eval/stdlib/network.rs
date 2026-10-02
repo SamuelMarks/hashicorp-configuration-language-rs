@@ -173,6 +173,14 @@ fn cidrsubnets_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use crate::eval::stdlib::network::*;
     use crate::number::Number;
     use crate::types::{Type, Value, ValueData};
@@ -200,29 +208,25 @@ mod tests {
         let unk = Value::unknown(Type::String);
         let s = Value::new(Type::String, ValueData::String("string".to_string()));
 
-        assert!(
-            (host.func)(&[unk.clone(), s.clone()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!((host.func)(&[unk.clone(), s.clone()]).unwrap().is_unknown());
         assert!(
             (netmask.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (subnet.func)(&[unk.clone(), s.clone(), s.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (subnets.func)(&[unk.clone(), s.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (contains.func)(&[unk.clone(), s.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -253,7 +257,7 @@ mod tests {
                 "cidrhost",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -265,7 +269,7 @@ mod tests {
                     Value::unknown(Type::Number),
                 ]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -275,11 +279,11 @@ mod tests {
                 Value::new(Type::String, ValueData::String("10.0.0.0/16".to_string())),
                 Value::new(
                     Type::Number,
-                    ValueData::Number(Number::from_str("5").expect("expected value")),
+                    ValueData::Number(Number::from_str("5").unwrap()),
                 ),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert!(
             matches!(&*res.data, ValueData::String(s) if {assert!(s.contains("host_stub_10.0.0.0/16_5")); true})
         );
@@ -294,7 +298,7 @@ mod tests {
                     ),
                     Value::new(
                         Type::Number,
-                        ValueData::Number(Number::from_str("5").expect("expected value"))
+                        ValueData::Number(Number::from_str("5").unwrap())
                     )
                 ]
             )
@@ -318,7 +322,7 @@ mod tests {
         assert!(eval_func("cidrnetmask", &[]).is_err());
         assert!(
             eval_func("cidrnetmask", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -329,7 +333,7 @@ mod tests {
                 ValueData::String("10.0.0.0/16".to_string()),
             )],
         )
-        .expect("expected value");
+        .unwrap();
         assert!(
             matches!(&*res.data, ValueData::String(s) if {assert!(s.contains("255.255.0.0")); true})
         );
@@ -358,7 +362,7 @@ mod tests {
                     Value::unknown(Type::String)
                 ]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -368,15 +372,15 @@ mod tests {
                 Value::new(Type::String, ValueData::String("10.0.0.0/16".to_string())),
                 Value::new(
                     Type::Number,
-                    ValueData::Number(Number::from_str("8").expect("expected value")),
+                    ValueData::Number(Number::from_str("8").unwrap()),
                 ),
                 Value::new(
                     Type::Number,
-                    ValueData::Number(Number::from_str("2").expect("expected value")),
+                    ValueData::Number(Number::from_str("2").unwrap()),
                 ),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert!(
             matches!(&*res.data, ValueData::String(s) if {assert!(s.contains("subnet_stub_10.0.0.0/16")); true})
         );
@@ -390,7 +394,7 @@ mod tests {
                 "cidrsubnets",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -400,22 +404,22 @@ mod tests {
                 Value::new(Type::String, ValueData::String("10.0.0.0/16".to_string())),
                 Value::new(
                     Type::Number,
-                    ValueData::Number(Number::from_str("4").expect("expected value")),
+                    ValueData::Number(Number::from_str("4").unwrap()),
                 ),
                 Value::new(
                     Type::Number,
-                    ValueData::Number(Number::from_str("4").expect("expected value")),
+                    ValueData::Number(Number::from_str("4").unwrap()),
                 ),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert!(matches!(&*res.data, ValueData::Array(arr) if {assert_eq!(arr.len(), 2); true}));
     }
 
     #[test]
     #[should_panic(expected = "Function notexist not found")]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).expect("expected value");
+        eval_func("notexist", &[]).unwrap();
     }
 
     #[test]
@@ -455,7 +459,7 @@ mod tests {
         // host number too large for i128:
         let huge_num = Value::new(
             Type::Number,
-            ValueData::Number(Number::from_str("1e100").expect("expected value")),
+            ValueData::Number(Number::from_str("1e100").unwrap()),
         );
         assert!(eval_func("cidrhost", &[str_val("10.0.0.0/8"), huge_num]).is_err());
 

@@ -433,6 +433,14 @@ impl Body {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::ast::expr::Expression;
     use crate::span::Span;
@@ -659,7 +667,7 @@ mod tests {
                 vec!["label".to_string()],
             ));
 
-        let (content, remain) = body.partial_content(&schema).expect("partial content");
+        let (content, remain) = body.partial_content(&schema).unwrap();
 
         // Matched content
         assert_eq!(content.attributes.len(), 1);
@@ -679,7 +687,7 @@ mod tests {
             .with_attribute(AttributeSchema::required("unknown_attr"))
             .with_block(BlockHeaderSchema::new("unknown_block", vec![]));
 
-        let (content2, remain2) = remain.partial_content(&schema2).expect("stage 2");
+        let (content2, remain2) = remain.partial_content(&schema2).unwrap();
         assert_eq!(content2.attributes.len(), 1);
         assert_eq!(content2.blocks.len(), 1);
         assert_eq!(remain2.attributes.len(), 0);
@@ -785,7 +793,7 @@ mod tests {
                     .with_body_schema(inner_schema.clone()),
             );
 
-        let content = body.content(&schema).expect("content should succeed");
+        let content = body.content(&schema).unwrap();
         assert_eq!(content.attributes.len(), 1);
         assert_eq!(content.blocks.len(), 1);
 
@@ -803,9 +811,7 @@ mod tests {
         assert!(err_labels.is_err());
 
         // 4. partial_content() success with valid inner body schema and optional attribute omitted
-        let (p_content, remain) = body
-            .partial_content(&schema)
-            .expect("partial content should succeed");
+        let (p_content, remain) = body.partial_content(&schema).unwrap();
         assert_eq!(p_content.attributes.len(), 1);
         assert_eq!(p_content.blocks.len(), 1);
         assert_eq!(remain.attributes.len(), 0);
@@ -842,10 +848,7 @@ mod tests {
         assert_eq!(schema.blocks.len(), 2);
         let sub_schema = &schema.blocks["sub"];
         assert_eq!(sub_schema.label_names, vec!["id"]);
-        let inner = sub_schema
-            .body_schema
-            .as_ref()
-            .expect("inner body schema exists");
+        let inner = sub_schema.body_schema.as_ref().unwrap();
         assert!(inner.attributes["count"].required);
 
         let replicas_schema = &schema.blocks["replicas"];
@@ -873,17 +876,12 @@ mod tests {
             ]
         }"#;
 
-        let body = crate::parse::json::parse_json_with_schema(json_str, &schema)
-            .expect("schema-driven parse succeeds");
+        let body = crate::parse::json::parse_json_with_schema(json_str, &schema).unwrap();
 
         assert!(body.attributes.contains_key("name"));
         assert_eq!(body.blocks.len(), 3);
 
-        let sub_block = body
-            .blocks
-            .iter()
-            .find(|b| b.block_type == "sub")
-            .expect("found sub block");
+        let sub_block = body.blocks.iter().find(|b| b.block_type == "sub").unwrap();
         assert_eq!(sub_block.labels, vec!["sub-primary"]);
         assert!(sub_block.body.attributes.contains_key("count"));
 
@@ -925,15 +923,15 @@ mod tests {
             servce {
             }
         "#;
-        let body = crate::api::parse(src).expect("parsed");
-        let err = validate_body(&body, &schema).expect_err("should have schema errors");
+        let body = crate::api::parse(src).unwrap();
+        let err = validate_body(&body, &schema).err().unwrap();
 
         // Verify typo suggestion on attribute
         let attr_err = err
             .errors()
             .iter()
             .find(|d| d.summary_str().contains("usrname"))
-            .expect("attribute error");
+            .unwrap();
         assert_eq!(
             attr_err.detail.as_deref(),
             Some("Did you mean \"username\"?")
@@ -944,7 +942,7 @@ mod tests {
             .errors()
             .iter()
             .find(|d| d.summary_str().contains("servce"))
-            .expect("block error");
+            .unwrap();
         assert_eq!(
             block_err.detail.as_deref(),
             Some("Did you mean \"service\"?")

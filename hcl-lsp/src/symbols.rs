@@ -130,6 +130,14 @@ pub fn span_to_range(span: &Span) -> Range {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::protocol::TextDocumentItem;
 
@@ -159,24 +167,18 @@ mod tests {
         let symbols = document_symbols(&doc);
 
         assert_eq!(symbols.len(), 2); // 1 attribute + 1 block
-        let attr_sym = symbols
-            .iter()
-            .find(|s| s.name == "region")
-            .expect("region attr");
+        let attr_sym = symbols.iter().find(|s| s.name == "region").unwrap();
         assert_eq!(attr_sym.kind, SymbolKind::PROPERTY);
 
         let block_sym = symbols
             .iter()
             .find(|s| s.name.contains("aws_instance"))
-            .expect("block sym");
+            .unwrap();
         assert_eq!(block_sym.kind, SymbolKind::NAMESPACE);
-        let children = block_sym.children.as_ref().expect("children");
+        let children = block_sym.children.as_ref().unwrap();
 
         // Has 2 labels ("aws_instance", "web") + 2 attributes + 1 sub-block
-        let label_sym = children
-            .iter()
-            .find(|c| c.name == "aws_instance")
-            .expect("label sym");
+        let label_sym = children.iter().find(|c| c.name == "aws_instance").unwrap();
         assert_eq!(label_sym.kind, SymbolKind::STRING);
         assert!(children.iter().any(|c| c.name == "ami"));
         assert!(children.iter().any(|c| c.name == "network_interface"));
@@ -236,20 +238,14 @@ mod tests {
             sp,
         );
         block_no_label_spans.label_spans.clear();
-        let b = doc_func.parsed_body.as_mut().expect("parsed body");
+        let b = doc_func.parsed_body.as_mut().unwrap();
         b.blocks.push(block_no_label_spans);
 
         let syms = document_symbols(&doc_func);
-        let calc = syms
-            .iter()
-            .find(|s| s.name == "calculate")
-            .expect("calculate function");
+        let calc = syms.iter().find(|s| s.name == "calculate").unwrap();
         assert_eq!(calc.kind, SymbolKind::FUNCTION);
-        let srv = syms
-            .iter()
-            .find(|s| s.name.contains("server"))
-            .expect("server block");
-        let srv_children = srv.children.as_ref().expect("has label child");
+        let srv = syms.iter().find(|s| s.name.contains("server")).unwrap();
+        let srv_children = srv.children.as_ref().unwrap();
         assert_eq!(srv_children[0].name, "node1");
     }
 }

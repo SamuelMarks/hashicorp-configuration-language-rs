@@ -851,6 +851,14 @@ fn style_underline_colored(chars: &[char]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -1078,14 +1086,14 @@ mod tests {
         let mut buf_single = Vec::new();
         writer
             .write_diagnostic(&first_err, "test.hcl", source, &mut buf_single)
-            .expect("write success");
+            .unwrap();
         assert_ne!(buf_single, Vec::<u8>::new());
 
         // write_diagnostics
         let mut buf_multi = Vec::new();
         writer
             .write_diagnostics(&diag_list, "test.hcl", source, &mut buf_multi)
-            .expect("write success");
+            .unwrap();
         assert_ne!(buf_multi, Vec::<u8>::new());
     }
 
@@ -1332,14 +1340,14 @@ mod tests {
         // to_json_value and to_json
         let json_val = diag.to_json_value(Some("code line\n"));
         assert!(json_val.is_object());
-        let json_str = diag.to_json(Some("code line\n")).expect("serialization ok");
+        let json_str = diag.to_json(Some("code line\n")).unwrap();
         assert!(json_str.contains("summary only"));
 
         // with_address and Diagnostic::from_json
         let d_addr = diag.clone().with_address("module.foo");
         assert_eq!(d_addr.address.as_deref(), Some("module.foo"));
 
-        let from_j = Diagnostic::from_json(&json_str).expect("deserialization ok");
+        let from_j = Diagnostic::from_json(&json_str).unwrap();
         assert_eq!(from_j.summary.as_deref(), Some("summary only"));
         assert!(Diagnostic::from_json("invalid json").is_err());
 
@@ -1349,10 +1357,8 @@ mod tests {
         let arr_val = diags.to_json_value(Some("code line\n"));
         assert!(arr_val.is_array());
 
-        let diags_json = diags
-            .to_json(Some("code line\n"))
-            .expect("serialization ok");
-        let parsed_diags = Diagnostics::from_json(&diags_json).expect("deserialization ok");
+        let diags_json = diags.to_json(Some("code line\n")).unwrap();
+        let parsed_diags = Diagnostics::from_json(&diags_json).unwrap();
         assert_eq!(parsed_diags.errors().len(), 1);
 
         // Context with same file as subject (evaluates line 608 Some(ctx_file) != diag.subject.file to false)

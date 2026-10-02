@@ -1410,6 +1410,14 @@ fn zipmap_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     use crate::number::Number;
@@ -1417,10 +1425,7 @@ mod tests {
     use std::str::FromStr;
 
     fn get_func(name: &str) -> Function {
-        functions()
-            .into_iter()
-            .find(|f| f.name == name)
-            .expect("expected value")
+        functions().into_iter().find(|f| f.name == name).unwrap()
     }
 
     fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
@@ -1439,9 +1444,7 @@ mod tests {
     fn num_val(s: &str) -> Value {
         Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str(s).expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
         )
     }
 
@@ -1491,7 +1494,7 @@ mod tests {
     fn test_alltrue_anytrue() {
         assert_eq!(
             eval_func("alltrue", &[list_val(vec![bool_val(true), bool_val(true)])])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::Bool(true)
@@ -1501,7 +1504,7 @@ mod tests {
                 "alltrue",
                 &[list_val(vec![bool_val(true), bool_val(false)])]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::Bool(false)
@@ -1512,7 +1515,7 @@ mod tests {
                 "anytrue",
                 &[list_val(vec![bool_val(true), bool_val(false)])]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::Bool(true)
@@ -1522,21 +1525,17 @@ mod tests {
                 "anytrue",
                 &[list_val(vec![bool_val(false), bool_val(false)])]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::Bool(false)
         );
 
         assert!(eval_func("alltrue", &[]).is_err());
-        assert!(
-            eval_func("alltrue", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("alltrue", &[unk_val()]).unwrap().is_unknown());
         assert!(
             eval_func("alltrue", &[list_val(vec![unk_val()])])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("alltrue", &[list_val(vec![str_val("bad")])]).is_err());
@@ -1545,14 +1544,10 @@ mod tests {
     #[test]
     fn test_anytrue_errors() {
         assert!(eval_func("anytrue", &[]).is_err());
-        assert!(
-            eval_func("anytrue", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("anytrue", &[unk_val()]).unwrap().is_unknown());
         assert!(
             eval_func("anytrue", &[list_val(vec![unk_val()])])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("anytrue", &[list_val(vec![str_val("bad")])]).is_err());
@@ -1565,7 +1560,7 @@ mod tests {
         let set_val = Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set));
         assert_eq!(
             eval_func("contains", &[set_val, str_val("a")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::Bool(true)
@@ -1577,7 +1572,7 @@ mod tests {
         assert!(eval_func("chunklist", &[str_val("a"), num_val("2")]).is_err());
         assert!(
             eval_func("chunklist", &[list_val(vec![]), unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("chunklist", &[list_val(vec![]), str_val("bad")]).is_err());
@@ -1592,14 +1587,14 @@ mod tests {
                 num_val("2"),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(get_arr_len(&res), 2);
         assert!(eval_func("chunklist", &[]).is_err());
         assert!(eval_func("chunklist", &[list_val(vec![]), num_val("2")]).is_ok());
         assert!(eval_func("chunklist", &[list_val(vec![str_val("a")]), num_val("-1")]).is_err());
         assert!(
             eval_func("chunklist", &[unk_val(), num_val("2")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -1608,7 +1603,7 @@ mod tests {
     fn test_coalesce_coalescelist() {
         assert_eq!(
             eval_func("coalesce", &[null_val(), str_val("a")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("a".to_string())
@@ -1621,7 +1616,7 @@ mod tests {
                 "coalescelist",
                 &[list_val(vec![]), list_val(vec![str_val("a")])]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::Array(vec![str_val("a")])
@@ -1632,8 +1627,7 @@ mod tests {
 
     #[test]
     fn test_compact() {
-        let res = eval_func("compact", &[list_val(vec![null_val(), str_val("a")])])
-            .expect("expected value");
+        let res = eval_func("compact", &[list_val(vec![null_val(), str_val("a")])]).unwrap();
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("compact", &[]).is_err());
         assert!(eval_func("compact", &[str_val("bad")]).is_err());
@@ -1645,7 +1639,7 @@ mod tests {
             "concat",
             &[list_val(vec![str_val("a")]), list_val(vec![str_val("b")])],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(get_arr_len(&res), 2);
         assert!(eval_func("concat", &[list_val(vec![str_val("a")]), str_val("bad")]).is_err());
     }
@@ -1654,14 +1648,14 @@ mod tests {
     fn test_contains() {
         assert_eq!(
             eval_func("contains", &[list_val(vec![str_val("a")]), str_val("a")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::Bool(true)
         );
         assert_eq!(
             eval_func("contains", &[list_val(vec![str_val("a")]), str_val("b")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::Bool(false)
@@ -1672,8 +1666,7 @@ mod tests {
 
     #[test]
     fn test_distinct() {
-        let res = eval_func("distinct", &[list_val(vec![str_val("a"), str_val("a")])])
-            .expect("expected value");
+        let res = eval_func("distinct", &[list_val(vec![str_val("a"), str_val("a")])]).unwrap();
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("distinct", &[]).is_err());
     }
@@ -1685,14 +1678,14 @@ mod tests {
                 "element",
                 &[list_val(vec![str_val("a"), str_val("b")]), num_val("1")]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
             &ValueData::String("b".to_string())
         );
         assert_eq!(
             eval_func("element", &[list_val(vec![str_val("a")]), num_val("1")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("a".to_string())
@@ -1703,8 +1696,7 @@ mod tests {
 
     #[test]
     fn test_flatten() {
-        let res = eval_func("flatten", &[list_val(vec![list_val(vec![str_val("a")])])])
-            .expect("expected value");
+        let res = eval_func("flatten", &[list_val(vec![list_val(vec![str_val("a")])])]).unwrap();
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("flatten", &[]).is_err());
     }
@@ -1716,12 +1708,10 @@ mod tests {
                 "index",
                 &[list_val(vec![str_val("a"), str_val("b")]), str_val("b")]
             )
-            .expect("expected value")
+            .unwrap()
             .data
             .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("1").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("1").unwrap()))
         );
         assert!(eval_func("index", &[list_val(vec![str_val("a")]), str_val("b")]).is_err());
         assert!(eval_func("index", &[]).is_err());
@@ -1730,9 +1720,9 @@ mod tests {
     #[test]
     fn test_keys_values() {
         let map = map_val(vec![("a", str_val("1")), ("b", str_val("2"))]);
-        let k = eval_func("keys", std::slice::from_ref(&map)).expect("expected value");
+        let k = eval_func("keys", std::slice::from_ref(&map)).unwrap();
         assert_eq!(get_arr_len(&k), 2);
-        let v = eval_func("values", &[map]).expect("expected value");
+        let v = eval_func("values", &[map]).unwrap();
         assert_eq!(get_arr_len(&v), 2);
         assert!(eval_func("keys", &[]).is_err());
         assert!(eval_func("values", &[]).is_err());
@@ -1742,16 +1732,14 @@ mod tests {
     fn test_length() {
         assert_eq!(
             eval_func("length", &[list_val(vec![str_val("a"), str_val("b")])])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("2").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("2").unwrap()))
         );
         assert_eq!(
             eval_func("length", &[str_val("abc")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             num_val("3").data.as_ref()
@@ -1771,14 +1759,14 @@ mod tests {
         let map = map_val(vec![("a", str_val("1"))]);
         assert_eq!(
             eval_func("lookup", &[map.clone(), str_val("a")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("1".to_string())
         );
         assert_eq!(
             eval_func("lookup", &[map.clone(), str_val("b"), str_val("def")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("def".to_string())
@@ -1797,7 +1785,7 @@ mod tests {
                 list_val(vec![str_val("k1")]),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("matchkeys", &[]).is_err());
     }
@@ -1806,15 +1794,14 @@ mod tests {
     fn test_merge() {
         let m1 = map_val(vec![("a", str_val("1"))]);
         let m2 = map_val(vec![("b", str_val("2"))]);
-        let res = eval_func("merge", &[m1, m2]).expect("expected value");
+        let res = eval_func("merge", &[m1, m2]).unwrap();
         assert_eq!(get_obj_len(&res), 2);
         assert!(eval_func("merge", &[str_val("bad")]).is_err());
     }
 
     #[test]
     fn test_reverse() {
-        let res = eval_func("reverse", &[list_val(vec![str_val("a"), str_val("b")])])
-            .expect("expected value");
+        let res = eval_func("reverse", &[list_val(vec![str_val("a"), str_val("b")])]).unwrap();
         assert_eq!(
             *res.data,
             ValueData::Array(vec![str_val("b"), str_val("a")])
@@ -1827,32 +1814,31 @@ mod tests {
         let s1 = set_val(vec![str_val("a"), str_val("b")]);
         let s2 = set_val(vec![str_val("b"), str_val("c")]);
 
-        let union = eval_func("setunion", &[s1.clone(), s2.clone()]).expect("expected value");
+        let union = eval_func("setunion", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*union.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
 
-        let int = eval_func("setintersection", &[s1.clone(), s2.clone()]).expect("expected value");
+        let int = eval_func("setintersection", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*int.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
 
-        let sub = eval_func("setsubtract", &[s1.clone(), s2.clone()]).expect("expected value");
+        let sub = eval_func("setsubtract", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*sub.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
 
-        let sym_diff =
-            eval_func("setsymmetricdifference", &[s1.clone(), s2.clone()]).expect("expected value");
+        let sym_diff = eval_func("setsymmetricdifference", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*sym_diff.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
 
-        let prod = eval_func("setproduct", &[s1, s2]).expect("expected value");
+        let prod = eval_func("setproduct", &[s1, s2]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*prod.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -1862,15 +1848,14 @@ mod tests {
     #[test]
     fn test_slice() {
         let arr = list_val(vec![str_val("a"), str_val("b"), str_val("c")]);
-        let sl = eval_func("slice", &[arr, num_val("1"), num_val("2")]).expect("expected value");
+        let sl = eval_func("slice", &[arr, num_val("1"), num_val("2")]).unwrap();
         assert_eq!(get_arr_len(&sl), 1);
         assert!(eval_func("slice", &[]).is_err());
     }
 
     #[test]
     fn test_sort() {
-        let res = eval_func("sort", &[list_val(vec![str_val("b"), str_val("a")])])
-            .expect("expected value");
+        let res = eval_func("sort", &[list_val(vec![str_val("b"), str_val("a")])]).unwrap();
         assert_eq!(
             *res.data,
             ValueData::Array(vec![str_val("a"), str_val("b")])
@@ -1882,7 +1867,7 @@ mod tests {
     fn test_sum() {
         assert_eq!(
             eval_func("sum", &[list_val(vec![num_val("1"), num_val("2")])])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             num_val("3").data.as_ref()
@@ -1893,7 +1878,7 @@ mod tests {
     #[test]
     fn test_transpose() {
         let map = map_val(vec![("a", list_val(vec![str_val("1")]))]);
-        let res = eval_func("transpose", &[map]).expect("expected value");
+        let res = eval_func("transpose", &[map]).unwrap();
         assert_eq!(get_obj_len(&res), 1);
         assert!(eval_func("transpose", &[]).is_err());
     }
@@ -1904,7 +1889,7 @@ mod tests {
             "zipmap",
             &[list_val(vec![str_val("a")]), list_val(vec![str_val("1")])],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(get_obj_len(&res), 1);
         assert!(eval_func("zipmap", &[]).is_err());
         assert!(eval_func("zipmap", &[list_val(vec![str_val("a")]), list_val(vec![])]).is_err()); // length mismatch
@@ -2237,7 +2222,7 @@ mod tests {
         let tup = tuple_val(vec![num_val("1"), num_val("2"), num_val("3")]);
 
         // 1. chunklist with tuple
-        let cl = eval_func("chunklist", &[tup.clone(), num_val("2")]).expect("expected chunklist");
+        let cl = eval_func("chunklist", &[tup.clone(), num_val("2")]).unwrap();
         assert_eq!(
             cl.ty(),
             &Type::List(Box::new(Type::List(Box::new(Type::Dynamic))))
@@ -2251,7 +2236,7 @@ mod tests {
                 num_val("-1"),
             ],
         )
-        .expect("expected element");
+        .unwrap();
         assert_eq!(*el.data, ValueData::String("c".to_string()));
 
         // 3. matchkeys with tuple
@@ -2263,7 +2248,7 @@ mod tests {
                 list_val(vec![str_val("k2")]),
             ],
         )
-        .expect("expected matchkeys");
+        .unwrap();
         assert_eq!(mk.ty(), &Type::List(Box::new(Type::Dynamic)));
 
         // 4. setintersection with tuple
@@ -2271,7 +2256,7 @@ mod tests {
             "setintersection",
             &[tup, list_val(vec![num_val("2"), num_val("4")])],
         )
-        .expect("expected setintersection");
+        .unwrap();
         assert_eq!(si.ty(), &Type::Set(Box::new(Type::Dynamic)));
 
         // 5. setproduct with multi-element lists to trigger inner index increment
@@ -2282,11 +2267,11 @@ mod tests {
                 list_val(vec![num_val("1"), num_val("2")]),
             ],
         )
-        .expect("expected setproduct");
+        .unwrap();
         assert_eq!(get_arr_len(&sp), 4);
 
         // 6. reverse with empty list
-        let rev = eval_func("reverse", &[list_val(vec![])]).expect("expected reverse");
+        let rev = eval_func("reverse", &[list_val(vec![])]).unwrap();
         assert_eq!(get_arr_len(&rev), 0);
 
         // 7. lookup with default value
@@ -2298,7 +2283,7 @@ mod tests {
                 str_val("default_val"),
             ],
         )
-        .expect("expected lookup");
+        .unwrap();
         assert_eq!(*lk.data, ValueData::String("default_val".to_string()));
 
         // 8. Coercion failure tests for map_err closures
@@ -2418,14 +2403,14 @@ mod tests {
             "concat",
             &[list_val(vec![num_val("1")]), tuple_val(vec![num_val("2")])],
         )
-        .expect("expected concat");
+        .unwrap();
         assert_eq!(get_arr_len(&cc), 2);
 
         let spe = eval_func(
             "setproduct",
             &[list_val(vec![num_val("1")]), list_val(vec![])],
         )
-        .expect("expected setproduct");
+        .unwrap();
         assert_eq!(get_arr_len(&spe), 0);
 
         // 12. args[0] and args[1] unknown tests for contains, element, index, zipmap
@@ -2454,14 +2439,11 @@ mod tests {
         );
 
         // 13. coalesce with empty strings, null_str, and non-string fallbacks
-        let coal_res =
-            eval_func("coalesce", &[str_val(""), num_val("10")]).expect("expected coalesce");
+        let coal_res = eval_func("coalesce", &[str_val(""), num_val("10")]).unwrap();
         assert_eq!(*coal_res.data, *num_val("10").data);
-        let coal_res2 =
-            eval_func("coalesce", &[str_val(""), str_val("hello")]).expect("expected coalesce");
+        let coal_res2 = eval_func("coalesce", &[str_val(""), str_val("hello")]).unwrap();
         assert_eq!(*coal_res2.data, *str_val("hello").data);
-        let coal_res3 = eval_func("coalesce", &[null_str.clone(), str_val("fallback")])
-            .expect("expected coalesce");
+        let coal_res3 = eval_func("coalesce", &[null_str.clone(), str_val("fallback")]).unwrap();
         assert_eq!(*coal_res3.data, *str_val("fallback").data);
 
         // 14. coalescelist with empty list and non-list error
@@ -2469,16 +2451,14 @@ mod tests {
             "coalescelist",
             &[list_val(vec![]), list_val(vec![num_val("1")])],
         )
-        .expect("expected coalescelist");
+        .unwrap();
         assert_eq!(get_arr_len(&cl_res), 1);
         assert!(eval_func("coalescelist", &[num_val("10")]).is_err());
 
         // 15. compact with empty string and null_str
-        let comp_res = eval_func("compact", &[list_val(vec![str_val(""), str_val("a")])])
-            .expect("expected compact");
+        let comp_res = eval_func("compact", &[list_val(vec![str_val(""), str_val("a")])]).unwrap();
         assert_eq!(get_arr_len(&comp_res), 1);
-        let comp_null =
-            eval_func("compact", &[list_val(vec![null_str.clone()])]).expect("expected compact");
+        let comp_null = eval_func("compact", &[list_val(vec![null_str.clone()])]).unwrap();
         assert_eq!(get_arr_len(&comp_null), 0);
 
         // 16. slice with start < 0, start > len, end < start, and end > len
@@ -2520,20 +2500,17 @@ mod tests {
             "transpose",
             &[map_val(vec![("a", list_val(vec![null_str]))])],
         )
-        .expect("expected transpose");
+        .unwrap();
         assert_eq!(get_obj_len(&trans_null), 0);
         assert_eq!(get_arr_len(&num_val("1")), 0);
         assert_eq!(get_obj_len(&num_val("1")), 0);
 
         // 18. one() tests
         let single_list = list_val(vec![str_val("solo")]);
-        assert_eq!(
-            eval_func("one", &[single_list]).expect("ok"),
-            str_val("solo")
-        );
+        assert_eq!(eval_func("one", &[single_list]).unwrap(), str_val("solo"));
 
         let empty_list = Value::new(Type::List(Box::new(Type::String)), ValueData::Array(vec![]));
-        let empty_res = eval_func("one", &[empty_list]).expect("ok");
+        let empty_res = eval_func("one", &[empty_list]).unwrap();
         assert!(empty_res.is_null());
 
         let multi_list = list_val(vec![str_val("a"), str_val("b")]);
@@ -2541,7 +2518,7 @@ mod tests {
 
         let single_set = set_val(vec![str_val("single_set_item")]);
         assert_eq!(
-            eval_func("one", &[single_set]).expect("ok"),
+            eval_func("one", &[single_set]).unwrap(),
             str_val("single_set_item")
         );
 
@@ -2549,35 +2526,31 @@ mod tests {
             Type::Set(Box::new(Type::Number)),
             ValueData::Set(BTreeSet::new()),
         );
-        assert!(eval_func("one", &[empty_set]).expect("ok").is_null());
+        assert!(eval_func("one", &[empty_set]).unwrap().is_null());
 
         let multi_set = set_val(vec![str_val("a"), str_val("b")]);
         assert!(eval_func("one", &[multi_set]).is_err());
 
         let unk_list = Value::unknown(Type::List(Box::new(Type::String)));
-        assert!(eval_func("one", &[unk_list]).expect("ok").is_unknown());
+        assert!(eval_func("one", &[unk_list]).unwrap().is_unknown());
         let unk_set = Value::unknown(Type::Set(Box::new(Type::String)));
-        assert!(eval_func("one", &[unk_set]).expect("ok").is_unknown());
+        assert!(eval_func("one", &[unk_set]).unwrap().is_unknown());
         let unk_tuple = Value::unknown(Type::Tuple(vec![Type::String]));
-        assert!(eval_func("one", &[unk_tuple]).expect("ok").is_unknown());
+        assert!(eval_func("one", &[unk_tuple]).unwrap().is_unknown());
         let unk_empty_tuple = Value::unknown(Type::Tuple(vec![]));
-        assert!(
-            eval_func("one", &[unk_empty_tuple])
-                .expect("ok")
-                .is_unknown()
-        );
+        assert!(eval_func("one", &[unk_empty_tuple]).unwrap().is_unknown());
         let unk_dyn = Value::unknown(Type::Dynamic);
-        assert!(eval_func("one", &[unk_dyn]).expect("ok").is_unknown());
+        assert!(eval_func("one", &[unk_dyn]).unwrap().is_unknown());
 
         let empty_tup = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
-        assert!(eval_func("one", &[empty_tup]).expect("ok").is_null());
+        assert!(eval_func("one", &[empty_tup]).unwrap().is_null());
         let empty_set_dyn = Value::new(Type::Dynamic, ValueData::Set(BTreeSet::new()));
-        assert!(eval_func("one", &[empty_set_dyn]).expect("ok").is_null());
+        assert!(eval_func("one", &[empty_set_dyn]).unwrap().is_null());
 
         assert!(eval_func("one", &[str_val("not_a_collection")]).is_err());
         assert!(
             eval_func("one", &[Value::null(Type::Dynamic)])
-                .expect("ok")
+                .unwrap()
                 .is_null()
         );
         assert!(eval_func("one", &[]).is_err());
@@ -2593,32 +2566,32 @@ mod tests {
             Type::String,
             crate::types::refinement::Refinement::not_null(),
         );
-        assert!(eval_func("length", &[unk_ref]).expect("ok").is_unknown());
+        assert!(eval_func("length", &[unk_ref]).unwrap().is_unknown());
 
         // 19. coalesce() tests with nulls, empty strings, and unknowns
         assert_eq!(
-            eval_func("coalesce", &[str_val(""), str_val("first")]).expect("ok"),
+            eval_func("coalesce", &[str_val(""), str_val("first")]).unwrap(),
             str_val("first")
         );
         let null_v = Value::null(Type::String);
         assert_eq!(
-            eval_func("coalesce", &[null_v.clone(), str_val(""), str_val("found")]).expect("ok"),
+            eval_func("coalesce", &[null_v.clone(), str_val(""), str_val("found")]).unwrap(),
             str_val("found")
         );
         let unk_v = Value::unknown(Type::String);
         assert!(
             eval_func("coalesce", &[null_v, str_val(""), unk_v])
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("coalesce", &[str_val(""), Value::null(Type::String)]).is_err());
 
         // 20. index() on maps/objects
         let sample_map = map_val(vec![("alpha", num_val("10")), ("beta", num_val("20"))]);
-        let idx_alpha = eval_func("index", &[sample_map.clone(), str_val("alpha")]).expect("ok");
+        let idx_alpha = eval_func("index", &[sample_map.clone(), str_val("alpha")]).unwrap();
         assert_eq!(idx_alpha, num_val("0"));
 
-        let idx_beta = eval_func("index", &[sample_map.clone(), str_val("beta")]).expect("ok");
+        let idx_beta = eval_func("index", &[sample_map.clone(), str_val("beta")]).unwrap();
         assert_eq!(idx_beta, num_val("1"));
 
         assert!(eval_func("index", &[sample_map, str_val("gamma")]).is_err());
@@ -2635,21 +2608,20 @@ mod tests {
         set2.insert(str_val("b"));
         let dyn_set2 = Value::new(Type::Dynamic, ValueData::Set(set2));
 
-        let si =
-            eval_func("setintersection", &[dyn_set1.clone(), dyn_set2.clone()]).expect("si ok");
+        let si = eval_func("setintersection", &[dyn_set1.clone(), dyn_set2.clone()]).unwrap();
         assert_eq!(si.ty(), &Type::Set(Box::new(Type::Dynamic)));
 
-        let ss = eval_func("setsubtract", &[dyn_set1.clone(), dyn_set2.clone()]).expect("ss ok");
+        let ss = eval_func("setsubtract", &[dyn_set1.clone(), dyn_set2.clone()]).unwrap();
         assert_eq!(ss.ty(), &Type::Set(Box::new(Type::Dynamic)));
 
         let sym = eval_func(
             "setsymmetricdifference",
             &[dyn_set1.clone(), dyn_set2.clone()],
         )
-        .expect("sym ok");
+        .unwrap();
         assert_eq!(sym.ty(), &Type::Set(Box::new(Type::Dynamic)));
 
-        let sp = eval_func("setproduct", &[dyn_set1, dyn_set2]).expect("sp ok");
+        let sp = eval_func("setproduct", &[dyn_set1, dyn_set2]).unwrap();
         assert_eq!(
             sp.ty(),
             &Type::List(Box::new(Type::Tuple(vec![Type::Dynamic, Type::Dynamic])))

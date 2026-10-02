@@ -1,5 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 #[cfg(test)]
 mod tests {
+
     use crate::decode::{DecodeBody, DecodeValue};
     use crate::diagnostic::{Diagnostic, Diagnostics};
     use crate::encode::{EncodeBody, EncodeValue};
@@ -26,8 +34,7 @@ mod tests {
         let body = parser.parse_body();
 
         let mut ctx = Context::new();
-        let config: MyConfig =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("expected value");
+        let config: MyConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
 
         assert!(config.name.contains("test_name"));
         assert_eq!(config.count, 100);
@@ -40,8 +47,7 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let decoded =
-            <crate::ast::structure::Body as DecodeBody>::decode_body(&body, &[], &mut ctx)
-                .expect("decode Body");
+            <crate::ast::structure::Body as DecodeBody>::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(decoded, body);
     }
 
@@ -56,57 +62,21 @@ mod tests {
     #[test]
     fn test_decode_value_int() {
         let val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("42").expect("expected value"),
+            BigDecimal::from_str("42").unwrap(),
         )));
-        assert_eq!(
-            i8::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            i16::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            i32::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            i64::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            i128::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            isize::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
+        assert_eq!(i8::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(i16::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(i32::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(i64::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(i128::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(isize::decode_value(&val, dummy_span()).unwrap(), 42);
 
-        assert_eq!(
-            u8::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            u16::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            u32::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            u64::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            u128::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
-        assert_eq!(
-            usize::decode_value(&val, dummy_span()).expect("expected value"),
-            42
-        );
+        assert_eq!(u8::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(u16::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(u32::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(u64::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(u128::decode_value(&val, dummy_span()).unwrap(), 42);
+        assert_eq!(usize::decode_value(&val, dummy_span()).unwrap(), 42);
 
         // Error cases
         let err_val = make_val(ValueData::String("42".to_string()));
@@ -114,7 +84,7 @@ mod tests {
         assert!(u32::decode_value(&err_val, dummy_span()).is_err());
 
         let out_of_bounds = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("1e100").expect("expected value"),
+            BigDecimal::from_str("1e100").unwrap(),
         )));
         assert!(i32::decode_value(&out_of_bounds, dummy_span()).is_err());
     }
@@ -122,16 +92,10 @@ mod tests {
     #[test]
     fn test_decode_value_float() {
         let val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("42.5").expect("expected value"),
+            BigDecimal::from_str("42.5").unwrap(),
         )));
-        assert_eq!(
-            f32::decode_value(&val, dummy_span()).expect("expected value"),
-            42.5
-        );
-        assert_eq!(
-            f64::decode_value(&val, dummy_span()).expect("expected value"),
-            42.5
-        );
+        assert_eq!(f32::decode_value(&val, dummy_span()).unwrap(), 42.5);
+        assert_eq!(f64::decode_value(&val, dummy_span()).unwrap(), 42.5);
 
         let err_val = make_val(ValueData::String("42.5".to_string()));
         assert!(f32::decode_value(&err_val, dummy_span()).is_err());
@@ -141,9 +105,9 @@ mod tests {
     #[test]
     fn test_decode_value_bool() {
         let val = make_val(ValueData::Bool(true));
-        assert!(bool::decode_value(&val, dummy_span()).expect("expected value"));
+        assert!(bool::decode_value(&val, dummy_span()).unwrap());
         let err_val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("1").expect("expected value"),
+            BigDecimal::from_str("1").unwrap(),
         )));
         assert!(bool::decode_value(&err_val, dummy_span()).is_err());
     }
@@ -151,10 +115,7 @@ mod tests {
     #[test]
     fn test_decode_value_string() {
         let val = make_val(ValueData::String("hello".to_string()));
-        assert_eq!(
-            String::decode_value(&val, dummy_span()).expect("expected value"),
-            "hello"
-        );
+        assert_eq!(String::decode_value(&val, dummy_span()).unwrap(), "hello");
 
         let err_val = make_val(ValueData::Bool(true));
         assert!(String::decode_value(&err_val, dummy_span()).is_err());
@@ -164,22 +125,21 @@ mod tests {
     fn test_decode_value_vec() {
         let arr_val = make_val(ValueData::Array(vec![
             make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").expect("expected value"),
+                BigDecimal::from_str("1").unwrap(),
             ))),
             make_val(ValueData::Number(Number(
-                BigDecimal::from_str("2").expect("expected value"),
+                BigDecimal::from_str("2").unwrap(),
             ))),
         ]));
-        let vec: Vec<i32> = Vec::decode_value(&arr_val, dummy_span()).expect("expected value");
+        let vec: Vec<i32> = Vec::decode_value(&arr_val, dummy_span()).unwrap();
         assert_eq!(vec, vec![1, 2]);
 
         let mut set = BTreeSet::new();
         set.insert(make_val(ValueData::Number(Number(
-            BigDecimal::from_str("3").expect("expected value"),
+            BigDecimal::from_str("3").unwrap(),
         ))));
         let set_val = make_val(ValueData::Set(set));
-        let vec_from_set: Vec<i32> =
-            Vec::decode_value(&set_val, dummy_span()).expect("expected value");
+        let vec_from_set: Vec<i32> = Vec::decode_value(&set_val, dummy_span()).unwrap();
         assert_eq!(vec_from_set, vec![3]);
 
         let err_val = make_val(ValueData::Bool(true));
@@ -188,7 +148,7 @@ mod tests {
         // Error inside array
         let arr_err_val = make_val(ValueData::Array(vec![
             make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").expect("expected value"),
+                BigDecimal::from_str("1").unwrap(),
             ))),
             make_val(ValueData::String("error".to_string())),
         ]));
@@ -207,12 +167,11 @@ mod tests {
         map.insert(
             "a".to_string(),
             make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").expect("expected value"),
+                BigDecimal::from_str("1").unwrap(),
             ))),
         );
         let obj_val = make_val(ValueData::Object(map));
-        let hashmap: HashMap<String, i32> =
-            HashMap::decode_value(&obj_val, dummy_span()).expect("expected value");
+        let hashmap: HashMap<String, i32> = HashMap::decode_value(&obj_val, dummy_span()).unwrap();
         assert_eq!(hashmap.get("a"), Some(&1));
 
         let err_val = make_val(ValueData::Bool(true));
@@ -222,7 +181,7 @@ mod tests {
         err_map.insert(
             "a".to_string(),
             make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").expect("expected value"),
+                BigDecimal::from_str("1").unwrap(),
             ))),
         );
         err_map.insert(
@@ -237,30 +196,29 @@ mod tests {
     fn test_decode_value_option() {
         let null_val = make_val(ValueData::Null);
         assert_eq!(
-            Option::<i32>::decode_value(&null_val, dummy_span()).expect("expected value"),
+            Option::<i32>::decode_value(&null_val, dummy_span()).unwrap(),
             None
         );
 
         let num_val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("42").expect("expected value"),
+            BigDecimal::from_str("42").unwrap(),
         )));
         assert_eq!(
-            Option::<i32>::decode_value(&num_val, dummy_span()).expect("expected value"),
+            Option::<i32>::decode_value(&num_val, dummy_span()).unwrap(),
             Some(42)
         );
 
         let unk_val = make_val(ValueData::Unknown(None));
         // We know Option::decode_value delegating to T for Unknown will return T's error since T expects Number/String/etc.
         assert!(Option::<i32>::decode_value(&unk_val, dummy_span()).is_err());
-        let res_unk =
-            Option::<Value>::decode_value(&unk_val, dummy_span()).expect("expected value");
+        let res_unk = Option::<Value>::decode_value(&unk_val, dummy_span()).unwrap();
         assert_eq!(res_unk, Some(unk_val));
     }
 
     #[test]
     fn test_decode_value_raw_value() {
         let val = make_val(ValueData::Bool(true));
-        let decoded = Value::decode_value(&val, dummy_span()).expect("expected value");
+        let decoded = Value::decode_value(&val, dummy_span()).unwrap();
         assert_eq!(decoded, val);
     }
 
@@ -270,12 +228,12 @@ mod tests {
         map.insert(
             "key1".to_string(),
             make_val(ValueData::Number(Number(
-                BigDecimal::from_str("100").expect("expected value"),
+                BigDecimal::from_str("100").unwrap(),
             ))),
         );
         let obj_val = make_val(ValueData::Object(map));
         let btreemap: BTreeMap<String, i32> =
-            BTreeMap::decode_value(&obj_val, dummy_span()).expect("expected value");
+            BTreeMap::decode_value(&obj_val, dummy_span()).unwrap();
         assert_eq!(btreemap.get("key1"), Some(&100));
 
         let non_obj = make_val(ValueData::Bool(true));
@@ -340,15 +298,14 @@ mod tests {
         let mut ctx = Context::new();
 
         // 1. remain as HashMap<String, Value>
-        let cfg_map: ConfigWithRemainMap =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("decode_body succeeds");
+        let cfg_map: ConfigWithRemainMap = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(cfg_map.name, "service");
         assert!(cfg_map.extra.contains_key("timeout"));
         assert!(cfg_map.extra.contains_key("retries"));
 
         // 2. remain_attrs and remain_blocks
         let cfg_sep: ConfigWithRemainAttrsAndBlocks =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("decode_body succeeds");
+            DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(cfg_sep.name, "service");
         assert!(cfg_sep.extra_attrs.contains_key("timeout"));
         assert!(cfg_sep.extra_attrs.contains_key("retries"));
@@ -368,8 +325,7 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new(); // Empty context, would fail if evaluated!
 
-        let cfg: ConfigWithUnevaluatedExpr =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("unevaluated expr succeeds");
+        let cfg: ConfigWithUnevaluatedExpr = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(cfg.name, "dynamic_service");
         // Verify raw expression was captured without evaluating
         assert!(matches!(
@@ -476,7 +432,7 @@ mod tests {
 
         let val = Value::new(Type::Dynamic, ValueData::Object(record_map));
         let decoded: ComplexRecord =
-            crate::decode::DecodeValue::decode_value(&val, dummy_span()).expect("decoded");
+            crate::decode::DecodeValue::decode_value(&val, dummy_span()).unwrap();
 
         assert_eq!(decoded.host, "prod.internal");
         assert_eq!(decoded.status, ServerStatus::Maintenance);
@@ -506,27 +462,25 @@ mod tests {
         ctx.set_variable("base_port", 9000_i64.encode_value());
 
         let mut parser = crate::parse::parser::Parser::new("base_port + 80");
-        let expr = parser.parse_expression().expect("expr");
+        let expr = parser.parse_expression().unwrap();
 
-        let decoded: i64 =
-            crate::decode::decode_expression(&expr, &mut ctx).expect("decoded expression");
+        let decoded: i64 = crate::decode::decode_expression(&expr, &mut ctx).unwrap();
         assert_eq!(decoded, 9080);
 
         // Evaluation error branch
         let mut err_parser = crate::parse::parser::Parser::new("undefined_var + 1");
-        let err_expr = err_parser.parse_expression().expect("err expr");
+        let err_expr = err_parser.parse_expression().unwrap();
         assert!(crate::decode::decode_expression::<i64>(&err_expr, &mut ctx).is_err());
 
         // Type decoding error branch (evaluated to string, but expected i64)
         let mut type_err_parser = crate::parse::parser::Parser::new("\"not_a_number\"");
-        let type_err_expr = type_err_parser.parse_expression().expect("type expr");
+        let type_err_expr = type_err_parser.parse_expression().unwrap();
         assert!(crate::decode::decode_expression::<i64>(&type_err_expr, &mut ctx).is_err());
 
         // decode_value_with_context
         let val = "hello_world".encode_value();
         let decoded_str: String =
-            crate::decode::decode_value_with_context(&val, dummy_span(), &ctx)
-                .expect("decoded str");
+            crate::decode::decode_value_with_context(&val, dummy_span(), &ctx).unwrap();
         assert_eq!(decoded_str, "hello_world");
     }
 
@@ -547,8 +501,7 @@ mod tests {
         let body = parser.parse_body();
 
         let mut ctx = Context::new();
-        let config: ExplicitAttrConfig =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("expected value");
+        let config: ExplicitAttrConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(config.timeout, 30);
         assert_eq!(config.description, None);
         assert_eq!(config.retries, 0);
@@ -592,8 +545,7 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
 
-        let config: ServerMapConfig =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("decoded config");
+        let config: ServerMapConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(config.server.len(), 2);
         assert_eq!(config.server["web"].port, 80);
         assert_eq!(config.server["web"].host, "10.0.0.1");
@@ -603,11 +555,10 @@ mod tests {
         assert_eq!(config.database["replica"].port, 5433);
 
         // Test EncodeBody
-        let encoded_str = crate::encode::encode_to_string(&config).expect("encoded string");
+        let encoded_str = crate::encode::encode_to_string(&config).unwrap();
         let mut rep_parser = Parser::new(&encoded_str);
         let rep_body = rep_parser.parse_body();
-        let re_config: ServerMapConfig =
-            DecodeBody::decode_body(&rep_body, &[], &mut ctx).expect("re-decoded config");
+        let re_config: ServerMapConfig = DecodeBody::decode_body(&rep_body, &[], &mut ctx).unwrap();
         assert_eq!(config, re_config);
     }
 
@@ -647,18 +598,17 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
 
-        let config: RepeatedMapConfig =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("decoded repeated config");
+        let config: RepeatedMapConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(config.listener["http"].len(), 2);
         assert_eq!(config.listener["https"].len(), 1);
         assert_eq!(config.worker["queue"].len(), 2);
 
         // Encode and round-trip
-        let encoded_str = crate::encode::encode_to_string(&config).expect("encoded repeated");
+        let encoded_str = crate::encode::encode_to_string(&config).unwrap();
         let mut rep_parser = Parser::new(&encoded_str);
         let rep_body = rep_parser.parse_body();
         let re_config: RepeatedMapConfig =
-            DecodeBody::decode_body(&rep_body, &[], &mut ctx).expect("re-decoded config");
+            DecodeBody::decode_body(&rep_body, &[], &mut ctx).unwrap();
         assert_eq!(config.worker, re_config.worker);
         assert_eq!(
             config.listener["http"].len(),
@@ -700,8 +650,7 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
 
-        let config: NestedMultiLabelConfig =
-            DecodeBody::decode_body(&body, &[], &mut ctx).expect("decoded nested multi label");
+        let config: NestedMultiLabelConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(config.resource.len(), 2);
         assert_eq!(config.resource["aws_instance"]["web"].ami, "ami-web-123");
         assert_eq!(config.resource["aws_instance"]["api"].ami, "ami-api-456");
@@ -711,11 +660,11 @@ mod tests {
         );
 
         // Round-trip
-        let encoded_str = crate::encode::encode_to_string(&config).expect("encoded multi label");
+        let encoded_str = crate::encode::encode_to_string(&config).unwrap();
         let mut rep_parser = Parser::new(&encoded_str);
         let rep_body = rep_parser.parse_body();
         let re_config: NestedMultiLabelConfig =
-            DecodeBody::decode_body(&rep_body, &[], &mut ctx).expect("re-decoded multi label");
+            DecodeBody::decode_body(&rep_body, &[], &mut ctx).unwrap();
         assert_eq!(config, re_config);
 
         // 3-level map
@@ -726,8 +675,7 @@ mod tests {
         "#;
         let mut p3 = Parser::new(src_3);
         let b3 = p3.parse_body();
-        let c3: ThreeLevelMultiLabelConfig =
-            DecodeBody::decode_body(&b3, &[], &mut ctx).expect("decoded 3-level map");
+        let c3: ThreeLevelMultiLabelConfig = DecodeBody::decode_body(&b3, &[], &mut ctx).unwrap();
         assert_eq!(c3.target["cloud"]["aws"]["prod"].ami, "ami-prod");
     }
 
@@ -795,7 +743,9 @@ mod tests {
         "#;
         let mut p4 = Parser::new(src_inner_err);
         let b4 = p4.parse_body();
-        let err4 = ServerMapConfig::decode_body(&b4, &[], &mut ctx).expect_err("expected error");
+        let err4 = ServerMapConfig::decode_body(&b4, &[], &mut ctx)
+            .err()
+            .unwrap();
         assert!(err4.has_errors());
     }
 
@@ -882,7 +832,7 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
 
-        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx).expect("decode failed");
+        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(decoded.env, "production");
         assert_eq!(decoded.core.name, "payment-gateway");
         assert_eq!(decoded.core.database.engine, "postgres");
@@ -905,15 +855,14 @@ mod tests {
 
         // Verify round-trip EncodeBody -> decode
         let mut cst = crate::cst::builder::CstBody::new();
-        decoded.encode_into_body(&mut cst).expect("encode failed");
+        decoded.encode_into_body(&mut cst).unwrap();
         let mut rendered = String::new();
         cst.render(&mut rendered);
 
         let mut round_parser = Parser::new(&rendered);
         let round_body = round_parser.parse_body();
         let mut round_ctx = Context::new();
-        let round_decoded = FlatRootConfig::decode_body(&round_body, &[], &mut round_ctx)
-            .expect("re-decode failed");
+        let round_decoded = FlatRootConfig::decode_body(&round_body, &[], &mut round_ctx).unwrap();
         assert_eq!(decoded.env, round_decoded.env);
         assert_eq!(decoded.core.name, round_decoded.core.name);
         assert_eq!(
@@ -938,7 +887,7 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
 
-        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx).expect("decode failed");
+        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(decoded.env, "staging");
         assert_eq!(decoded.core.name, "auth-service");
         assert_eq!(decoded.core.database.engine, "mysql");
@@ -1008,7 +957,9 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
 
-        let err = DupAttrParent::decode_body(&body, &[], &mut ctx).expect_err("expected collision");
+        let err = DupAttrParent::decode_body(&body, &[], &mut ctx)
+            .err()
+            .unwrap();
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
@@ -1029,7 +980,8 @@ mod tests {
         let mut ctx = Context::new();
 
         let err = DupBlockParent::decode_body(&body, &[], &mut ctx)
-            .expect_err("expected block collision");
+            .err()
+            .unwrap();
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
@@ -1046,7 +998,8 @@ mod tests {
         let mut ctx = Context::new();
 
         let err = SiblingConflictParent::decode_body(&body, &[], &mut ctx)
-            .expect_err("expected sibling collision");
+            .err()
+            .unwrap();
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
@@ -1090,7 +1043,8 @@ mod tests {
         let mut ctx = Context::new();
 
         let err = MultiFailureParent::decode_body(&body, &[], &mut ctx)
-            .expect_err("expected multiple errors");
+            .err()
+            .unwrap();
         let diags = err.errors();
         assert!(
             diags.len() >= 2,
@@ -1142,7 +1096,7 @@ mod tests {
         );
 
         let val = make_val(ValueData::Object(obj));
-        let decoded = ValueOuter::decode_value(&val, dummy_span()).expect("decode value failed");
+        let decoded = ValueOuter::decode_value(&val, dummy_span()).unwrap();
         assert_eq!(decoded.name, "test-val");
         assert_eq!(decoded.inner.host, "localhost");
         assert_eq!(decoded.inner.port, 8080);
@@ -1228,8 +1182,7 @@ mod tests {
         let body = parser.parse_body();
         let mut ctx = Context::new();
 
-        let decoded = RawBodyAndHooksConfig::decode_body(&body, &[], &mut ctx)
-            .expect("decode with hooks should succeed");
+        let decoded = RawBodyAndHooksConfig::decode_body(&body, &[], &mut ctx).unwrap();
         assert_eq!(decoded.title, "Dashboard");
         assert_eq!(decoded.bg_color, HexColor("#FF00AA".to_string()));
         assert_eq!(decoded.port, 1024);
@@ -1243,7 +1196,7 @@ mod tests {
 
         // Verify EncodeBody on struct with raw Body field
         let mut cst = crate::cst::builder::CstBody::new();
-        decoded.encode_into_body(&mut cst).expect("encode failed");
+        decoded.encode_into_body(&mut cst).unwrap();
         let mut rendered = String::new();
         cst.render(&mut rendered);
         assert!(rendered.contains("title"));
@@ -1262,7 +1215,8 @@ mod tests {
         let mut ctx = Context::new();
 
         let err = RawBodyAndHooksConfig::decode_body(&body, &[], &mut ctx)
-            .expect_err("expected custom decoder error");
+            .err()
+            .unwrap();
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
@@ -1288,7 +1242,8 @@ mod tests {
         let mut ctx = Context::new();
 
         let err = FallbackFailureConfig::decode_body(&body, &[], &mut ctx)
-            .expect_err("expected default_expr fallback failure");
+            .err()
+            .unwrap();
         assert!(err.has_errors());
     }
 }

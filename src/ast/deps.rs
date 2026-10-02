@@ -475,6 +475,14 @@ impl DependencyGraph {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::ast::expr::{BinaryOp, ForExpr, Traversal};
 
@@ -501,7 +509,7 @@ mod tests {
             span,
         );
 
-        let refs = extract_static_references(&expr).expect("refs extracted");
+        let refs = extract_static_references(&expr).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
 
         assert_eq!(ref_strings, vec!["a", "b.c[...]", "d"]);
@@ -547,7 +555,7 @@ mod tests {
             span,
         );
 
-        let refs = extract_static_references(&for_expr).expect("refs extracted");
+        let refs = extract_static_references(&for_expr).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
 
         // Should include `items`, `external_var`, and `filter_val`, but NOT `v` or `k`
@@ -581,7 +589,7 @@ mod tests {
             span,
         );
 
-        let refs = extract_static_references(&tpl).expect("refs extracted");
+        let refs = extract_static_references(&tpl).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
 
         assert_eq!(ref_strings, vec!["source_list", "external_prefix"]);
@@ -648,7 +656,7 @@ mod tests {
         );
         body.dynamic_blocks.push(dyn_block_no_labels);
 
-        let refs = extract_static_references_from_body(&body).expect("refs extracted");
+        let refs = extract_static_references_from_body(&body).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
 
         // `tag` is the dynamic block iterator name, so it should not appear as an external reference
@@ -677,7 +685,7 @@ mod tests {
 
         assert!(graph.detect_cycles().is_none());
 
-        let sorted = graph.topological_sort().expect("sorted");
+        let sorted = graph.topological_sort().unwrap();
         assert_eq!(sorted, vec!["sub_a", "a", "b", "c"]);
     }
 
@@ -690,7 +698,7 @@ mod tests {
         graph.add_edge("b", "c");
         graph.add_edge("c", "a");
 
-        let cycle = graph.detect_cycles().expect("cycle found");
+        let cycle = graph.detect_cycles().unwrap();
         assert!(cycle.len() >= 3);
         assert_eq!(cycle.first(), cycle.last());
         assert!(!cycle.contains(&"start".to_string()));
@@ -724,7 +732,7 @@ mod tests {
             span,
         ));
 
-        let refs = extract_static_references_from_body(&body).expect("refs extracted");
+        let refs = extract_static_references_from_body(&body).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
         assert_eq!(
             ref_strings,
@@ -767,7 +775,7 @@ mod tests {
             trailing_comment: None,
         });
 
-        let refs_body = extract_static_references_from_body(&body).expect("body refs");
+        let refs_body = extract_static_references_from_body(&body).unwrap();
         assert_eq!(
             refs_body
                 .iter()
@@ -795,7 +803,7 @@ mod tests {
             }),
             span.clone(),
         );
-        let refs_trav = extract_static_references(&non_abs_trav).expect("trav refs");
+        let refs_trav = extract_static_references(&non_abs_trav).unwrap();
         assert_eq!(
             refs_trav
                 .iter()
@@ -829,7 +837,7 @@ mod tests {
             )),
             span.clone(),
         );
-        let refs_dup = extract_static_references(&trav_dup).expect("trav dup refs");
+        let refs_dup = extract_static_references(&trav_dup).unwrap();
         assert_eq!(refs_dup.len(), 1);
 
         // 3. Tuple, Object, FuncCall, Conditional, UnaryOp, Parentheses, Literals
@@ -870,7 +878,7 @@ mod tests {
             ],
             span.clone(),
         );
-        let refs_complex = extract_static_references(&complex_expr).expect("complex refs");
+        let refs_complex = extract_static_references(&complex_expr).unwrap();
         assert_eq!(
             refs_complex
                 .iter()
@@ -900,7 +908,7 @@ mod tests {
             }),
             span.clone(),
         );
-        let refs_for = extract_static_references(&for_expr).expect("for refs");
+        let refs_for = extract_static_references(&for_expr).unwrap();
         assert_eq!(
             refs_for.iter().map(ToString::to_string).collect::<Vec<_>>(),
             vec!["for_coll", "for_k_extra", "for_cond_extra"]
@@ -939,7 +947,7 @@ mod tests {
             }),
             span.clone(),
         );
-        let refs_for_simple = extract_static_references(&for_expr_simple).expect("for simple refs");
+        let refs_for_simple = extract_static_references(&for_expr_simple).unwrap();
         assert_eq!(
             refs_for_simple
                 .iter()
@@ -992,7 +1000,7 @@ mod tests {
             ],
             span.clone(),
         );
-        let refs_tpl = extract_static_references(&tpl_if).expect("tpl refs");
+        let refs_tpl = extract_static_references(&tpl_if).unwrap();
         assert_eq!(
             refs_tpl.iter().map(ToString::to_string).collect::<Vec<_>>(),
             vec![
@@ -1021,7 +1029,7 @@ mod tests {
             )],
             span,
         );
-        let refs_tpl_for = extract_static_references(&tpl_for).expect("tpl for refs");
+        let refs_tpl_for = extract_static_references(&tpl_for).unwrap();
         assert_eq!(
             refs_tpl_for
                 .iter()
@@ -1048,7 +1056,7 @@ mod tests {
 
         assert!(graph.detect_cycles().is_none());
 
-        let sorted = graph.topological_sort().expect("sorted");
+        let sorted = graph.topological_sort().unwrap();
         assert_eq!(sorted.len(), 7);
         let mut pos_map = std::collections::HashMap::new();
         for (i, node) in sorted.iter().enumerate() {

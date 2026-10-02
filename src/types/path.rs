@@ -125,6 +125,14 @@ impl fmt::Display for Path {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::encode::EncodeValue;
 
@@ -149,7 +157,7 @@ mod tests {
         let p4 = p3.with_step(PathStep::Key("v4".encode_value()));
         assert_eq!(p4.to_string(), "server[0].ip[\"v4\"]");
 
-        let parent = p4.parent().expect("parent");
+        let parent = p4.parent().unwrap();
         assert_eq!(parent.to_string(), "server[0].ip");
 
         // Test push & pop

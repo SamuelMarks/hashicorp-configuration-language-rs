@@ -391,6 +391,14 @@ impl<'a> TypeExprParser<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -439,7 +447,7 @@ mod tests {
     #[test]
     fn test_parse_collection() {
         let mut parser = TypeExprParser::new("list(string)");
-        let expr = parser.parse().expect("expected value");
+        let expr = parser.parse().unwrap();
         assert_eq!(
             expr,
             TypeExpr::Collection(
@@ -453,7 +461,7 @@ mod tests {
         );
 
         let mut parser = TypeExprParser::new("set(number)");
-        let expr = parser.parse().expect("expected value");
+        let expr = parser.parse().unwrap();
         assert_eq!(
             expr,
             TypeExpr::Collection(
@@ -467,7 +475,7 @@ mod tests {
         );
 
         let mut parser = TypeExprParser::new("map(bool)");
-        let expr = parser.parse().expect("expected value");
+        let expr = parser.parse().unwrap();
         assert_eq!(
             expr,
             TypeExpr::Collection(
@@ -481,7 +489,7 @@ mod tests {
     #[test]
     fn test_parse_object() {
         let mut parser = TypeExprParser::new("object({ foo : string, bar = number })");
-        let expr = parser.parse().expect("expected value");
+        let expr = parser.parse().unwrap();
         let mut expected_attrs = HashMap::new();
         expected_attrs.insert(
             "foo".to_string(),
@@ -504,7 +512,7 @@ mod tests {
 
         // Trailing comma
         let mut parser = TypeExprParser::new("object({ foo : string, })");
-        let expr = parser.parse().expect("expected value");
+        let expr = parser.parse().unwrap();
         let mut expected_attrs2 = HashMap::new();
         expected_attrs2.insert(
             "foo".to_string(),
@@ -613,7 +621,7 @@ mod tests {
     #[test]
     fn test_parse_tuple() {
         let mut parser = TypeExprParser::new("tuple([string, number, bool])");
-        let expr = parser.parse().expect("expected value");
+        let expr = parser.parse().unwrap();
         let expected_elems = vec![
             TypeExpr::Primitive(Type::String, Span::new(7, 13, 1, 8, 1, 14)),
             TypeExpr::Primitive(Type::Number, Span::new(15, 21, 1, 16, 1, 22)),
@@ -626,7 +634,7 @@ mod tests {
 
         // Trailing comma
         let mut parser = TypeExprParser::new("tuple([string, ])");
-        let expr = parser.parse().expect("expected value");
+        let expr = parser.parse().unwrap();
         let expected_elems2 = vec![TypeExpr::Primitive(
             Type::String,
             Span::new(7, 13, 1, 8, 1, 14),

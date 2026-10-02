@@ -1,4 +1,4 @@
-//! Fuzz target for MessagePack type and value decoding.
+//! Fuzz target for `MessagePack` type and value decoding.
 
 #![cfg_attr(not(test), no_main)]
 
@@ -15,6 +15,14 @@ fuzz_target!(|data: &[u8]| {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     #[allow(improper_ctypes)]
     unsafe extern "C" {
         fn rust_fuzzer_test_input(bytes: &[u8]) -> i32;

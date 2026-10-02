@@ -194,6 +194,14 @@ fn timeadd_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use crate::eval::stdlib::datetime::*;
 
     #[test]
@@ -281,25 +289,21 @@ mod tests {
 
         assert!(
             (fmt.func)(&[unk.clone(), ok_time.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (fmt.func)(&[ok_time.clone(), unk.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         assert!(
             (add.func)(&[unk.clone(), ok_time.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
-        assert!(
-            (add.func)(&[ok_time, unk])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!((add.func)(&[ok_time, unk]).unwrap().is_unknown());
     }
 
     #[test]
@@ -310,7 +314,7 @@ mod tests {
                 "formatdate",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -324,7 +328,7 @@ mod tests {
                 ),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(*res.data, ValueData::String("2020-01-02".to_string()));
 
         assert!(
@@ -347,7 +351,7 @@ mod tests {
                 "timeadd",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
             )
-            .expect("expected value")
+            .unwrap()
             .is_unknown()
         );
 
@@ -361,7 +365,7 @@ mod tests {
                 Value::new(Type::String, ValueData::String("1h".to_string())),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res.data,
             ValueData::String("2020-01-02T04:04:05Z".to_string())
@@ -377,7 +381,7 @@ mod tests {
                 Value::new(Type::String, ValueData::String("1m30s".to_string())),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res.data,
             ValueData::String("2020-01-02T03:05:35Z".to_string())
@@ -393,7 +397,7 @@ mod tests {
                 Value::new(Type::String, ValueData::String("-1h-30m".to_string())),
             ],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             *res_neg.data,
             ValueData::String("2020-01-02T01:34:05Z".to_string())
@@ -449,7 +453,7 @@ mod tests {
         let str_val = |s: &str| Value::new(Type::String, ValueData::String(s.to_string()));
 
         // timestamp()
-        let ts = eval_func("timestamp", &[]).expect("timestamp succeeds");
+        let ts = eval_func("timestamp", &[]).unwrap();
         assert_eq!(ts.ty(), &Type::String);
         let check_str = |v: &Value| match &*v.data {
             ValueData::String(s) => DateTime::parse_from_rfc3339(s).is_ok(),
@@ -460,8 +464,8 @@ mod tests {
         assert!(eval_func("timestamp", &[str_val("extra")]).is_err());
 
         // plantimestamp()
-        let pts1 = eval_func("plantimestamp", &[]).expect("plantimestamp succeeds");
-        let pts2 = eval_func("plantimestamp", &[]).expect("plantimestamp succeeds");
+        let pts1 = eval_func("plantimestamp", &[]).unwrap();
+        let pts2 = eval_func("plantimestamp", &[]).unwrap();
         assert_eq!(pts1, pts2);
         assert!(eval_func("plantimestamp", &[str_val("extra")]).is_err());
 
@@ -470,8 +474,7 @@ mod tests {
         let t2 = str_val("2026-06-01T00:00:00Z");
         let t3 = str_val("2026-01-01T00:00:00Z");
 
-        let result_less =
-            eval_func("timecmp", &[t1.clone(), t2.clone()]).expect("timecmp succeeds");
+        let result_less = eval_func("timecmp", &[t1.clone(), t2.clone()]).unwrap();
         assert_eq!(
             result_less,
             Value::new(
@@ -480,7 +483,7 @@ mod tests {
             )
         );
 
-        let result_greater = eval_func("timecmp", &[t2, t1.clone()]).expect("timecmp succeeds");
+        let result_greater = eval_func("timecmp", &[t2, t1.clone()]).unwrap();
         assert_eq!(
             result_greater,
             Value::new(
@@ -489,7 +492,7 @@ mod tests {
             )
         );
 
-        let result_equal = eval_func("timecmp", &[t1, t3]).expect("timecmp succeeds");
+        let result_equal = eval_func("timecmp", &[t1, t3]).unwrap();
         assert_eq!(
             result_equal,
             Value::new(
@@ -500,7 +503,7 @@ mod tests {
 
         // timecmp unknown propagation
         let unk = Value::unknown(Type::String);
-        let res_unk = eval_func("timecmp", &[unk, str_val("2026-01-01T00:00:00Z")]).expect("ok");
+        let res_unk = eval_func("timecmp", &[unk, str_val("2026-01-01T00:00:00Z")]).unwrap();
         assert!(res_unk.is_unknown());
         let res_unk2 = eval_func(
             "timecmp",
@@ -509,7 +512,7 @@ mod tests {
                 Value::unknown(Type::String),
             ],
         )
-        .expect("ok");
+        .unwrap();
         assert!(res_unk2.is_unknown());
 
         // timecmp error handling
@@ -542,6 +545,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "Function notexist not found")]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).expect("expected value");
+        eval_func("notexist", &[]).unwrap();
     }
 }

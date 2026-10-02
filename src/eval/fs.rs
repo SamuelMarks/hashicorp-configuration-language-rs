@@ -111,7 +111,7 @@ impl FileSystem for OsFileSystem {
 /// mem_fs.insert_file("configs/app.hcl", "port = 8080");
 /// assert!(mem_fs.exists(Path::new("configs/app.hcl")));
 /// assert_eq!(
-///     mem_fs.read_to_string(Path::new("configs/app.hcl")).expect("read file"),
+///     mem_fs.read_to_string(Path::new("configs/app.hcl")).unwrap(),
 ///     "port = 8080"
 /// );
 /// ```
@@ -639,6 +639,14 @@ impl FileSystem for SandboxedFileSystem {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -805,27 +813,20 @@ mod tests {
         {
             let mut writer = zip::ZipWriter::new(&mut zip_buf);
             let options = zip::write::SimpleFileOptions::default();
-            writer
-                .start_file("templates/hello.tftpl", options)
-                .expect("start file");
-            writer.write_all(b"Hello, ${name}!").expect("write file");
-            writer
-                .start_file("configs/app.hcl", options)
-                .expect("start file");
-            writer.write_all(b"port = 8080\n").expect("write file");
-            writer
-                .start_file("binary.bin", options)
-                .expect("start file");
-            writer.write_all(&[0xFF, 0xFE, 0xFD]).expect("write bin");
-            writer.add_directory("empty_dir", options).expect("add dir");
-            writer.finish().expect("finish zip");
+            writer.start_file("templates/hello.tftpl", options).unwrap();
+            writer.write_all(b"Hello, ${name}!").unwrap();
+            writer.start_file("configs/app.hcl", options).unwrap();
+            writer.write_all(b"port = 8080\n").unwrap();
+            writer.start_file("binary.bin", options).unwrap();
+            writer.write_all(&[0xFF, 0xFE, 0xFD]).unwrap();
+            writer.add_directory("empty_dir", options).unwrap();
+            writer.finish().unwrap();
         }
 
         let zip_bytes = zip_buf.into_inner();
-        let archive_fs = ArchiveFileSystem::from_zip_bytes(&zip_bytes).expect("load zip");
+        let archive_fs = ArchiveFileSystem::from_zip_bytes(&zip_bytes).unwrap();
         let archive_fs_stream =
-            ArchiveFileSystem::from_zip(std::io::Cursor::new(zip_bytes.as_slice()))
-                .expect("load zip stream");
+            ArchiveFileSystem::from_zip(std::io::Cursor::new(zip_bytes.as_slice())).unwrap();
         assert_eq!(archive_fs.files.len(), archive_fs_stream.files.len());
 
         let archive_def = ArchiveFileSystem::default();
@@ -841,13 +842,11 @@ mod tests {
             let mut writer = zip::ZipWriter::new(&mut corrupt_buf);
             let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated);
-            writer
-                .start_file("corrupt.txt", options)
-                .expect("start corrupt");
+            writer.start_file("corrupt.txt", options).unwrap();
             writer
                 .write_all(b"content to compress and corrupt for decompression error testing")
-                .expect("write corrupt");
-            writer.finish().expect("finish corrupt");
+                .unwrap();
+            writer.finish().unwrap();
         }
         let mut corrupt_bytes = corrupt_buf.into_inner();
         for b in corrupt_bytes.iter_mut().skip(45).take(20) {
@@ -862,17 +861,15 @@ mod tests {
         {
             let mut writer = zip::ZipWriter::new(&mut unsupp_buf);
             let options = zip::write::SimpleFileOptions::default();
-            writer
-                .start_file("unsupported.txt", options)
-                .expect("start stored");
-            writer.write_all(b"plain data").expect("write stored");
-            writer.finish().expect("finish stored");
+            writer.start_file("unsupported.txt", options).unwrap();
+            writer.write_all(b"plain data").unwrap();
+            writer.finish().unwrap();
         }
         let mut unsupp_bytes = unsupp_buf.into_inner();
         let cdfh_pos = unsupp_bytes
             .windows(4)
             .position(|w| w == b"PK\x01\x02")
-            .expect("find cdfh");
+            .unwrap();
         unsupp_bytes[8] = 12;
         unsupp_bytes[9] = 0;
         unsupp_bytes[cdfh_pos + 10] = 12;
@@ -934,17 +931,17 @@ mod tests {
             .with_filesystem(std::sync::Arc::new(archive_fs));
 
         let tmpl_hcl = r#"res = templatefile("templates/hello.tftpl", { "name" = "World" })"#;
-        let body = crate::api::parse(tmpl_hcl).expect("parse template");
+        let body = crate::api::parse(tmpl_hcl).unwrap();
         let eval = crate::eval::evaluator::Evaluator::new(&ctx);
-        let (val, diags) = eval.evaluate(&body.attributes["res"].expr).expect("eval");
+        let (val, diags) = eval.evaluate(&body.attributes["res"].expr).unwrap();
         assert!(!diags.has_errors());
         assert_eq!(val.to_string(), "\"Hello, World!\"");
 
         let file_hcl = r#"res = file("configs/app.hcl")"#;
-        let body_f = crate::api::parse(file_hcl).expect("parse file");
+        let body_f = crate::api::parse(file_hcl).unwrap();
         let (val_f, _) = crate::eval::evaluator::Evaluator::new(&ctx)
             .evaluate(&body_f.attributes["res"].expr)
-            .expect("eval file");
+            .unwrap();
         assert_eq!(val_f.to_string(), "\"port = 8080\n\"");
     }
 
@@ -961,7 +958,7 @@ mod tests {
         dir_header.set_cksum();
         tar_builder
             .append_data(&mut dir_header, "tar_dir", std::io::empty())
-            .expect("append dir");
+            .unwrap();
 
         // Top level file
         let mut header = tar::Header::new_gnu();
@@ -970,7 +967,7 @@ mod tests {
         header.set_cksum();
         tar_builder
             .append_data(&mut header, "hello.txt", "hello world".as_bytes())
-            .expect("append file");
+            .unwrap();
 
         // Nested file
         let mut nested_header = tar::Header::new_gnu();
@@ -979,7 +976,7 @@ mod tests {
         nested_header.set_cksum();
         tar_builder
             .append_data(&mut nested_header, "nested/sub/data.txt", &b"data"[..])
-            .expect("append nested");
+            .unwrap();
 
         // Invalid UTF-8 file
         let mut bad_header = tar::Header::new_gnu();
@@ -988,7 +985,7 @@ mod tests {
         bad_header.set_cksum();
         tar_builder
             .append_data(&mut bad_header, "bad.bin", &[0xFF, 0xFE, 0xFD][..])
-            .expect("append bad");
+            .unwrap();
 
         // Symlink entry (neither dir nor regular file)
         let mut symlink_header = tar::Header::new_gnu();
@@ -998,13 +995,12 @@ mod tests {
         symlink_header.set_cksum();
         tar_builder
             .append_data(&mut symlink_header, "symlink", std::io::empty())
-            .expect("append symlink");
+            .unwrap();
 
-        let tar_bytes = tar_builder.into_inner().expect("into_inner tar");
+        let tar_bytes = tar_builder.into_inner().unwrap();
 
-        let tar_fs = ArchiveFileSystem::from_tar_bytes(&tar_bytes).expect("load tar");
-        let tar_fs_stream =
-            ArchiveFileSystem::from_tar(tar_bytes.as_slice()).expect("load tar stream");
+        let tar_fs = ArchiveFileSystem::from_tar_bytes(&tar_bytes).unwrap();
+        let tar_fs_stream = ArchiveFileSystem::from_tar(tar_bytes.as_slice()).unwrap();
         assert_eq!(tar_fs.files.len(), tar_fs_stream.files.len());
 
         assert!(ArchiveFileSystem::from_tar_bytes(b"invalid tar data").is_err());
@@ -1062,14 +1058,13 @@ mod tests {
             gz_header.set_cksum();
             gz_builder
                 .append_data(&mut gz_header, "test.txt", "gzip test".as_bytes())
-                .expect("append gz");
-            let encoder = gz_builder.into_inner().expect("into_inner gz");
-            encoder.finish().expect("finish gz");
+                .unwrap();
+            let encoder = gz_builder.into_inner().unwrap();
+            encoder.finish().unwrap();
         }
 
-        let gz_fs = ArchiveFileSystem::from_tar_gz_bytes(&gz_buf).expect("load tar.gz");
-        let gz_fs_stream =
-            ArchiveFileSystem::from_tar_gz(gz_buf.as_slice()).expect("load tar.gz stream");
+        let gz_fs = ArchiveFileSystem::from_tar_gz_bytes(&gz_buf).unwrap();
+        let gz_fs_stream = ArchiveFileSystem::from_tar_gz(gz_buf.as_slice()).unwrap();
         assert_eq!(gz_fs.files.len(), gz_fs_stream.files.len());
 
         assert!(ArchiveFileSystem::from_tar_gz_bytes(b"invalid gz data").is_err());
@@ -1129,7 +1124,7 @@ mod tests {
         // Fail to init with nonexistent root
         assert!(SandboxedFileSystem::new("nonexistent_root_dir", inner.clone()).is_err());
 
-        let sandbox = SandboxedFileSystem::new("jail", inner.clone()).expect("sandbox init");
+        let sandbox = SandboxedFileSystem::new("jail", inner.clone()).unwrap();
         let sandbox_clone = sandbox.clone();
         assert!(format!("{sandbox_clone:?}").contains("SandboxedFileSystem"));
 
@@ -1203,7 +1198,7 @@ mod tests {
         );
 
         // Escaping entries in read_dir are filtered out
-        let safe = escaping_sandbox.read_dir(Path::new(".")).expect("read dir");
+        let safe = escaping_sandbox.read_dir(Path::new(".")).unwrap();
         assert_eq!(safe, vec![PathBuf::from("jail/file.txt")]);
 
         // Exercise remaining pass-through methods on MockEscapingFs

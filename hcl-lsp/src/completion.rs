@@ -146,6 +146,14 @@ pub fn completions_at_position(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::protocol::TextDocumentItem;
     use hashicorp_configuration_language_rs::ast::schema::{AttributeSchema, BlockHeaderSchema};

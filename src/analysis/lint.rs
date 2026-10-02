@@ -506,6 +506,14 @@ impl Linter {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::analysis::type_check::ScopeSchema;
     use crate::parse::parser::Parser;
@@ -876,7 +884,7 @@ mod tests {
         // Directive::Strip via AST insertion
         let mut b4 = parse_body(r#"val = "text""#);
         let sp = crate::span::Span::new(0, 0, 1, 1, 1, 1);
-        let attr = b4.attributes.get_mut("val").expect("attr val");
+        let attr = b4.attributes.get_mut("val").unwrap();
         attr.expr = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::Strip {

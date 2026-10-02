@@ -411,6 +411,14 @@ fn create_publish_diagnostics_notification(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use std::io::Cursor;
 
@@ -882,8 +890,8 @@ mod tests {
         let mut server = LspServer::new();
 
         // Non-blocking listener accept failure
-        let nb_listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        nb_listener.set_nonblocking(true).expect("nonblocking");
+        let nb_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        nb_listener.set_nonblocking(true).unwrap();
         assert!(server.run_tcp_listener(&nb_listener).is_err());
 
         for target in ["invalid-address:99999", "127.0.0.1:0"] {

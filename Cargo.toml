@@ -39,10 +39,6 @@ name = "hclfmt"
 path = "src/bin/hclfmt.rs"
 
 [[bin]]
-name = "test-err"
-path = "src/bin/test_err.rs"
-
-[[bin]]
 name = "hcl2json"
 path = "src/bin/hcl2json.rs"
 
@@ -53,14 +49,6 @@ path = "src/bin/hcl_repl.rs"
 [[bin]]
 name = "hcl-validate"
 path = "src/bin/hcl_validate.rs"
-
-[[bin]]
-name = "grounding"
-path = "src/bin/grounding.rs"
-
-[[bin]]
-name = "hashicorp-configuration-language-rs"
-path = "src/main.rs"
 
 [dev-dependencies]
 rand = "0.8"

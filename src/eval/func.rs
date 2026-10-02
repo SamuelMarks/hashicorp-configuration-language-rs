@@ -388,6 +388,14 @@ impl Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::types::{Type, Value, ValueData};
 
@@ -398,10 +406,7 @@ mod tests {
             Arc::new(|_| Ok(Value::new(Type::Bool, ValueData::Bool(true)))),
         );
         let res = (f.func)(&[]);
-        assert_eq!(
-            res.expect("expected value"),
-            Value::new(Type::Bool, ValueData::Bool(true))
-        );
+        assert_eq!(res.unwrap(), Value::new(Type::Bool, ValueData::Bool(true)));
     }
 
     #[test]

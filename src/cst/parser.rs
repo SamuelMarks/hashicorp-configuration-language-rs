@@ -233,13 +233,21 @@ impl<'a> CstParser<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
     fn test_cst_parser_basic_attribute() {
         let input = "  foo = 123 \n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
 
         assert_eq!(doc.leading.tokens.len(), 1);
         assert_eq!(doc.leading.tokens[0].kind, TokenKind::Whitespace);
@@ -272,7 +280,7 @@ mod tests {
     fn test_cst_parser_block_empty() {
         let input = "block {}";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.blocks.len(), 1);
         let block = &doc.blocks[0];
         assert_eq!(block.type_ident.text, "block");
@@ -287,7 +295,7 @@ mod tests {
     fn test_cst_parser_block_with_labels() {
         let input = "resource \"aws_instance\" web { foo = 123 }";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.blocks.len(), 1);
         let block = &doc.blocks[0];
         assert_eq!(block.type_ident.text, "resource");
@@ -311,7 +319,7 @@ mod tests {
     fn test_cst_parser_block_nested() {
         let input = "block { nested { a = b } }";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.blocks.len(), 1);
         let block = &doc.blocks[0];
         assert_eq!(block.body.blocks.len(), 1);
@@ -323,12 +331,12 @@ mod tests {
     fn test_cst_parser_bracket_paren() {
         let input = "foo = [ ( 1 ) ]\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.attributes[0].expr_tokens.len(), 10);
 
         let input_unmatched = "foo = ) ]\n";
         let parser = CstParser::new(input_unmatched);
-        let doc_unmatched = parser.parse().expect("parsed");
+        let doc_unmatched = parser.parse().unwrap();
         assert_eq!(doc_unmatched.attributes[0].expr_tokens.len(), 4);
     }
 
@@ -375,7 +383,7 @@ mod tests {
     fn test_cst_parser_lexer_error() {
         let input = "`";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.attributes.len(), 0);
     }
 
@@ -390,7 +398,7 @@ mod tests {
     fn test_cst_parser_brace_nesting() {
         let input = "foo = { a = 1 }\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.attributes[0].expr_tokens.len(), 10);
     }
 
@@ -406,7 +414,7 @@ mod tests {
     fn test_cst_parser_inline_comment() {
         let input = "foo = 1 // comment\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.attributes[0].expr_tokens.len(), 3);
         assert_eq!(
             doc.attributes[0].trailing.tokens[0].kind,
@@ -418,7 +426,7 @@ mod tests {
     fn test_cst_parser_inline_comment_nested() {
         let input = "foo = { 1 // comment \n}\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         // comment inside nested expression should not end the expression
         assert!(
             doc.attributes[0]
@@ -468,7 +476,7 @@ mod tests {
     fn test_cst_parser_comments_and_formatting() {
         let input = "# top comment\n/* block comment */\nfoo = 1\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(doc.attributes.len(), 1);
         assert!(
             doc.leading

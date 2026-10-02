@@ -111,7 +111,7 @@ fn is_literal(expr: &Expression) -> bool {
 ///     Box::new(Expression::Number(Number::from(3), span.clone())),
 ///     span,
 /// );
-/// let folded = partial_eval(&expr, &ctx).expect("partial eval succeeded");
+/// let folded = partial_eval(&expr, &ctx).unwrap();
 /// if let Expression::Number(n, _) = folded {
 ///     assert_eq!(n, Number::from(5));
 /// } else {
@@ -498,9 +498,9 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
 /// use hashicorp_configuration_language_rs::api::parse;
 ///
 /// let src = "a = 3";
-/// let body = parse(src).expect("parse succeeded");
+/// let body = parse(src).unwrap();
 /// let ctx = Context::new();
-/// let reduced = partial_eval_body(&body, &ctx).expect("partial eval succeeded");
+/// let reduced = partial_eval_body(&body, &ctx).unwrap();
 /// assert!(reduced.attributes.contains_key("a"));
 /// ```
 pub fn partial_eval_body(body: &Body, ctx: &Context) -> Result<Body, Diagnostics> {

@@ -103,6 +103,14 @@ pub fn coerce_object_with_schema(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::span::Span;
     use std::collections::HashMap;
@@ -218,7 +226,7 @@ mod tests {
         );
         let in_val = Value::new(Type::Dynamic, ValueData::Object(in_map));
 
-        let coerced = coerce_object_with_schema(&in_val, &schema, &ctx).expect("coerces");
+        let coerced = coerce_object_with_schema(&in_val, &schema, &ctx).unwrap();
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
             "name".to_string(),
@@ -241,7 +249,7 @@ mod tests {
         in_map2.insert("port".to_string(), Value::null(Type::Number));
         let in_val2 = Value::new(Type::Dynamic, ValueData::Object(in_map2));
 
-        let coerced2 = coerce_object_with_schema(&in_val2, &schema, &ctx).expect("coerces");
+        let coerced2 = coerce_object_with_schema(&in_val2, &schema, &ctx).unwrap();
         let mut expected_map2 = BTreeMap::new();
         expected_map2.insert(
             "name".to_string(),

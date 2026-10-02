@@ -91,6 +91,14 @@ impl Transport {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use std::io::Cursor;
 
@@ -98,16 +106,14 @@ mod tests {
     fn test_transport_roundtrip() {
         let payload = r#"{"jsonrpc":"2.0","method":"test"}"#;
         let mut buffer = Vec::new();
-        Transport::write_message(&mut buffer, payload).expect("write ok");
+        Transport::write_message(&mut buffer, payload).unwrap();
 
         let mut cursor = Cursor::new(buffer);
-        let read = Transport::read_message(&mut cursor)
-            .expect("read ok")
-            .expect("has message");
+        let read = Transport::read_message(&mut cursor).unwrap().unwrap();
         assert_eq!(read, payload);
 
         // EOF clean
-        let eof = Transport::read_message(&mut cursor).expect("clean eof");
+        let eof = Transport::read_message(&mut cursor).unwrap();
         assert!(eof.is_none());
     }
 

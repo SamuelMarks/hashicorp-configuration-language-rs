@@ -1,4 +1,11 @@
 //! Integration tests for CLI binary executables (`hcl2json`, `hcl-repl`, `hcl-validate`).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 
 use std::fs;
 use std::io::Write;
@@ -9,7 +16,7 @@ fn temp_test_dir(prefix: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("hcl_cli_test_{prefix}_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     if let Err(e) = fs::create_dir_all(&dir) {
-        panic!("failed to create temp dir: {e}");
+        unreachable!("failed to create temp dir: {e}");
     }
     dir
 }

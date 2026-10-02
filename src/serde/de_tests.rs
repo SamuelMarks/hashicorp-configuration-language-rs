@@ -1,5 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 #[cfg(test)]
 mod tests {
+
     use super::super::de::from_str;
     use super::super::ser::to_string;
     use serde::{Deserialize, Serialize};
@@ -13,7 +21,7 @@ mod tests {
     #[test]
     fn test_deserialize_basic() {
         let hcl = "name = \"test\" \n count = 42";
-        let config: TestConfig = from_str(hcl).expect("expected value");
+        let config: TestConfig = from_str(hcl).unwrap();
         assert!(config.name.contains("test"));
         assert_eq!(config.count, 42);
     }
@@ -22,16 +30,13 @@ mod tests {
     fn test_deserialize_error() {
         let res: Result<TestConfig, _> = from_str("name"); // Invalid body item start
         assert!(res.is_err());
-        assert!(res.expect_err("expected error").contains("Parse error"));
+        assert!(res.err().unwrap().contains("Parse error"));
 
         // Test serde_json deserialization error
         let hcl = "count = \"not an integer\"";
         let res: Result<TestConfig, _> = from_str(hcl);
         assert!(res.is_err());
-        assert!(
-            res.expect_err("expected error")
-                .contains("Deserialize error")
-        );
+        assert!(res.err().unwrap().contains("Deserialize error"));
     }
 
     #[test]
@@ -42,8 +47,8 @@ mod tests {
         my_other "label" {}
         my_other {}
         "#;
-        let res: serde_json::Value = crate::serde::de::from_str(input).expect("expected value");
-        let map = res.as_object().expect("expected value");
+        let res: serde_json::Value = crate::serde::de::from_str(input).unwrap();
+        let map = res.as_object().unwrap();
         assert!(map.contains_key("my_block"));
         assert!(map.contains_key("my_other"));
     }
@@ -69,9 +74,9 @@ mod tests {
         let p = TemplatePart::Interpolation(Expression::Bool(true, span.clone()), span.clone());
         let e = Expression::Template(vec![p], span.clone());
         let json = crate::serde::de::expr_to_json(&e);
-        assert_eq!(json.as_str().expect("expected value"), "${...}");
+        assert_eq!(json.as_str().unwrap(), "${...}");
 
-        let n = std::str::FromStr::from_str("1e400").expect("expected value");
+        let n = std::str::FromStr::from_str("1e400").unwrap();
         let e = Expression::Number(n, span);
         let json = crate::serde::de::expr_to_json(&e);
         assert!(json.is_null());
@@ -119,7 +124,7 @@ mod tests {
                 inner = true
             }
         "#;
-        let config: Complex = from_str(hcl).expect("expected value");
+        let config: Complex = from_str(hcl).unwrap();
         assert_eq!(config.float_val, 42.42);
         assert!(config.flag);
         assert_eq!(config.arr, vec!["a", "b"]);
@@ -193,7 +198,7 @@ mod tests {
             string_val: "str\"ing".to_string(),
         };
 
-        let hcl = to_string(&data).expect("expected value");
+        let hcl = to_string(&data).unwrap();
         assert!(hcl.contains("null_val = null"));
         assert!(hcl.contains("bool_true = true"));
         assert!(hcl.contains("bool_false = false"));
@@ -211,6 +216,6 @@ mod tests {
         bad.insert(vec![1, 2], "value");
         let res = to_string(&bad);
         assert!(res.is_err());
-        assert!(res.expect_err("expected error").contains("Serialize error"));
+        assert!(res.err().unwrap().contains("Serialize error"));
     }
 }

@@ -496,6 +496,14 @@ pub struct SemanticTokens {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -506,7 +514,7 @@ mod tests {
             method: "initialize".to_string(),
             params: None,
         };
-        let s = serde_json::to_string(&req).expect("serialize ok");
+        let s = serde_json::to_string(&req).unwrap();
         assert!(s.contains("\"method\":\"initialize\""));
 
         let resp = Response::ok(

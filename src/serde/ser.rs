@@ -1,4 +1,5 @@
 //! Serde Serializer implementation for HCL.
+use std::fmt::Write;
 
 use serde::ser::Serialize;
 use serde_json::Value as JsonValue;
@@ -35,7 +36,7 @@ fn format_hcl(val: &JsonValue, out: &mut String, indent: usize) {
             } else {
                 out.push_str("[\n");
                 for (i, v) in arr.iter().enumerate() {
-                    out.push_str(&format!("{ind}  "));
+                    let _ = write!(out, "{ind}  ");
                     format_hcl(v, out, indent + 1);
                     if i < arr.len() - 1 {
                         out.push(',');
@@ -52,7 +53,7 @@ fn format_hcl(val: &JsonValue, out: &mut String, indent: usize) {
             } else {
                 out.push_str("{\n");
                 for (k, v) in obj {
-                    out.push_str(&format!("{ind}  {k} = "));
+                    let _ = write!(out, "{ind}  {k} = ");
                     format_hcl(v, out, indent + 1);
                     out.push('\n');
                 }
@@ -65,6 +66,14 @@ fn format_hcl(val: &JsonValue, out: &mut String, indent: usize) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     struct CustomFail;
@@ -106,7 +115,7 @@ mod tests {
                 "key": "val"
             }
         });
-        let res = to_string(&val).expect("to_string succeeds");
+        let res = to_string(&val).unwrap();
         assert!(res.contains("null_field = null"));
         assert!(res.contains("bool_t = true"));
         assert!(res.contains("bool_f = false"));

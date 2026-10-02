@@ -310,6 +310,14 @@ fn tostring_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use crate::eval::stdlib::conversion::*;
     use crate::number::Number;
     use crate::types::{Type, Value, ValueData};
@@ -342,7 +350,7 @@ mod tests {
     fn test_try() {
         assert!(eval_func("try", &[]).is_err());
         let val = Value::new(Type::String, ValueData::String("hello".to_string()));
-        let res = eval_func("try", std::slice::from_ref(&val)).expect("expected value");
+        let res = eval_func("try", std::slice::from_ref(&val)).unwrap();
         assert_eq!(res, val);
     }
 
@@ -350,7 +358,7 @@ mod tests {
     fn test_type() {
         assert!(eval_func("type", &[]).is_err());
         let val = Value::new(Type::String, ValueData::String("hello".to_string()));
-        let res = eval_func("type", &[val]).expect("expected value");
+        let res = eval_func("type", &[val]).unwrap();
         assert_eq!(
             res,
             Value::new(Type::String, ValueData::String("string".to_string()))
@@ -362,12 +370,12 @@ mod tests {
         assert!(eval_func("tobool", &[]).is_err());
         assert!(
             eval_func("tobool", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         let val = Value::new(Type::String, ValueData::String("true".to_string()));
-        let res = eval_func("tobool", &[val]).expect("expected value");
+        let res = eval_func("tobool", &[val]).unwrap();
         assert_eq!(res, Value::new(Type::Bool, ValueData::Bool(true)));
 
         let val = Value::new(Type::String, ValueData::String("abc".to_string()));
@@ -379,7 +387,7 @@ mod tests {
         assert!(eval_func("tolist", &[]).is_err());
         assert!(
             eval_func("tolist", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -388,13 +396,13 @@ mod tests {
             Type::List(Box::new(Type::String)),
             ValueData::Array(arr.clone()),
         );
-        let res = eval_func("tolist", &[val]).expect("expected value");
+        let res = eval_func("tolist", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::List(Box::new(Type::String)));
 
         let mut set = BTreeSet::new();
         set.insert(Value::new(Type::String, ValueData::String("a".to_string())));
         let val = Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set));
-        let res = eval_func("tolist", &[val]).expect("expected value");
+        let res = eval_func("tolist", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::List(Box::new(Type::String)));
 
         let mut set_multi = BTreeSet::new();
@@ -405,11 +413,11 @@ mod tests {
             Type::Set(Box::new(Type::Dynamic)),
             ValueData::Set(set_multi),
         );
-        let res_multi = eval_func("tolist", &[val_multi]).expect("expected value");
+        let res_multi = eval_func("tolist", &[val_multi]).unwrap();
         assert_eq!(res_multi.ty(), &Type::List(Box::new(Type::String)));
 
         let val = Value::new(Type::String, ValueData::String("a".to_string()));
-        let res = eval_func("tolist", &[val]).expect("expected value");
+        let res = eval_func("tolist", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::List(Box::new(Type::String)));
     }
 
@@ -434,7 +442,7 @@ mod tests {
         assert!(eval_func("tomap", &[]).is_err());
         assert!(
             eval_func("tomap", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
@@ -448,7 +456,7 @@ mod tests {
         type_obj.insert("k".to_string(), Type::String);
 
         let val = Value::new(Type::object(type_obj), ValueData::Object(obj));
-        let res = eval_func("tomap", &[val]).expect("expected value");
+        let res = eval_func("tomap", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::Map(Box::new(Type::String)));
 
         let val = Value::new(Type::String, ValueData::String("a".to_string()));
@@ -466,7 +474,7 @@ mod tests {
             "k2".to_string(),
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("1").expect("expected value")),
+                ValueData::Number(Number::from_str("1").unwrap()),
             ),
         );
 
@@ -475,7 +483,7 @@ mod tests {
         type_obj.insert("k2".to_string(), Type::Number);
 
         let val = Value::new(Type::object(type_obj), ValueData::Object(obj));
-        let res = eval_func("tomap", &[val]).expect("expected value");
+        let res = eval_func("tomap", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::Map(Box::new(Type::String)));
 
         let mut obj2 = BTreeMap::new();
@@ -507,12 +515,12 @@ mod tests {
         assert!(eval_func("tonumber", &[]).is_err());
         assert!(
             eval_func("tonumber", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         let val = Value::new(Type::String, ValueData::String("1".to_string()));
-        let res = eval_func("tonumber", &[val]).expect("expected value");
+        let res = eval_func("tonumber", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::Number);
 
         let val = Value::new(Type::String, ValueData::String("abc".to_string()));
@@ -524,19 +532,19 @@ mod tests {
         assert!(eval_func("toset", &[]).is_err());
         assert!(
             eval_func("toset", &[Value::unknown(Type::String)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         let mut set = BTreeSet::new();
         set.insert(Value::new(Type::String, ValueData::String("a".to_string())));
         let val = Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set));
-        let res = eval_func("toset", &[val]).expect("expected value");
+        let res = eval_func("toset", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::Set(Box::new(Type::String)));
 
         let arr = vec![Value::new(Type::String, ValueData::String("a".to_string()))];
         let val = Value::new(Type::List(Box::new(Type::String)), ValueData::Array(arr));
-        let res = eval_func("toset", &[val]).expect("expected value");
+        let res = eval_func("toset", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::Set(Box::new(Type::String)));
 
         let arr_multi = vec![
@@ -547,11 +555,11 @@ mod tests {
             Type::List(Box::new(Type::String)),
             ValueData::Array(arr_multi),
         );
-        let res_multi = eval_func("toset", &[val_multi]).expect("expected value");
+        let res_multi = eval_func("toset", &[val_multi]).unwrap();
         assert_eq!(res_multi.ty(), &Type::Set(Box::new(Type::String)));
 
         let val = Value::new(Type::String, ValueData::String("a".to_string()));
-        let res = eval_func("toset", &[val]).expect("expected value");
+        let res = eval_func("toset", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::Set(Box::new(Type::String)));
     }
 
@@ -560,15 +568,15 @@ mod tests {
         assert!(eval_func("tostring", &[]).is_err());
         assert!(
             eval_func("tostring", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         let val = Value::new(
             Type::Number,
-            ValueData::Number(Number::from_str("1").expect("expected value")),
+            ValueData::Number(Number::from_str("1").unwrap()),
         );
-        let res = eval_func("tostring", &[val]).expect("expected value");
+        let res = eval_func("tostring", &[val]).unwrap();
         assert_eq!(res.ty(), &Type::String);
 
         let val = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
@@ -577,7 +585,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Function notexist not found")]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).expect("expected value");
+        eval_func("notexist", &[]).unwrap();
     }
 
     #[test]
@@ -590,9 +598,7 @@ mod tests {
         let num_val = |s: &str| -> Value {
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::new(
-                    BigDecimal::from_str(s).expect("expected value"),
-                )),
+                ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
             )
         };
         let list_val = |vals: Vec<Value>| -> Value {
@@ -619,7 +625,7 @@ mod tests {
         assert!(res.is_err());
 
         let unk_obj = Value::unknown(Type::object(BTreeMap::new()));
-        let res2 = eval_func("tomap", std::slice::from_ref(&unk_obj)).expect("expected value");
+        let res2 = eval_func("tomap", std::slice::from_ref(&unk_obj)).unwrap();
         assert!(res2.is_unknown());
     }
 
@@ -628,23 +634,20 @@ mod tests {
         let val = Value::new(Type::String, ValueData::String("secret".to_string()));
 
         // issensitive on non-sensitive value
-        let is_sens =
-            eval_func("issensitive", std::slice::from_ref(&val)).expect("eval issensitive");
+        let is_sens = eval_func("issensitive", std::slice::from_ref(&val)).unwrap();
         assert_eq!(is_sens, Value::new(Type::Bool, ValueData::Bool(false)));
 
         // sensitive(val)
-        let sens_val = eval_func("sensitive", std::slice::from_ref(&val)).expect("eval sensitive");
+        let sens_val = eval_func("sensitive", std::slice::from_ref(&val)).unwrap();
         assert!(sens_val.has_mark(&ValueMark::Sensitive));
         assert!(sens_val.is_sensitive());
 
         // issensitive on sensitive value
-        let is_sens2 =
-            eval_func("issensitive", std::slice::from_ref(&sens_val)).expect("eval issensitive");
+        let is_sens2 = eval_func("issensitive", std::slice::from_ref(&sens_val)).unwrap();
         assert_eq!(is_sens2, Value::new(Type::Bool, ValueData::Bool(true)));
 
         // nonsensitive(sens_val)
-        let non_sens =
-            eval_func("nonsensitive", std::slice::from_ref(&sens_val)).expect("eval nonsensitive");
+        let non_sens = eval_func("nonsensitive", std::slice::from_ref(&sens_val)).unwrap();
         assert!(!non_sens.has_mark(&ValueMark::Sensitive));
         assert!(!non_sens.is_sensitive());
         assert_eq!(non_sens, val);

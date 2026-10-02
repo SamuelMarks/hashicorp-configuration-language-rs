@@ -735,6 +735,14 @@ pub fn walk_fold_body<F: AstFolder>(folder: &mut F, mut body: Body) -> Body {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::ast::expr::{BinaryOp, Conditional, ForExpr, FuncCall};
     use crate::span::Span;
@@ -879,11 +887,11 @@ mod tests {
                         Box::new(Conditional {
                             cond_expr: Expression::Bool(true, span.clone()),
                             true_expr: Expression::Number(
-                                crate::number::Number::from_str("1").expect("num"),
+                                crate::number::Number::from_str("1").unwrap(),
                                 span.clone(),
                             ),
                             false_expr: Expression::Number(
-                                crate::number::Number::from_str("0").expect("num"),
+                                crate::number::Number::from_str("0").unwrap(),
                                 span.clone(),
                             ),
                         }),
@@ -1147,10 +1155,7 @@ mod tests {
             vec![
                 Expression::Null(span.clone()),
                 Expression::Bool(true, span.clone()),
-                Expression::Number(
-                    crate::number::Number::from_str("42").expect("valid number"),
-                    span.clone(),
-                ),
+                Expression::Number(crate::number::Number::from_str("42").unwrap(), span.clone()),
                 Expression::String("str".to_string(), span.clone()),
                 Expression::Variable("var".to_string(), span.clone()),
                 Expression::Object(
@@ -1241,11 +1246,11 @@ mod tests {
                     Box::new(Conditional {
                         cond_expr: Expression::Bool(true, span.clone()),
                         true_expr: Expression::Number(
-                            crate::number::Number::from_str("1").expect("valid"),
+                            crate::number::Number::from_str("1").unwrap(),
                             span.clone(),
                         ),
                         false_expr: Expression::Number(
-                            crate::number::Number::from_str("0").expect("valid"),
+                            crate::number::Number::from_str("0").unwrap(),
                             span.clone(),
                         ),
                     }),
@@ -1260,7 +1265,7 @@ mod tests {
                 Expression::UnaryOp(
                     crate::ast::expr::UnaryOp::Neg,
                     Box::new(Expression::Number(
-                        crate::number::Number::from_str("1").expect("valid"),
+                        crate::number::Number::from_str("1").unwrap(),
                         span.clone(),
                     )),
                     span.clone(),
@@ -1466,7 +1471,7 @@ mod tests {
         );
 
         let num_expr = Expression::Number(
-            crate::number::Number::from_str("123").expect("num"),
+            crate::number::Number::from_str("123").unwrap(),
             span.clone(),
         );
         assert_eq!(

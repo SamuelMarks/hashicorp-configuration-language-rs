@@ -1,4 +1,11 @@
 //! Comprehensive unit tests for legacy HCL 1.0 parsing, lexing, and migration.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 
 use crate::ast::expr::Expression;
 use crate::hcl1::lex::Hcl1Lexer;
@@ -20,7 +27,7 @@ fn test_hcl1_lexer_basics() {
     "#;
 
     let mut lexer = Hcl1Lexer::new(input);
-    let tokens = lexer.tokenize().expect("tokenization succeeds");
+    let tokens = lexer.tokenize().unwrap();
     assert_ne!(tokens.len(), 0);
 }
 
@@ -32,7 +39,7 @@ line 2
 EOF
 ";
     let mut lexer = Hcl1Lexer::new(input);
-    let tokens = lexer.tokenize().expect("tokenization succeeds");
+    let tokens = lexer.tokenize().unwrap();
     assert!(tokens.iter().any(|t| t.text.contains(
         "line 1
 line 2"
@@ -44,7 +51,7 @@ line 2"
   EOF
 ";
     let mut lexer_indented = Hcl1Lexer::new(input_indented);
-    let tokens_indented = lexer_indented.tokenize().expect("tokenization succeeds");
+    let tokens_indented = lexer_indented.tokenize().unwrap();
     assert!(
         tokens_indented
             .iter()
@@ -90,14 +97,14 @@ fn test_hcl1_parser_terraform_011_config() {
     "#;
 
     let mut lexer = Hcl1Lexer::new(input);
-    let tokens = lexer.tokenize().expect("tokenize succeeds");
+    let tokens = lexer.tokenize().unwrap();
     let mut parser = Hcl1Parser::new(tokens);
-    let hcl1_body = parser.parse_body().expect("parse succeeds");
+    let hcl1_body = parser.parse_body().unwrap();
 
     assert_eq!(hcl1_body.items.len(), 1);
 
     // Migrate to HCL2
-    let (hcl2_body, diags) = migrate_hcl1_to_hcl2(&hcl1_body).expect("migration succeeds");
+    let (hcl2_body, diags) = migrate_hcl1_to_hcl2(&hcl1_body).unwrap();
 
     // Verify block migration
     assert_eq!(hcl2_body.blocks.len(), 1);
@@ -106,7 +113,7 @@ fn test_hcl1_parser_terraform_011_config() {
     assert_eq!(block.labels, &["aws_instance", "web"]);
 
     // Verify comma-less list migrated to Tuple
-    let tags_attr = block.body.attributes.get("tags").expect("tags exists");
+    let tags_attr = block.body.attributes.get("tags").unwrap();
     match &tags_attr.expr {
         Expression::Tuple(elements, _) => {
             assert_eq!(elements.len(), 3);
@@ -115,7 +122,7 @@ fn test_hcl1_parser_terraform_011_config() {
     }
 
     // Verify unescaped interpolation migrated to native expression
-    let ami_attr = block.body.attributes.get("ami").expect("ami exists");
+    let ami_attr = block.body.attributes.get("ami").unwrap();
     match &ami_attr.expr {
         Expression::Traversal(t, _) => {
             match t.expr.as_ref() {
@@ -163,11 +170,11 @@ fn test_hcl1_parser_packer_template() {
     "#;
 
     let mut lexer = Hcl1Lexer::new(input);
-    let tokens = lexer.tokenize().expect("tokenize succeeds");
+    let tokens = lexer.tokenize().unwrap();
     let mut parser = Hcl1Parser::new(tokens);
-    let hcl1_body = parser.parse_body().expect("parse succeeds");
+    let hcl1_body = parser.parse_body().unwrap();
 
-    let (hcl2_body, diags) = migrate_hcl1_to_hcl2(&hcl1_body).expect("migration succeeds");
+    let (hcl2_body, diags) = migrate_hcl1_to_hcl2(&hcl1_body).unwrap();
 
     assert_eq!(hcl2_body.blocks.len(), 1);
     assert_eq!(hcl2_body.blocks[0].block_type, "variable");
@@ -606,7 +613,7 @@ fn test_migrate_legacy_json_templates() {
         "unclosed_interp": "${unclosed"
     }"#;
 
-    let (body, diags) = migrate_legacy_json(json).expect("migrate json ok");
+    let (body, diags) = migrate_legacy_json(json).unwrap();
     assert_ne!(diags.len(), 0);
 
     // Check variable blocks

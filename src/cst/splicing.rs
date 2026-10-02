@@ -86,6 +86,14 @@ pub fn splice_tokens(tokens: &[Token], target_span: &Span, new_tokens: Vec<Token
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::lex::token::TokenKind;
 

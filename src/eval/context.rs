@@ -610,6 +610,14 @@ fn merge_nested_values(dest: &mut Value, src: Value) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::types::{Type, ValueData};
 
@@ -635,10 +643,10 @@ mod tests {
 
         // Shadowing
         child.set_variable("foo", Value::unknown(Type::String));
-        let shadowed = child.get_variable("foo").expect("expected value");
+        let shadowed = child.get_variable("foo").unwrap();
         assert!(shadowed.is_unknown());
 
-        let original = ctx.get_variable("foo").expect("expected value");
+        let original = ctx.get_variable("foo").unwrap();
         assert!(!original.is_unknown());
     }
 
@@ -674,14 +682,14 @@ mod tests {
         );
         ctx.set_path_scopes("/root/dir", "/cwd/dir");
 
-        let var_val = ctx.get_variable("var").expect("var scope");
+        let var_val = ctx.get_variable("var").unwrap();
         assert!(var_val.to_string().contains("my_var"));
         assert!(var_val.to_string().contains("second_var"));
 
-        let local_val = ctx.get_variable("local").expect("local scope");
+        let local_val = ctx.get_variable("local").unwrap();
         assert!(local_val.to_string().contains("my_local"));
 
-        let path_val = ctx.get_variable("path").expect("path scope");
+        let path_val = ctx.get_variable("path").unwrap();
         assert!(path_val.to_string().contains("/root/dir"));
         assert!(path_val.to_string().contains("/cwd/dir"));
 
@@ -698,7 +706,7 @@ mod tests {
             &["source", "qemu", "arch"],
             Value::new(Type::String, ValueData::String("x86_64".into())),
         );
-        let source_val = ctx.get_variable("source").expect("source scope");
+        let source_val = ctx.get_variable("source").unwrap();
         assert!(source_val.to_string().contains("qemu_img"));
         assert!(source_val.to_string().contains("x86_64"));
 
@@ -711,7 +719,7 @@ mod tests {
             &["overwrite_prim", "child"],
             Value::new(Type::Bool, ValueData::Bool(true)),
         );
-        let prim_obj = ctx.get_variable("overwrite_prim").expect("obj exists");
+        let prim_obj = ctx.get_variable("overwrite_prim").unwrap();
         assert!(prim_obj.to_string().contains("child"));
 
         // Overwrite a non-object namespace variable
@@ -721,7 +729,7 @@ mod tests {
             "key",
             Value::new(Type::String, ValueData::String("val".into())),
         );
-        let scalar_obj = ctx.get_variable("scalar_ns").expect("scalar_ns exists");
+        let scalar_obj = ctx.get_variable("scalar_ns").unwrap();
         assert!(scalar_obj.to_string().contains("key"));
     }
 
@@ -739,7 +747,7 @@ mod tests {
 
         let child = Context::new_child(&ctx);
         let child2 = Context::new_child(&child);
-        let found = child2.get_function("test_func").expect("expected value");
+        let found = child2.get_function("test_func").unwrap();
         assert!((found.func)(&[]).is_ok());
         assert!(child2.get_function("missing_func").is_none());
         assert!(ctx.get_function("missing_func").is_none());
@@ -762,7 +770,7 @@ mod tests {
         };
         ctx.set_function("test_func", func);
 
-        let f = ctx.get_function("test_func").expect("expected value");
+        let f = ctx.get_function("test_func").unwrap();
         let _ = (f.func)(&[]);
 
         let func2 = Function {
@@ -771,7 +779,7 @@ mod tests {
             signature: None,
         };
         ctx.set_function("other_func", func2);
-        let f2 = ctx.get_function("other_func").expect("expected value");
+        let f2 = ctx.get_function("other_func").unwrap();
         let _ = (f2.func)(&[]);
     }
 
@@ -794,9 +802,9 @@ mod tests {
         };
         ctx.set_function(String::from("test_func_str"), func_str);
 
-        let f = ctx.get_function("test_func").expect("expected value");
+        let f = ctx.get_function("test_func").unwrap();
         assert!((f.func)(&[]).is_ok());
-        let f_str = ctx.get_function("test_func_str").expect("expected value");
+        let f_str = ctx.get_function("test_func_str").unwrap();
         assert!((f_str.func)(&[]).is_ok());
         assert!(ctx.get_function("other_func").is_none());
 
@@ -811,7 +819,7 @@ mod tests {
         };
         child.set_function("other_func", func2);
 
-        let f2 = child.get_function("other_func").expect("expected value");
+        let f2 = child.get_function("other_func").unwrap();
         assert!((f2.func)(&[]).is_ok());
         assert!(ctx.get_function("other_func").is_none());
     }
@@ -844,8 +852,8 @@ mod tests {
                 signature: None,
             },
         );
-        let custom_fn = child_shadow.get_function("upper").expect("expected upper");
-        let res = (custom_fn.func)(&[]).expect("call success");
+        let custom_fn = child_shadow.get_function("upper").unwrap();
+        let res = (custom_fn.func)(&[]).unwrap();
         assert_eq!(*res.data, ValueData::String("custom".into()));
     }
 
@@ -955,7 +963,7 @@ mod tests {
                 signature: None,
             },
         );
-        let f_my = ctx.get_function("my_fn").expect("expected value");
+        let f_my = ctx.get_function("my_fn").unwrap();
         assert!((f_my.func)(&[]).is_ok());
         let names = ctx.function_names();
         assert_eq!(names, vec!["my_fn".to_string()]);
@@ -1008,7 +1016,7 @@ mod tests {
             span: span.clone(),
         };
         ctx.register_function_block(&fb_variadic);
-        let f = ctx.get_function("custom_var").expect("custom_var");
+        let f = ctx.get_function("custom_var").unwrap();
 
         // Error: fewer arguments than min_args
         assert!((f.func)(&[]).is_err());
@@ -1041,7 +1049,7 @@ mod tests {
             span: span.clone(),
         };
         ctx.register_function_block(&fb_ret_mismatch);
-        let f_mismatch = ctx.get_function("ret_mismatch").expect("ret_mismatch");
+        let f_mismatch = ctx.get_function("ret_mismatch").unwrap();
         assert!((f_mismatch.func)(&[]).is_err());
         // Wrong argument count on non-variadic function
         assert!((f_mismatch.func)(&[Value::null(Type::Dynamic)]).is_err());
@@ -1056,7 +1064,7 @@ mod tests {
             span,
         };
         ctx.register_function_block(&fb_eval_fail);
-        let f_fail = ctx.get_function("eval_fail").expect("eval_fail");
+        let f_fail = ctx.get_function("eval_fail").unwrap();
         assert!((f_fail.func)(&[]).is_err());
     }
 

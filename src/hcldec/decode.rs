@@ -2,6 +2,7 @@
 //!
 //! Provides the ability to decode an HCL `Body` into a strongly-typed `Value`
 //! based on a given `Spec`.
+use std::fmt::Write;
 
 use crate::ast::structure::Body;
 use crate::diagnostic::{Diagnostic, Diagnostics};
@@ -235,7 +236,7 @@ fn decode_internal(body: &Body, spec: &Spec, ctx: &Context) -> Result<Value, Hcl
                     body.attributes.keys().map(String::as_str),
                     2,
                 ) {
-                    msg.push_str(&format!(". Did you mean \"{candidate}\"?"));
+                    let _ = write!(msg, ". Did you mean \"{candidate}\"?");
                 }
                 Err(HclError::MissingField(msg))
             }
@@ -306,7 +307,7 @@ fn decode_partial_internal(
                     residual.attributes.keys().map(String::as_str),
                     2,
                 ) {
-                    msg.push_str(&format!(". Did you mean \"{candidate}\"?"));
+                    let _ = write!(msg, ". Did you mean \"{candidate}\"?");
                 }
                 Err(HclError::MissingField(msg))
             }
@@ -649,10 +650,18 @@ fn build_nested_block_map(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     #[test]
     fn test_do_test_blocks_print() {
         let src = "foo {\n bar = \"a\"\n }\nfoo {\n bar = \"b\"\n }";
-        let body = crate::api::parse(src).expect("expected value");
+        let body = crate::api::parse(src).unwrap();
         println!("blocks {:?}", body.blocks);
     }
 
@@ -679,7 +688,7 @@ mod tests {
         let hcl_src = r#"
             req = "a"
         "#;
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
 
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -688,7 +697,7 @@ mod tests {
         );
         let spec = Spec::Object(attrs);
         let _ctx = Context::new();
-        let res = decode(&body, &spec).expect("expected value");
+        let res = decode(&body, &spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Object(BTreeMap::new()))
@@ -698,13 +707,13 @@ mod tests {
     #[test]
     fn test_decode_default() {
         let hcl_src = "";
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
         let spec = Spec::Default(DefaultSpec {
             primary: Box::new(Spec::Attr(AttrSpec::new("missing", Type::String))),
             default_value: Value::new(Type::String, ValueData::String("default".to_string())),
         });
         let _ctx = Context::new();
-        let res = decode(&body, &spec).expect("expected value");
+        let res = decode(&body, &spec).unwrap();
         assert_eq!(*res.data, ValueData::String("default".to_string()));
     }
 
@@ -734,7 +743,7 @@ mod tests {
         });
 
         let spec = Spec::Array(Box::new(block_spec));
-        let res = decode(&body, &spec).expect("expected value");
+        let res = decode(&body, &spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -748,7 +757,7 @@ mod tests {
 bar = "a"
  }
         "#;
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
 
         let block_body = HashMap::new();
 
@@ -758,7 +767,7 @@ bar = "a"
         });
 
         let _ctx = Context::new();
-        let res = decode(&body, &spec).expect("expected value");
+        let res = decode(&body, &spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Object(BTreeMap::new()))
@@ -770,7 +779,7 @@ bar = "a"
         let hcl_src = r"
             foo = unknown_var
         ";
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
         let spec = Spec::Attr(AttrSpec::new("foo", Type::String));
         let _ctx = Context::new();
         let res = decode(&body, &spec);
@@ -799,7 +808,7 @@ bar = "a"
             "missing_opt",
             Type::String,
         ))));
-        let res_opt = decode_internal(&body, &spec_opt, &ctx).expect("decode_internal failed");
+        let res_opt = decode_internal(&body, &spec_opt, &ctx).unwrap();
         assert_eq!(*res_opt.ty(), Type::Dynamic);
 
         // We need a body with an attribute to test Optional/Default presence
@@ -841,7 +850,7 @@ bar = "a"
         let hcl_src = r#"
             foo = 1 + "a"
         "#;
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
         let spec = Spec::Attr(AttrSpec::new("foo", Type::String));
         let _ctx = Context::new();
         let res = decode(&body, &spec);
@@ -851,7 +860,7 @@ bar = "a"
     #[test]
     fn test_hcldec_coverage_array_spec() {
         let hcl_src = "foo = 1";
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
         let spec = Spec::Array(Box::new(Spec::Attr(AttrSpec::new("foo", Type::String))));
         let _ctx = Context::new();
         let res = decode(&body, &spec);
@@ -861,7 +870,7 @@ bar = "a"
     #[test]
     fn test_decode_object_and_attr() {
         let hcl_src = "foo = 1";
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
         let mut attrs = HashMap::new();
         attrs.insert(
             "foo".to_string(),
@@ -869,7 +878,7 @@ bar = "a"
         );
         let spec = Spec::Object(attrs);
         let _ctx = Context::new();
-        let res = decode(&body, &spec).expect("expected value");
+        let res = decode(&body, &spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Object(BTreeMap::new()))
@@ -879,7 +888,7 @@ bar = "a"
     #[test]
     fn test_hcldec_coverage_decode_internal_error() {
         let hcl_src = "foo = \"bad\"";
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
         let mut attrs = HashMap::new();
         attrs.insert(
             "foo".to_string(),
@@ -925,7 +934,7 @@ bar = "a"
 bar = "a"
  }
         "#;
-        let body = crate::api::parse(hcl_src).expect("expected value");
+        let body = crate::api::parse(hcl_src).unwrap();
 
         let block_body = HashMap::new();
 
@@ -936,7 +945,7 @@ bar = "a"
 
         let spec = Spec::Array(Box::new(block_spec));
         let _ctx = Context::new();
-        let res = decode(&body, &spec).expect("expected value");
+        let res = decode(&body, &spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -967,13 +976,13 @@ bar = "a"
         });
 
         // This will return an Err(HclError::Decode("Multiple blocks of type 'foo' found..."))
-        let err = decode(&body, &block_spec).expect_err("expected error");
+        let err = decode(&body, &block_spec).err().unwrap();
         assert!(err.to_string().contains("foo")); // hits line 65
 
         // Line 95 error trigger for Default
         // We need an error that is NOT MissingField. E.g. Eval error.
         let hcl_src = "foo = 1 + \"a\"";
-        let body_eval_err = crate::api::parse(hcl_src).expect("expected value");
+        let body_eval_err = crate::api::parse(hcl_src).unwrap();
         let default_spec = Spec::Default(DefaultSpec {
             primary: Box::new(Spec::Attr(AttrSpec::new("foo", Type::String))),
             default_value: Value::new(Type::String, ValueData::Null),
@@ -988,7 +997,7 @@ bar = "a"
     #[test]
     fn test_decode_block_list_success_and_errors() {
         let src = "item {\n  val = 1\n}\nitem {\n  val = 2\n}\n";
-        let body = crate::api::parse(src).expect("parsed");
+        let body = crate::api::parse(src).unwrap();
 
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -1002,7 +1011,7 @@ bar = "a"
                 .with_min_items(1)
                 .with_max_items(3),
         );
-        let val = decode(&body, &list_spec).expect("decoded");
+        let val = decode(&body, &list_spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*val.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -1031,7 +1040,7 @@ bar = "a"
     #[test]
     fn test_decode_block_set() {
         let src = "tag {\n  name = \"web\"\n}\ntag {\n  name = \"web\"\n}\n";
-        let body = crate::api::parse(src).expect("parsed");
+        let body = crate::api::parse(src).unwrap();
 
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -1042,7 +1051,7 @@ bar = "a"
             "tag",
             Spec::Object(attrs),
         ));
-        let val = decode(&body, &set_spec).expect("decoded");
+        let val = decode(&body, &set_spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*val.data),
             std::mem::discriminant(&ValueData::Set(std::collections::BTreeSet::new()))
@@ -1052,7 +1061,7 @@ bar = "a"
     #[test]
     fn test_decode_block_map_single_and_multiple_labels() {
         let src_single = "server \"web\" {\n  port = 80\n}\nserver \"api\" {\n  port = 8080\n}\n";
-        let body_single = crate::api::parse(src_single).expect("parsed");
+        let body_single = crate::api::parse(src_single).unwrap();
 
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -1064,7 +1073,7 @@ bar = "a"
             vec!["name".to_string()],
             Spec::Object(attrs.clone()),
         ));
-        let val_single = decode(&body_single, &map_spec).expect("decoded single map");
+        let val_single = decode(&body_single, &map_spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*val_single.data),
             std::mem::discriminant(&ValueData::Object(BTreeMap::new()))
@@ -1074,13 +1083,13 @@ bar = "a"
 
         // Multi-level labels
         let src_multi = "env \"prod\" \"db\" {\n  port = 5432\n}\nenv \"prod\" \"web\" {\n  port = 443\n}\nenv \"dev\" \"web\" {\n  port = 80\n}\n";
-        let body_multi = crate::api::parse(src_multi).expect("parsed");
+        let body_multi = crate::api::parse(src_multi).unwrap();
         let multi_map_spec = Spec::BlockMap(crate::hcldec::spec::BlockMapSpec::new(
             "env",
             vec!["env".to_string(), "role".to_string()],
             Spec::Object(attrs),
         ));
-        let val_multi = decode(&body_multi, &multi_map_spec).expect("decoded multi map");
+        let val_multi = decode(&body_multi, &multi_map_spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*val_multi.data),
             std::mem::discriminant(&ValueData::Object(BTreeMap::new()))
@@ -1108,12 +1117,12 @@ bar = "a"
             port = "8080"
         }
         "#;
-        let body = crate::api::parse(src).expect("parsed");
+        let body = crate::api::parse(src).unwrap();
 
         let attrs_spec = Spec::BlockAttrs(
             crate::hcldec::spec::BlockAttrsSpec::new("settings").with_type(Type::String),
         );
-        let val = decode(&body, &attrs_spec).expect("decoded attrs");
+        let val = decode(&body, &attrs_spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*val.data),
             std::mem::discriminant(&ValueData::Object(BTreeMap::new()))
@@ -1128,7 +1137,7 @@ bar = "a"
 
         // Error: multiple blocks found for BlockAttrs
         let src_mult = "settings {\n  a = \"1\"\n}\nsettings {\n  b = \"2\"\n}\n";
-        let body_mult = crate::api::parse(src_mult).expect("parsed");
+        let body_mult = crate::api::parse(src_mult).unwrap();
         assert!(decode(&body_mult, &attrs_spec).is_err());
 
         // Error: type mismatch in attributes
@@ -1137,7 +1146,7 @@ bar = "a"
             port = 8080
         }
         ";
-        let body_num = crate::api::parse(src_num).expect("parsed");
+        let body_num = crate::api::parse(src_num).unwrap();
         assert!(decode(&body_num, &attrs_spec).is_err());
     }
 
@@ -1147,7 +1156,7 @@ bar = "a"
 
         let lit_val = Value::new(Type::String, ValueData::String("const".to_string()));
         let lit_spec = Spec::Literal(crate::hcldec::spec::LiteralSpec::new(lit_val.clone()));
-        let val = decode(&body, &lit_spec).expect("literal decoded");
+        let val = decode(&body, &lit_spec).unwrap();
         assert_eq!(val, lit_val);
 
         let transform_spec =
@@ -1157,7 +1166,7 @@ bar = "a"
                     ValueData::String("const transformed".to_string()),
                 ))
             }));
-        let val_trans = decode(&body, &transform_spec).expect("transformed");
+        let val_trans = decode(&body, &transform_spec).unwrap();
         assert_eq!(
             val_trans,
             Value::new(
@@ -1175,7 +1184,7 @@ bar = "a"
             Spec::Literal(crate::hcldec::spec::LiteralSpec::new(one_val.clone())),
             Spec::Literal(crate::hcldec::spec::LiteralSpec::new(true_val.clone())),
         ]));
-        let val_tup = decode(&body, &tuple_spec).expect("tuple");
+        let val_tup = decode(&body, &tuple_spec).unwrap();
         assert_eq!(
             std::mem::discriminant(&*val_tup.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -1191,7 +1200,7 @@ bar = "a"
 
         // 1. Line 56: Spec::Array(Block) inner decode fails
         let src1 = "server { }";
-        let body1 = crate::api::parse(src1).expect("parsed");
+        let body1 = crate::api::parse(src1).unwrap();
         let spec1 = Spec::Array(Box::new(Spec::Block(crate::hcldec::spec::BlockSpec {
             type_name: "server".to_string(),
             body: Box::new(Spec::Required(Box::new(Spec::Attr(
@@ -1242,7 +1251,7 @@ bar = "a"
 
         // 6. Line 245: Spec::BlockMap (1 label) inner decode fails
         let src6 = "server \"web\" { }";
-        let body6 = crate::api::parse(src6).expect("parsed");
+        let body6 = crate::api::parse(src6).unwrap();
         let spec6 = Spec::BlockMap(crate::hcldec::spec::BlockMapSpec::new(
             "server",
             vec!["name".to_string()],
@@ -1255,7 +1264,7 @@ bar = "a"
 
         // 7. Lines 273 and 289: Spec::BlockMap (multi-label) inner decode fails
         let src7 = "server \"prod\" \"web\" { }";
-        let body7 = crate::api::parse(src7).expect("parsed");
+        let body7 = crate::api::parse(src7).unwrap();
         let spec7 = Spec::BlockMap(crate::hcldec::spec::BlockMapSpec::new(
             "server",
             vec!["env".to_string(), "name".to_string()],
@@ -1274,7 +1283,7 @@ bar = "a"
             host = var.nonexistent
         }
         ";
-        let body = crate::api::parse(src).expect("parsed");
+        let body = crate::api::parse(src).unwrap();
         let attrs_spec = Spec::BlockAttrs(crate::hcldec::spec::BlockAttrsSpec::new("settings"));
         assert!(decode(&body, &attrs_spec).is_err());
     }
@@ -1282,7 +1291,7 @@ bar = "a"
     #[test]
     fn test_hcldec_unrelated_blocks_coverage() {
         let src = "unrelated \"x\" {\n  a = 1\n}\ntarget \"t\" {\n  name = \"hello\"\n}\n";
-        let body = crate::api::parse(src).expect("parsed");
+        let body = crate::api::parse(src).unwrap();
 
         // 1. Spec::Array with Spec::Block
         let block_spec = Spec::Block(BlockSpec {
@@ -1337,7 +1346,7 @@ database "primary" {
 global_timeout = 30
 environment = "prod"
 "#;
-        let body = crate::api::parse(src).expect("parsed");
+        let body = crate::api::parse(src).unwrap();
         let mut ctx = Context::new();
 
         // Stage 1: Decode service block and global_timeout
@@ -1361,8 +1370,7 @@ environment = "prod"
         );
         let stage1_spec = Spec::Object(stage1_specs);
 
-        let (val1, residual1) =
-            partial_decode(&body, &stage1_spec, &mut ctx).expect("stage 1 partial decode succeeds");
+        let (val1, residual1) = partial_decode(&body, &stage1_spec, &mut ctx).unwrap();
 
         assert!(matches!(val1.data.as_ref(), ValueData::Object(_)));
         // Residual body should no longer contain service or global_timeout
@@ -1393,8 +1401,7 @@ environment = "prod"
         );
         let stage2_spec = Spec::Object(stage2_specs);
 
-        let (val2, residual2) =
-            partial_decode(&residual1, &stage2_spec, &mut ctx).expect("stage 2 succeeds");
+        let (val2, residual2) = partial_decode(&residual1, &stage2_spec, &mut ctx).unwrap();
         assert!(matches!(val2.data.as_ref(), ValueData::Object(_)));
         assert!(residual2.attributes.is_empty());
         assert_eq!(residual2.blocks.len(), 0);
@@ -1417,7 +1424,7 @@ environment = "prod"
         let spec = Spec::Expr(crate::hcldec::spec::ExprSpec::new(expr));
 
         let body = Body::new(crate::span::Span::new(0, 0, 0, 0, 0, 0));
-        let val = decode(&body, &spec).expect("decoded expr");
+        let val = decode(&body, &spec).unwrap();
         assert_eq!(val.to_string(), "42");
 
         // Failing expression evaluation (line 254)
@@ -1435,14 +1442,14 @@ environment = "prod"
         };
 
         // Attribute expression evaluation failure during decode_partial (line 283)
-        let fail_body = crate::api::parse("failing_attr = nonexistent_var").expect("parse");
+        let fail_body = crate::api::parse("failing_attr = nonexistent_var").unwrap();
         let fail_attr_spec = Spec::Attr(AttrSpec::new("failing_attr", Type::String));
         let mut ctx = Context::new();
         assert!(partial_decode(&fail_body, &fail_attr_spec, &mut ctx).is_err());
 
         // BlockAttrs with unrelated block present (line 410 false branch)
         let blk_attrs_body =
-            crate::api::parse("unrelated_blk {}\nsetting {\n  foo = \"bar\"\n}").expect("parse");
+            crate::api::parse("unrelated_blk {}\nsetting {\n  foo = \"bar\"\n}").unwrap();
         let blk_attrs_spec = Spec::BlockAttrs(BlockAttrsSpec::new("setting"));
         assert!(partial_decode(&blk_attrs_body, &blk_attrs_spec, &mut ctx).is_ok());
 
@@ -1461,7 +1468,7 @@ metadata {
   region = "us-east-1"
 }
 "#;
-        let body = crate::api::parse(src).expect("parsed");
+        let body = crate::api::parse(src).unwrap();
         let mut ctx = Context::new();
 
         // 1. BlockList with min/max
@@ -1470,7 +1477,7 @@ metadata {
         list_spec.min_items = Some(1);
         list_spec.max_items = Some(5);
         let (val_list, res1) =
-            partial_decode(&body, &Spec::BlockList(list_spec), &mut ctx).expect("list succeeds");
+            partial_decode(&body, &Spec::BlockList(list_spec), &mut ctx).unwrap();
         assert!(matches!(val_list.data.as_ref(), ValueData::Array(_)));
 
         // 2. BlockMap
@@ -1479,23 +1486,21 @@ metadata {
             vec!["name".to_string()],
             Spec::Attr(AttrSpec::new("ip", Type::String)),
         );
-        let (val_map, res2) =
-            partial_decode(&res1, &Spec::BlockMap(map_spec), &mut ctx).expect("map succeeds");
+        let (val_map, res2) = partial_decode(&res1, &Spec::BlockMap(map_spec), &mut ctx).unwrap();
         assert!(matches!(val_map.data.as_ref(), ValueData::Object(_)));
 
         // 3. BlockAttrs
         let attrs_spec = BlockAttrsSpec::new("metadata");
         let (val_attrs, res3) =
-            partial_decode(&res2, &Spec::BlockAttrs(attrs_spec), &mut ctx).expect("attrs succeeds");
+            partial_decode(&res2, &Spec::BlockAttrs(attrs_spec), &mut ctx).unwrap();
         assert!(matches!(val_attrs.data.as_ref(), ValueData::Object(_)));
         assert_eq!(res3.blocks.len(), 0);
 
         // 4. BlockSet, Default, Optional, Tuple, Transform, Array
-        let body_set = crate::api::parse("tag {\n  val = \"a\"\n}\ntag {\n  val = \"b\"\n}\n")
-            .expect("parsed");
+        let body_set =
+            crate::api::parse("tag {\n  val = \"a\"\n}\ntag {\n  val = \"b\"\n}\n").unwrap();
         let set_spec = BlockSetSpec::new("tag", Spec::Attr(AttrSpec::new("val", Type::String)));
-        let (val_set, _) =
-            partial_decode(&body_set, &Spec::BlockSet(set_spec), &mut ctx).expect("set succeeds");
+        let (val_set, _) = partial_decode(&body_set, &Spec::BlockSet(set_spec), &mut ctx).unwrap();
         assert!(matches!(val_set.data.as_ref(), ValueData::Set(_)));
 
         // Default missing fallback
@@ -1505,13 +1510,12 @@ metadata {
             primary: Box::new(Spec::Attr(AttrSpec::new("missing", Type::String))),
             default_value: "fallback".encode_value(),
         });
-        let (val_def, _) =
-            partial_decode(&empty_body, &def_spec, &mut ctx).expect("default succeeds");
+        let (val_def, _) = partial_decode(&empty_body, &def_spec, &mut ctx).unwrap();
         assert_eq!(val_def.to_string(), "\"fallback\"");
 
         // Optional missing fallback to null
         let opt_spec = Spec::Optional(Box::new(Spec::Attr(AttrSpec::new("missing", Type::Number))));
-        let (val_opt, _) = partial_decode(&empty_body, &opt_spec, &mut ctx).expect("opt succeeds");
+        let (val_opt, _) = partial_decode(&empty_body, &opt_spec, &mut ctx).unwrap();
         assert!(val_opt.is_null());
 
         // Tuple and Transform
@@ -1522,17 +1526,16 @@ metadata {
                 Ok,
             )),
         ]));
-        let (val_tuple, _) =
-            partial_decode(&empty_body, &tuple_spec, &mut ctx).expect("tuple succeeds");
+        let (val_tuple, _) = partial_decode(&empty_body, &tuple_spec, &mut ctx).unwrap();
         assert!(matches!(val_tuple.data.as_ref(), ValueData::Array(_)));
 
         // Array of blocks
-        let body_arr = crate::api::parse("server {\n  port = 80\n}\n").expect("parsed");
+        let body_arr = crate::api::parse("server {\n  port = 80\n}\n").unwrap();
         let arr_spec = Spec::Array(Box::new(Spec::Block(BlockSpec {
             type_name: "server".to_string(),
             body: Box::new(Spec::Attr(AttrSpec::new("port", Type::Number))),
         })));
-        let (val_arr, _) = partial_decode(&body_arr, &arr_spec, &mut ctx).expect("array succeeds");
+        let (val_arr, _) = partial_decode(&body_arr, &arr_spec, &mut ctx).unwrap();
         assert!(matches!(val_arr.data.as_ref(), ValueData::Array(_)));
     }
 
@@ -1549,8 +1552,7 @@ metadata {
             body: Box::new(Spec::Attr(AttrSpec::new("port", Type::Number))),
         });
         let body_multi_block =
-            crate::api::parse("server {\n  port = 80\n}\nserver {\n  port = 81\n}\n")
-                .expect("parsed");
+            crate::api::parse("server {\n  port = 80\n}\nserver {\n  port = 81\n}\n").unwrap();
         assert!(partial_decode(&body_multi_block, &block_spec, &mut ctx).is_err());
         assert!(partial_decode(&empty_body, &block_spec, &mut ctx).is_err());
 
@@ -1564,7 +1566,7 @@ metadata {
         );
         assert!(partial_decode(&empty_body, &list_min_spec, &mut ctx).is_err());
 
-        let body_two_items = crate::api::parse("item {}\nitem {}\n").expect("parsed");
+        let body_two_items = crate::api::parse("item {}\nitem {}\n").unwrap();
         let list_max_spec = Spec::BlockList(
             BlockListSpec::new(
                 "item",
@@ -1575,30 +1577,28 @@ metadata {
         assert!(partial_decode(&body_two_items, &list_max_spec, &mut ctx).is_err());
 
         // 3. Spec::BlockSet: decode error inside set block, and non-matching block retention
-        let body_set_err =
-            crate::api::parse("tag {\n  val = undefined_set_var\n}\n").expect("parsed");
+        let body_set_err = crate::api::parse("tag {\n  val = undefined_set_var\n}\n").unwrap();
         let set_spec = BlockSetSpec::new("tag", Spec::Attr(AttrSpec::new("val", Type::String)));
         assert!(
             partial_decode(&body_set_err, &Spec::BlockSet(set_spec.clone()), &mut ctx).is_err()
         );
 
         let body_mixed_set =
-            crate::api::parse("tag {\n  val = \"a\"\n}\nunrelated {\n  x = 1\n}\n")
-                .expect("parsed");
+            crate::api::parse("tag {\n  val = \"a\"\n}\nunrelated {\n  x = 1\n}\n").unwrap();
         let (_val_set_mixed, res_mixed) =
-            partial_decode(&body_mixed_set, &Spec::BlockSet(set_spec), &mut ctx).expect("set ok");
+            partial_decode(&body_mixed_set, &Spec::BlockSet(set_spec), &mut ctx).unwrap();
         assert_eq!(res_mixed.blocks.len(), 1);
 
         // 4. Spec::BlockAttrs: multiple blocks, eval error, type mismatch, missing
         let attrs_spec = Spec::BlockAttrs(BlockAttrsSpec::new("meta"));
         let body_multi_attrs =
-            crate::api::parse("meta {\n  a = 1\n}\nmeta {\n  b = 2\n}\n").expect("parsed");
+            crate::api::parse("meta {\n  a = 1\n}\nmeta {\n  b = 2\n}\n").unwrap();
         assert!(partial_decode(&body_multi_attrs, &attrs_spec, &mut ctx).is_err());
 
-        let body_bad_eval = crate::api::parse("meta {\n  a = undefined_var\n}\n").expect("parsed");
+        let body_bad_eval = crate::api::parse("meta {\n  a = undefined_var\n}\n").unwrap();
         assert!(partial_decode(&body_bad_eval, &attrs_spec, &mut ctx).is_err());
 
-        let body_typed = crate::api::parse("meta {\n  a = \"string_val\"\n}\n").expect("parsed");
+        let body_typed = crate::api::parse("meta {\n  a = \"string_val\"\n}\n").unwrap();
         let attrs_typed_spec =
             Spec::BlockAttrs(BlockAttrsSpec::new("meta").with_type(Type::Number));
         assert!(partial_decode(&body_typed, &attrs_typed_spec, &mut ctx).is_err());
@@ -1612,7 +1612,7 @@ metadata {
                 crate::span::Span::new(0, 0, 0, 0, 0, 0),
             ),
         ));
-        let (v_expr, _) = partial_decode(&empty_body, &expr_spec, &mut ctx).expect("expr ok");
+        let (v_expr, _) = partial_decode(&empty_body, &expr_spec, &mut ctx).unwrap();
         assert_eq!(v_expr.to_string(), "42");
 
         let expr_bad = Spec::Expr(crate::hcldec::spec::ExprSpec::new(
@@ -1628,20 +1628,20 @@ metadata {
             primary: Box::new(Spec::Attr(AttrSpec::new("present", Type::String))),
             default_value: "fallback".encode_value(),
         });
-        let body_def_ok = crate::api::parse("present = \"actual\"\n").expect("parsed");
-        let (v_def_ok, _) = partial_decode(&body_def_ok, &def_spec, &mut ctx).expect("def ok");
+        let body_def_ok = crate::api::parse("present = \"actual\"\n").unwrap();
+        let (v_def_ok, _) = partial_decode(&body_def_ok, &def_spec, &mut ctx).unwrap();
         assert_eq!(v_def_ok.to_string(), "\"actual\"");
 
-        let body_def_err = crate::api::parse("present = [1, 2]\n").expect("parsed");
+        let body_def_err = crate::api::parse("present = [1, 2]\n").unwrap();
         assert!(partial_decode(&body_def_err, &def_spec, &mut ctx).is_err());
 
         // 7. Spec::Optional: success and non-missing error
         let opt_spec = Spec::Optional(Box::new(Spec::Attr(AttrSpec::new("opt", Type::Number))));
-        let body_opt_ok = crate::api::parse("opt = 42\n").expect("parsed");
-        let (v_opt_ok, _) = partial_decode(&body_opt_ok, &opt_spec, &mut ctx).expect("opt ok");
+        let body_opt_ok = crate::api::parse("opt = 42\n").unwrap();
+        let (v_opt_ok, _) = partial_decode(&body_opt_ok, &opt_spec, &mut ctx).unwrap();
         assert_eq!(v_opt_ok.to_string(), "42");
 
-        let body_opt_err = crate::api::parse("opt = [1, 2]\n").expect("parsed");
+        let body_opt_err = crate::api::parse("opt = [1, 2]\n").unwrap();
         assert!(partial_decode(&body_opt_err, &opt_spec, &mut ctx).is_err());
 
         // 8. Spec::Required in partial_decode
@@ -1649,8 +1649,8 @@ metadata {
             "req_attr",
             Type::String,
         ))));
-        let body_req = crate::api::parse("req_attr = \"req_val\"\n").expect("parsed");
-        let (val_req, _) = partial_decode(&body_req, &req_spec, &mut ctx).expect("req ok");
+        let body_req = crate::api::parse("req_attr = \"req_val\"\n").unwrap();
+        let (val_req, _) = partial_decode(&body_req, &req_spec, &mut ctx).unwrap();
         assert_eq!(val_req.to_string(), "\"req_val\"");
 
         // 9. Spec::Array: non-block error
@@ -1662,13 +1662,13 @@ metadata {
 
     #[test]
     fn test_hcldec_typo_suggestions() {
-        let body = crate::api::parse("usrname = \"alice\"\n").expect("parsed");
+        let body = crate::api::parse("usrname = \"alice\"\n").unwrap();
         let spec = Spec::Attr(AttrSpec::new("username", Type::String));
-        let err = decode(&body, &spec).expect_err("should fail with missing field");
+        let err = decode(&body, &spec).err().unwrap();
         assert!(err.to_string().contains("Did you mean \"usrname\"?"));
 
         let mut ctx = Context::new();
-        let val_err = partial_decode(&body, &spec, &mut ctx).expect_err("partial should fail");
+        let val_err = partial_decode(&body, &spec, &mut ctx).err().unwrap();
         let first_err = &val_err.errors()[0];
         assert!(first_err.to_string().contains("Did you mean \"usrname\"?"));
     }
@@ -1692,7 +1692,7 @@ metadata {
         assert!(partial_decode(&empty_body, &Spec::Object(obj_map), &mut ctx).is_err());
 
         // 2. Spec::BlockList decode nested error propagation (line 353)
-        let blk_body = crate::api::parse("item {}\n").expect("parsed");
+        let blk_body = crate::api::parse("item {}\n").unwrap();
         let list_spec = Spec::BlockList(BlockListSpec::new(
             "item",
             Spec::Attr(AttrSpec::new("missing_in_block", Type::String)),
@@ -1726,7 +1726,7 @@ metadata {
             replicas = 3
             enabled = true
         "#;
-        let body = crate::api::parse(src).expect("valid hcl");
+        let body = crate::api::parse(src).unwrap();
         let mut ctx = Context::new();
 
         // Heterogeneous tuple of [name, replicas, enabled, transformed_literal]
@@ -1746,7 +1746,7 @@ metadata {
         ]));
 
         // Eager decode
-        let eager_val = decode(&body, &tuple_spec).expect("eager decode succeeds");
+        let eager_val = decode(&body, &tuple_spec).unwrap();
         assert_eq!(
             eager_val.ty(),
             &Type::Tuple(vec![Type::String, Type::Number, Type::Bool, Type::Number])
@@ -1754,8 +1754,7 @@ metadata {
         assert_eq!(eager_val.to_string(), "[\"server-01\", 3, true, 200]");
 
         // Partial decode
-        let (partial_val, residual) =
-            partial_decode(&body, &tuple_spec, &mut ctx).expect("partial succeeds");
+        let (partial_val, residual) = partial_decode(&body, &tuple_spec, &mut ctx).unwrap();
         assert_eq!(partial_val.ty(), eager_val.ty());
         assert_eq!(partial_val, eager_val);
         assert!(residual.attributes.is_empty());
@@ -1765,14 +1764,14 @@ metadata {
     fn test_decode_attr_spec_declarative_validation_in_decode() {
         use crate::hcldec::spec::AttrSpec;
 
-        let regex = regex::Regex::new(r"^env-[a-z]+$").expect("valid regex");
+        let regex = regex::Regex::new(r"^env-[a-z]+$").unwrap();
 
         // 1. Success case
         let src_ok = r#"
             environment = "env-production"
             port = 8080
         "#;
-        let body_ok = crate::api::parse(src_ok).expect("valid hcl");
+        let body_ok = crate::api::parse(src_ok).unwrap();
 
         let mut specs = HashMap::new();
         specs.insert(
@@ -1799,7 +1798,7 @@ metadata {
         );
         let spec_root = Spec::Object(specs);
 
-        let decoded = decode(&body_ok, &spec_root).expect("decodes successfully");
+        let decoded = decode(&body_ok, &spec_root).unwrap();
         assert!(format!("{decoded:?}").contains("env-production"));
 
         // 2. Failure: regex validation mismatch in decode
@@ -1807,8 +1806,8 @@ metadata {
             environment = "INVALID_ENV"
             port = 8080
         "#;
-        let body_regex_bad = crate::api::parse(src_regex_bad).expect("valid hcl");
-        let err_regex = decode(&body_regex_bad, &spec_root).expect_err("should fail regex");
+        let body_regex_bad = crate::api::parse(src_regex_bad).unwrap();
+        let err_regex = decode(&body_regex_bad, &spec_root).err().unwrap();
         assert!(
             err_regex
                 .to_string()
@@ -1820,8 +1819,8 @@ metadata {
             environment = "env-staging"
             port = 80
         "#;
-        let body_port_bad = crate::api::parse(src_port_bad).expect("valid hcl");
-        let err_port = decode(&body_port_bad, &spec_root).expect_err("should fail min_value");
+        let body_port_bad = crate::api::parse(src_port_bad).unwrap();
+        let err_port = decode(&body_port_bad, &spec_root).err().unwrap();
         assert!(
             err_port
                 .to_string()
@@ -1833,10 +1832,11 @@ metadata {
             environment = "env-deprecated"
             port = 8080
         "#;
-        let body_custom_bad = crate::api::parse(src_custom_bad).expect("valid hcl");
+        let body_custom_bad = crate::api::parse(src_custom_bad).unwrap();
         let mut ctx = Context::new();
         let err_diag = partial_decode(&body_custom_bad, &spec_root, &mut ctx)
-            .expect_err("should fail custom validator");
+            .err()
+            .unwrap();
         let diag_str = format!("{err_diag:?}");
         assert!(diag_str.contains("deprecated environment"));
     }
@@ -1855,7 +1855,7 @@ metadata {
                 upstream = dynamic_backend
             }
         "#;
-        let body = crate::api::parse(src).expect("valid hcl");
+        let body = crate::api::parse(src).unwrap();
         let mut ctx_stage1 = Context::new();
         // dynamic_backend is NOT known in Stage 1!
 
@@ -1875,8 +1875,7 @@ metadata {
         ));
 
         // Stage 1: Partial decode
-        let (val1, residual1) =
-            partial_decode(&body, &map_spec, &mut ctx_stage1).expect("stage 1 succeeds");
+        let (val1, residual1) = partial_decode(&body, &map_spec, &mut ctx_stage1).unwrap();
 
         // The map keys ("web", "api") are statically resolvable!
         assert!(format!("{val1:?}").contains("web"));
@@ -1894,8 +1893,7 @@ metadata {
             Value::new(Type::String, ValueData::String("k8s_backend".to_string())),
         );
 
-        let (val2, residual2) =
-            partial_decode(&residual1, &map_spec, &mut ctx_stage2).expect("stage 2 succeeds");
+        let (val2, residual2) = partial_decode(&residual1, &map_spec, &mut ctx_stage2).unwrap();
         assert!(format!("{val2:?}").contains("k8s_backend"));
         assert!(!val2.contains_unknown());
         assert_eq!(residual2.blocks.len(), 0);
@@ -1908,7 +1906,7 @@ metadata {
 
         // 1. Eager Spec::Attr type coercion failure
         let src_attr_err = r#"port = "not_a_number""#;
-        let body_attr_err = crate::api::parse(src_attr_err).expect("valid hcl");
+        let body_attr_err = crate::api::parse(src_attr_err).unwrap();
         let spec_attr_num = Spec::Attr(AttrSpec::new("port", Type::Number));
         let _ctx = Context::new();
         assert!(decode(&body_attr_err, &spec_attr_num).is_err());
@@ -1923,7 +1921,7 @@ metadata {
                 host = "not_a_num"
             }
         "#;
-        let body_inner_err = crate::api::parse(src_inner_err).expect("valid hcl");
+        let body_inner_err = crate::api::parse(src_inner_err).unwrap();
         let spec_block_err = Spec::Block(BlockSpec {
             type_name: "server".to_string(),
             body: Box::new(Spec::Attr(AttrSpec::new("host", Type::Number))),
@@ -1937,7 +1935,7 @@ metadata {
                 tag = "not_number"
             }
         "#;
-        let body_attrs_mismatch = crate::api::parse(src_attrs_mismatch).expect("valid hcl");
+        let body_attrs_mismatch = crate::api::parse(src_attrs_mismatch).unwrap();
         let block_attrs_spec =
             Spec::BlockAttrs(BlockAttrsSpec::new("meta").with_type(Type::Number));
         let mut ctx_mismatch = Context::new();
@@ -1951,7 +1949,7 @@ metadata {
                 tag = 123
             }
         ";
-        let body_attrs_ok = crate::api::parse(src_attrs_ok).expect("valid hcl");
+        let body_attrs_ok = crate::api::parse(src_attrs_ok).unwrap();
         let mut ctx_ok = Context::new();
         assert!(partial_decode(&body_attrs_ok, &block_attrs_spec, &mut ctx_ok).is_ok());
     }
@@ -1963,12 +1961,11 @@ metadata {
 
         // 1. Partial Spec::Attr re-insertion on unknown value
         let src_unk_attr = r"data = unk_val";
-        let body_unk_attr = crate::api::parse(src_unk_attr).expect("valid hcl");
+        let body_unk_attr = crate::api::parse(src_unk_attr).unwrap();
         let mut ctx_attr_unk = Context::new();
         ctx_attr_unk.set_variable("unk_val".to_string(), Value::unknown(Type::String));
         let spec_attr = Spec::Attr(AttrSpec::new("data", Type::String));
-        let (val_a, res_a) = partial_decode(&body_unk_attr, &spec_attr, &mut ctx_attr_unk)
-            .expect("partial succeeds");
+        let (val_a, res_a) = partial_decode(&body_unk_attr, &spec_attr, &mut ctx_attr_unk).unwrap();
         assert!(val_a.contains_unknown());
         assert!(res_a.attributes.contains_key("data"));
 
@@ -1979,7 +1976,7 @@ metadata {
                 unhandled = "extra"
             }
         "#;
-        let body_block_extra = crate::api::parse(src_block_extra).expect("valid hcl");
+        let body_block_extra = crate::api::parse(src_block_extra).unwrap();
         let mut obj_spec = HashMap::new();
         obj_spec.insert(
             "host".to_string(),
@@ -1990,23 +1987,21 @@ metadata {
             body: Box::new(Spec::Object(obj_spec.clone())),
         });
         let mut ctx_blk_extra = Context::new();
-        let (_val_b, res_b) = partial_decode(&body_block_extra, &spec_block, &mut ctx_blk_extra)
-            .expect("partial succeeds");
+        let (_val_b, res_b) =
+            partial_decode(&body_block_extra, &spec_block, &mut ctx_blk_extra).unwrap();
         assert_eq!(res_b.blocks.len(), 1);
         assert!(res_b.blocks[0].body.attributes.contains_key("unhandled"));
 
         let spec_list_unhandled =
             Spec::BlockList(BlockListSpec::new("server", Spec::Object(obj_spec.clone())));
         let (_val_lu, res_list_unhandled) =
-            partial_decode(&body_block_extra, &spec_list_unhandled, &mut ctx_blk_extra)
-                .expect("partial succeeds");
+            partial_decode(&body_block_extra, &spec_list_unhandled, &mut ctx_blk_extra).unwrap();
         assert_eq!(res_list_unhandled.blocks.len(), 1);
 
         let spec_set_unhandled =
             Spec::BlockSet(BlockSetSpec::new("server", Spec::Object(obj_spec)));
         let (_val_su, res_set_unhandled) =
-            partial_decode(&body_block_extra, &spec_set_unhandled, &mut ctx_blk_extra)
-                .expect("partial succeeds");
+            partial_decode(&body_block_extra, &spec_set_unhandled, &mut ctx_blk_extra).unwrap();
         assert_eq!(res_set_unhandled.blocks.len(), 1);
 
         // 3. Partial Block, BlockList, BlockSet with unknown values
@@ -2015,7 +2010,7 @@ metadata {
                 val = unk_val
             }
         ";
-        let body_nested_unk = crate::api::parse(src_nested_unk).expect("valid hcl");
+        let body_nested_unk = crate::api::parse(src_nested_unk).unwrap();
         let mut ctx_nest_unk = Context::new();
         ctx_nest_unk.set_variable("unk_val".to_string(), Value::unknown(Type::String));
 
@@ -2024,8 +2019,7 @@ metadata {
             body: Box::new(Spec::Attr(AttrSpec::new("val", Type::String))),
         });
         let (val_blk_u, res_blk_u) =
-            partial_decode(&body_nested_unk, &spec_single_block, &mut ctx_nest_unk)
-                .expect("partial succeeds");
+            partial_decode(&body_nested_unk, &spec_single_block, &mut ctx_nest_unk).unwrap();
         assert!(val_blk_u.contains_unknown());
         assert_eq!(res_blk_u.blocks.len(), 1);
 
@@ -2034,8 +2028,7 @@ metadata {
             Spec::Attr(AttrSpec::new("val", Type::String)),
         ));
         let (val_list_u, res_list_u) =
-            partial_decode(&body_nested_unk, &spec_list_item, &mut ctx_nest_unk)
-                .expect("partial succeeds");
+            partial_decode(&body_nested_unk, &spec_list_item, &mut ctx_nest_unk).unwrap();
         assert!(val_list_u.contains_unknown());
         assert_eq!(res_list_u.blocks.len(), 1);
 
@@ -2044,8 +2037,7 @@ metadata {
             Spec::Attr(AttrSpec::new("val", Type::String)),
         ));
         let (val_set_u, res_set_u) =
-            partial_decode(&body_nested_unk, &spec_set_item, &mut ctx_nest_unk)
-                .expect("partial succeeds");
+            partial_decode(&body_nested_unk, &spec_set_item, &mut ctx_nest_unk).unwrap();
         assert!(val_set_u.contains_unknown());
         assert_eq!(res_set_u.blocks.len(), 1);
 
@@ -2056,21 +2048,19 @@ metadata {
                 child { }
             }
         "#;
-        let body_subblock = crate::api::parse(src_subblock).expect("valid hcl");
+        let body_subblock = crate::api::parse(src_subblock).unwrap();
         let mut ctx_sub = Context::new();
 
         let (_val_b_sub, leftover_block) =
-            partial_decode(&body_subblock, &spec_single_block, &mut ctx_sub)
-                .expect("partial succeeds");
+            partial_decode(&body_subblock, &spec_single_block, &mut ctx_sub).unwrap();
         assert_eq!(leftover_block.blocks.len(), 1);
 
         let (_val_l_sub, leftover_list) =
-            partial_decode(&body_subblock, &spec_list_item, &mut ctx_sub)
-                .expect("partial succeeds");
+            partial_decode(&body_subblock, &spec_list_item, &mut ctx_sub).unwrap();
         assert_eq!(leftover_list.blocks.len(), 1);
 
         let (_val_s_sub, leftover_set) =
-            partial_decode(&body_subblock, &spec_set_item, &mut ctx_sub).expect("partial succeeds");
+            partial_decode(&body_subblock, &spec_set_item, &mut ctx_sub).unwrap();
         assert_eq!(leftover_set.blocks.len(), 1);
     }
 
@@ -2085,7 +2075,7 @@ metadata {
                 priority = 10
             }
         "#;
-        let body_multi = crate::api::parse(src_multi).expect("valid hcl");
+        let body_multi = crate::api::parse(src_multi).unwrap();
         let mut route_fields = HashMap::new();
         route_fields.insert(
             "priority".to_string(),
@@ -2098,7 +2088,7 @@ metadata {
         ));
         let mut ctx_multi = Context::new();
         let (val_multi, res_multi) =
-            partial_decode(&body_multi, &spec_multi, &mut ctx_multi).expect("partial succeeds");
+            partial_decode(&body_multi, &spec_multi, &mut ctx_multi).unwrap();
         assert!(format!("{val_multi:?}").contains("priority"));
         assert_eq!(res_multi.blocks.len(), 0);
 
@@ -2109,7 +2099,7 @@ metadata {
                 extra = "keep_me"
             }
         "#;
-        let body_leftover_attr = crate::api::parse(src_leftover_attr).expect("valid hcl");
+        let body_leftover_attr = crate::api::parse(src_leftover_attr).unwrap();
         let mut entry_fields = HashMap::new();
         entry_fields.insert(
             "count".to_string(),
@@ -2122,8 +2112,7 @@ metadata {
         ));
         let mut ctx_leftover = Context::new();
         let (_val_lo, res_lo) =
-            partial_decode(&body_leftover_attr, &spec_single_map, &mut ctx_leftover)
-                .expect("partial succeeds");
+            partial_decode(&body_leftover_attr, &spec_single_map, &mut ctx_leftover).unwrap();
         assert_eq!(res_lo.blocks.len(), 1);
         assert!(res_lo.blocks[0].body.attributes.contains_key("extra"));
 
@@ -2133,7 +2122,7 @@ metadata {
                 port = "invalid_not_number"
             }
         "#;
-        let body_error = crate::api::parse(src_error_body).expect("valid hcl");
+        let body_error = crate::api::parse(src_error_body).unwrap();
         let mut svc_fields = HashMap::new();
         svc_fields.insert(
             "port".to_string(),
@@ -2146,7 +2135,7 @@ metadata {
         ));
         let mut ctx_err = Context::new();
         let (val_err, res_err) =
-            partial_decode(&body_error, &spec_map_error, &mut ctx_err).expect("partial succeeds");
+            partial_decode(&body_error, &spec_map_error, &mut ctx_err).unwrap();
         assert!(val_err.contains_unknown());
         assert_eq!(res_err.blocks.len(), 1);
 
@@ -2156,7 +2145,7 @@ metadata {
                 port = 80
             }
         "#;
-        let body_mismatch_lbl = crate::api::parse(src_mismatch_lbl).expect("valid hcl");
+        let body_mismatch_lbl = crate::api::parse(src_mismatch_lbl).unwrap();
         let mut ctx_mismatch_lbl = Context::new();
         let spec_map_one_lbl = Spec::BlockMap(BlockMapSpec::new(
             "service",
@@ -2173,12 +2162,11 @@ metadata {
                 port = unk_port
             }
         "#;
-        let body_unk_map = crate::api::parse(src_unk_map).expect("valid hcl");
+        let body_unk_map = crate::api::parse(src_unk_map).unwrap();
         let mut ctx_unk_map = Context::new();
         ctx_unk_map.set_variable("unk_port".to_string(), Value::unknown(Type::Number));
         let (val_unk_m, res_unk_m) =
-            partial_decode(&body_unk_map, &spec_map_one_lbl, &mut ctx_unk_map)
-                .expect("partial succeeds");
+            partial_decode(&body_unk_map, &spec_map_one_lbl, &mut ctx_unk_map).unwrap();
         assert!(val_unk_m.contains_unknown());
         assert_eq!(res_unk_m.blocks.len(), 1);
 
@@ -2189,11 +2177,10 @@ metadata {
                 nested { }
             }
         "#;
-        let body_subblock_map = crate::api::parse(src_subblock_map).expect("valid hcl");
+        let body_subblock_map = crate::api::parse(src_subblock_map).unwrap();
         let mut ctx_sub_map = Context::new();
         let (_val_sub_m, res_sub_m) =
-            partial_decode(&body_subblock_map, &spec_map_one_lbl, &mut ctx_sub_map)
-                .expect("partial succeeds");
+            partial_decode(&body_subblock_map, &spec_map_one_lbl, &mut ctx_sub_map).unwrap();
         assert_eq!(res_sub_m.blocks.len(), 1);
     }
 }

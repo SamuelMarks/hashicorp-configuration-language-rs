@@ -279,6 +279,14 @@ impl<'a> LazyBody<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::api::parse;
 
@@ -292,7 +300,7 @@ mod tests {
             err_ref = undefined_var + 1
         "#;
 
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let ctx = Context::new();
         let lazy = LazyBody::new(&body, &ctx);
 
@@ -307,10 +315,7 @@ mod tests {
 
         // 1. Evaluate valid_num on demand
         assert!(!lazy.is_attribute_evaluated("valid_num"));
-        let res_num = lazy
-            .evaluate_attribute("valid_num")
-            .expect("attribute exists")
-            .expect("evaluates successfully");
+        let res_num = lazy.evaluate_attribute("valid_num").unwrap().unwrap();
         assert_eq!(
             res_num.0,
             Value::new(Type::Number, ValueData::Number(30.into()))
@@ -319,10 +324,7 @@ mod tests {
         assert_eq!(lazy.evaluated_attribute_count(), 1);
 
         // 2. Second access uses memoized cache
-        let res_num_cached = lazy
-            .evaluate_attribute("valid_num")
-            .expect("attribute exists")
-            .expect("evaluates successfully");
+        let res_num_cached = lazy.evaluate_attribute("valid_num").unwrap().unwrap();
         assert_eq!(res_num_cached.0, res_num.0);
         assert_eq!(lazy.evaluated_attribute_count(), 1);
 
@@ -334,10 +336,7 @@ mod tests {
         assert!(lazy.evaluate_attribute("nonexistent").is_none());
 
         // 5. Evaluate err_attr explicitly triggers error on demand
-        let err_res = lazy
-            .evaluate_attribute("err_attr")
-            .expect("attribute exists")
-            .expect_err("should fail with division by zero");
+        let err_res = lazy.evaluate_attribute("err_attr").unwrap().err().unwrap();
         assert!(
             err_res.errors()[0]
                 .error
@@ -374,7 +373,7 @@ mod tests {
             }
         "#;
 
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let ctx = Context::new();
         let lazy = LazyBody::new(&body, &ctx);
 
@@ -384,13 +383,8 @@ mod tests {
         assert_eq!(lazy.get_blocks("nonexistent").len(), 0);
 
         // Block by label
-        let web_pri = lazy
-            .get_block("server", &["web", "primary"])
-            .expect("found web primary");
-        let listen = web_pri
-            .evaluate_attribute("listen")
-            .expect("exists")
-            .expect("evaluates");
+        let web_pri = lazy.get_block("server", &["web", "primary"]).unwrap();
+        let listen = web_pri.evaluate_attribute("listen").unwrap().unwrap();
         assert_eq!(
             listen.0,
             Value::new(Type::String, ValueData::String("0.0.0.0".into()))
@@ -400,7 +394,7 @@ mod tests {
         assert!(lazy.get_block("server", &["web"]).is_none());
 
         // Block by index
-        let b0 = lazy.get_block_by_index(0).expect("b0 exists");
+        let b0 = lazy.get_block_by_index(0).unwrap();
         assert_eq!(b0.body().span, web_pri.body().span);
         assert!(lazy.get_block_by_index(99).is_none());
 
@@ -425,7 +419,7 @@ mod tests {
             )),
         );
 
-        let (obj_val, diags) = lazy.to_object_value().expect("to_object_value ok");
+        let (obj_val, diags) = lazy.to_object_value().unwrap();
         assert_eq!(diags.errors().len(), 1);
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
@@ -449,7 +443,7 @@ mod tests {
 
         // Error path in to_object_value
         let bad_src = "bad = 1 / 0";
-        let bad_body = parse(bad_src).expect("parse ok");
+        let bad_body = parse(bad_src).unwrap();
         let bad_lazy = LazyBody::new(&bad_body, &ctx);
         assert!(bad_lazy.to_object_value().is_err());
 

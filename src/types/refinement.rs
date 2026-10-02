@@ -473,6 +473,14 @@ impl Refinement {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::types::Type;
     use std::collections::{BTreeMap, BTreeSet};
@@ -489,18 +497,14 @@ mod tests {
         let toggle = non_null.with_not_null(false);
         assert!(toggle.is_empty());
 
-        let str_len = Refinement::new()
-            .with_string_length(2, 10)
-            .expect("valid range");
+        let str_len = Refinement::new().with_string_length(2, 10).unwrap();
         assert_eq!(str_len.string_length_min, Some(2));
         assert_eq!(str_len.string_length_max, Some(10));
 
         let str_err = Refinement::new().with_string_length(10, 2);
         assert!(str_err.is_err());
 
-        let col_len = Refinement::new()
-            .with_collection_length(1, 5)
-            .expect("valid range");
+        let col_len = Refinement::new().with_collection_length(1, 5).unwrap();
         assert_eq!(col_len.collection_length_min, Some(1));
         assert_eq!(col_len.collection_length_max, Some(5));
 
@@ -509,7 +513,7 @@ mod tests {
 
         let num_range = Refinement::new()
             .with_number_range(Number::from(1), Number::from(10))
-            .expect("valid range");
+            .unwrap();
         assert_eq!(num_range.number_min, Some(Number::from(1)));
         assert_eq!(num_range.number_max, Some(Number::from(10)));
 
@@ -532,25 +536,25 @@ mod tests {
     fn test_refinement_intersection_success() {
         let r1 = Refinement::not_null()
             .with_string_length(2, 10)
-            .expect("ok")
+            .unwrap()
             .with_prefix("ab")
             .with_suffix("yz")
             .with_collection_length(1, 10)
-            .expect("ok")
+            .unwrap()
             .with_number_range(Number::from(2), Number::from(10))
-            .expect("ok");
+            .unwrap();
 
         let r2 = Refinement::new()
             .with_string_length(4, 8)
-            .expect("ok")
+            .unwrap()
             .with_prefix("abcd")
             .with_suffix("xyz")
             .with_collection_length(3, 8)
-            .expect("ok")
+            .unwrap()
             .with_number_range(Number::from(4), Number::from(8))
-            .expect("ok");
+            .unwrap();
 
-        let inter = r1.intersect(&r2).expect("intersection succeeds");
+        let inter = r1.intersect(&r2).unwrap();
         assert!(inter.not_null);
         assert_eq!(inter.string_length_min, Some(4));
         assert_eq!(inter.string_length_max, Some(8));
@@ -564,28 +568,26 @@ mod tests {
         // Test reverse prefix start
         let r_a = Refinement::new().with_prefix("xyz");
         let r_b = Refinement::new().with_prefix("xy");
-        let inter_ab = r_a.intersect(&r_b).expect("ok");
+        let inter_ab = r_a.intersect(&r_b).unwrap();
         assert_eq!(inter_ab.string_prefix.as_deref(), Some("xyz"));
 
         // Test reverse suffix end
         let suf_a = Refinement::new().with_suffix("123");
         let suf_b = Refinement::new().with_suffix("23");
-        let inter_suf = suf_a.intersect(&suf_b).expect("ok");
+        let inter_suf = suf_a.intersect(&suf_b).unwrap();
         assert_eq!(inter_suf.string_suffix.as_deref(), Some("123"));
 
         // Object attrs intersection
-        let r_o1 = Refinement::new().with_object_attr(
-            "attr1",
-            Refinement::new().with_string_length(1, 5).expect("ok"),
-        );
+        let r_o1 = Refinement::new()
+            .with_object_attr("attr1", Refinement::new().with_string_length(1, 5).unwrap());
         let r_o2 = Refinement::new()
             .with_object_attr(
                 "attr1",
-                Refinement::new().with_string_length(3, 10).expect("ok"),
+                Refinement::new().with_string_length(3, 10).unwrap(),
             )
             .with_object_attr("attr2", Refinement::not_null());
 
-        let inter_o = r_o1.intersect(&r_o2).expect("ok");
+        let inter_o = r_o1.intersect(&r_o2).unwrap();
         assert_eq!(
             inter_o
                 .object_attrs
@@ -606,8 +608,8 @@ mod tests {
     #[test]
     fn test_refinement_intersection_contradictions() {
         // String length min > max
-        let r1 = Refinement::new().with_string_length(5, None).expect("ok");
-        let r2 = Refinement::new().with_string_length(None, 3).expect("ok");
+        let r1 = Refinement::new().with_string_length(5, None).unwrap();
+        let r2 = Refinement::new().with_string_length(None, 3).unwrap();
         assert!(r1.intersect(&r2).is_err());
 
         // Conflicting prefix
@@ -617,7 +619,7 @@ mod tests {
 
         // Prefix length > max
         let r5 = Refinement::new().with_prefix("long_prefix");
-        let r6 = Refinement::new().with_string_length(None, 4).expect("ok");
+        let r6 = Refinement::new().with_string_length(None, 4).unwrap();
         assert!(r5.intersect(&r6).is_err());
 
         // Conflicting suffix
@@ -627,25 +629,21 @@ mod tests {
 
         // Suffix length > max
         let r9 = Refinement::new().with_suffix("long_suffix");
-        let r10 = Refinement::new().with_string_length(None, 4).expect("ok");
+        let r10 = Refinement::new().with_string_length(None, 4).unwrap();
         assert!(r9.intersect(&r10).is_err());
 
         // Collection length min > max
-        let r11 = Refinement::new()
-            .with_collection_length(5, None)
-            .expect("ok");
-        let r12 = Refinement::new()
-            .with_collection_length(None, 3)
-            .expect("ok");
+        let r11 = Refinement::new().with_collection_length(5, None).unwrap();
+        let r12 = Refinement::new().with_collection_length(None, 3).unwrap();
         assert!(r11.intersect(&r12).is_err());
 
         // Number min > max
         let r13 = Refinement::new()
             .with_number_range(Number::from(10), None)
-            .expect("ok");
+            .unwrap();
         let r14 = Refinement::new()
             .with_number_range(None, Number::from(5))
-            .expect("ok");
+            .unwrap();
         assert!(r13.intersect(&r14).is_err());
 
         // Contradiction in nested object attr
@@ -658,7 +656,7 @@ mod tests {
     fn test_refinement_satisfies() {
         let str_ref = Refinement::not_null()
             .with_string_length(3, 10)
-            .expect("ok")
+            .unwrap()
             .with_prefix("go-")
             .with_suffix(".rs");
 
@@ -684,7 +682,7 @@ mod tests {
         assert!(str_ref.satisfies(&bad_suf).is_err());
 
         // Collection satisfies
-        let col_ref = Refinement::new().with_collection_length(2, 4).expect("ok");
+        let col_ref = Refinement::new().with_collection_length(2, 4).unwrap();
         let ok_arr = Value::new(
             Type::List(Box::new(Type::Number)),
             ValueData::Array(vec![
@@ -733,7 +731,7 @@ mod tests {
 
         let obj_ref = Refinement::new()
             .with_collection_length(1, 2)
-            .expect("ok")
+            .unwrap()
             .with_object_attr("name", Refinement::not_null().with_prefix("sam"));
         assert!(obj_ref.satisfies(&obj_val).is_ok());
 
@@ -744,7 +742,7 @@ mod tests {
         // Number satisfies
         let num_ref = Refinement::new()
             .with_number_range(Number::from(5), Number::from(10))
-            .expect("ok");
+            .unwrap();
         let ok_num = Value::new(Type::Number, ValueData::Number(Number::from(7)));
         assert!(num_ref.satisfies(&ok_num).is_ok());
 
@@ -768,7 +766,7 @@ mod tests {
             .with_prefix("pre")
             .with_suffix("suf")
             .with_number_range(Number::from(1), Number::from(10))
-            .expect("ok");
+            .unwrap();
         let r2 = r1.clone();
 
         assert_eq!(r1, r2);
@@ -1017,13 +1015,13 @@ mod tests {
         // with_prefix and with_suffix when string_length_min is already Some
         let r_pre = Refinement::new()
             .with_string_length(Some(2), None)
-            .expect("valid")
+            .unwrap()
             .with_prefix("a");
         assert_eq!(r_pre.string_length_min, Some(2));
 
         let r_suf = Refinement::new()
             .with_string_length(Some(3), None)
-            .expect("valid")
+            .unwrap()
             .with_suffix("b");
         assert_eq!(r_suf.string_length_min, Some(3));
 

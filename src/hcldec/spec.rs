@@ -656,6 +656,14 @@ impl Spec {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::number::Number;
     use crate::types::val::ValueData;
@@ -690,7 +698,7 @@ mod tests {
             vec!["name".to_string()],
             Spec::Literal(LiteralSpec::new(Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("1").expect("num")),
+                ValueData::Number(Number::from_str("1").unwrap()),
             ))),
         );
         assert_eq!(bm.type_name, "server");
@@ -737,7 +745,7 @@ mod tests {
 
         let tup = TupleSpec::new(vec![Spec::Literal(LiteralSpec::new(Value::new(
             Type::Number,
-            ValueData::Number(Number::from_str("1").expect("num")),
+            ValueData::Number(Number::from_str("1").unwrap()),
         )))]);
         assert_eq!(tup.elements.len(), 1);
     }
@@ -761,7 +769,7 @@ mod tests {
             Spec::Optional(Box::new(Spec::Attr(AttrSpec::new("count", Type::Number)))),
         );
         let obj_spec = Spec::Object(obj_specs);
-        let implied = obj_spec.implied_type().expect("implied object type");
+        let implied = obj_spec.implied_type().unwrap();
         assert!(matches!(implied, Type::Object { .. }));
 
         let block_list_spec = Spec::BlockList(BlockListSpec::new(
@@ -769,7 +777,7 @@ mod tests {
             Spec::Attr(AttrSpec::new("val", Type::Bool)),
         ));
         assert_eq!(
-            block_list_spec.implied_type().expect("implied list"),
+            block_list_spec.implied_type().unwrap(),
             Type::List(Box::new(Type::Bool))
         );
 
@@ -778,7 +786,7 @@ mod tests {
             Spec::Literal(LiteralSpec::new("tag1".encode_value())),
         ));
         assert_eq!(
-            block_set_spec.implied_type().expect("implied set"),
+            block_set_spec.implied_type().unwrap(),
             Type::Set(Box::new(Type::String))
         );
 
@@ -788,15 +796,13 @@ mod tests {
             Spec::Literal(LiteralSpec::new("val".encode_value())),
         ));
         assert_eq!(
-            block_map_spec.implied_type().expect("implied map"),
+            block_map_spec.implied_type().unwrap(),
             Type::Map(Box::new(Type::String))
         );
 
         let block_attrs_spec = Spec::BlockAttrs(BlockAttrsSpec::new("extra"));
         assert_eq!(
-            block_attrs_spec
-                .implied_type()
-                .expect("implied block attrs"),
+            block_attrs_spec.implied_type().unwrap(),
             Type::Map(Box::new(Type::Dynamic))
         );
 
@@ -805,7 +811,7 @@ mod tests {
             Spec::Literal(LiteralSpec::new("ok".encode_value())),
         ]));
         assert_eq!(
-            tuple_spec.implied_type().expect("implied tuple"),
+            tuple_spec.implied_type().unwrap(),
             Type::Tuple(vec![Type::Number, Type::String])
         );
 
@@ -813,28 +819,19 @@ mod tests {
             primary: Box::new(Spec::Attr(AttrSpec::new("foo", Type::String))),
             default_value: "bar".encode_value(),
         });
-        assert_eq!(
-            default_spec.implied_type().expect("implied default"),
-            Type::String
-        );
+        assert_eq!(default_spec.implied_type().unwrap(), Type::String);
 
         let transform_spec = Spec::Transform(TransformSpec::new(
             Spec::Attr(AttrSpec::new("baz", Type::Bool)),
             Ok,
         ));
-        assert_eq!(
-            transform_spec.implied_type().expect("implied transform"),
-            Type::Bool
-        );
+        assert_eq!(transform_spec.implied_type().unwrap(), Type::Bool);
 
         let expr_spec = Spec::Expr(ExprSpec::new(Expression::Variable(
             "var.sample".to_string(),
             dummy_span.clone(),
         )));
-        assert_eq!(
-            expr_spec.implied_type().expect("implied expr"),
-            Type::Dynamic
-        );
+        assert_eq!(expr_spec.implied_type().unwrap(), Type::Dynamic);
 
         // 2. Test variables extraction
         let mut complex_obj = HashMap::new();
@@ -875,32 +872,23 @@ mod tests {
             type_name: "service".to_string(),
             body: Box::new(Spec::Attr(AttrSpec::new("port", Type::Number))),
         });
-        assert_eq!(
-            block_spec.implied_type().expect("implied block"),
-            Type::Number
-        );
+        assert_eq!(block_spec.implied_type().unwrap(), Type::Number);
 
         let array_spec = Spec::Array(Box::new(Spec::Attr(AttrSpec::new("elem", Type::String))));
         assert_eq!(
-            array_spec.implied_type().expect("implied array"),
+            array_spec.implied_type().unwrap(),
             Type::List(Box::new(Type::String))
         );
 
         let req_spec = Spec::Required(Box::new(Spec::Attr(AttrSpec::new("req", Type::Bool))));
-        assert_eq!(
-            req_spec.implied_type().expect("implied required"),
-            Type::Bool
-        );
+        assert_eq!(req_spec.implied_type().unwrap(), Type::Bool);
 
         let opt_spec = Spec::Optional(Box::new(Spec::Attr(AttrSpec::new("opt", Type::Number))));
-        assert_eq!(
-            opt_spec.implied_type().expect("implied optional"),
-            Type::Number
-        );
+        assert_eq!(opt_spec.implied_type().unwrap(), Type::Number);
 
         let ba_typed = Spec::BlockAttrs(BlockAttrsSpec::new("tags").with_type(Type::String));
         assert_eq!(
-            ba_typed.implied_type().expect("implied block attrs typed"),
+            ba_typed.implied_type().unwrap(),
             Type::Map(Box::new(Type::String))
         );
 
@@ -1027,7 +1015,7 @@ mod tests {
         use crate::span::Span;
         let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
 
-        let regex = regex::Regex::new(r"^prod-[0-9]+$").expect("valid regex");
+        let regex = regex::Regex::new(r"^prod-[0-9]+$").unwrap();
         let min_num = crate::number::Number::from(10);
         let max_num = crate::number::Number::from(100);
 
@@ -1061,10 +1049,10 @@ mod tests {
         assert_ne!(spec, spec_no_validator);
 
         // Test AttrSpec equality with regex mismatch
-        let a_regex1 = AttrSpec::new("test", Type::String)
-            .with_regex(regex::Regex::new("^a$").expect("valid regex"));
-        let a_regex2 = AttrSpec::new("test", Type::String)
-            .with_regex(regex::Regex::new("^b$").expect("valid regex"));
+        let a_regex1 =
+            AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^a$").unwrap());
+        let a_regex2 =
+            AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^b$").unwrap());
         assert_ne!(a_regex1, a_regex2);
 
         // Test AttrSpec equality with min/max mismatch

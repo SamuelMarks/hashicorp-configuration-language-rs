@@ -248,6 +248,14 @@ impl DocumentCache {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -279,7 +287,7 @@ b = 3
         };
         let updated = cache
             .change_document("file:///test.hcl", 2, &[change_full])
-            .expect("change ok");
+            .unwrap();
         assert_eq!(updated.version, 2);
         assert_eq!(
             updated.text,
@@ -296,7 +304,7 @@ b = 3
         };
         let updated_inc = cache
             .change_document("file:///test.hcl", 3, &[change_inc])
-            .expect("incremental ok");
+            .unwrap();
         assert_eq!(
             updated_inc.text,
             "a = 42

@@ -178,6 +178,14 @@ fn expand_single_dynamic_block(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::ast::expr::Expression;
     use crate::ast::structure::Attribute;
@@ -223,7 +231,7 @@ mod tests {
         root_body.dynamic_blocks.push(dyn_block);
 
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).expect("expanded");
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
 
         assert_eq!(expanded.blocks.len(), 2);
         assert_eq!(expanded.blocks[0].block_type, "tag");
@@ -256,7 +264,7 @@ mod tests {
         root_body.dynamic_blocks.push(dyn_block);
 
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).expect("expanded");
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
 
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "setting");
@@ -283,7 +291,7 @@ mod tests {
         root_body.blocks.push(regular_block);
 
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).expect("expanded");
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "resource");
     }
@@ -319,7 +327,7 @@ mod tests {
         let mut ctx = Context::new();
         ctx.set_variable("unknown_var".to_string(), Value::unknown(Type::Dynamic));
 
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).expect("expanded");
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "unknown_block");
     }
@@ -351,7 +359,7 @@ mod tests {
             Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set)),
         );
 
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).expect("expanded");
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "item");
     }
@@ -366,14 +374,14 @@ mod tests {
             "nested".to_string(),
             Expression::Tuple(
                 vec![Expression::Number(
-                    Number::from_str("1").expect("num"),
+                    Number::from_str("1").unwrap(),
                     span.clone(),
                 )],
                 span.clone(),
             ),
             None,
             Some(vec![Expression::Number(
-                Number::from_str("100").expect("num"),
+                Number::from_str("100").unwrap(),
                 span.clone(),
             )]),
             Body::new(span.clone()),
@@ -397,7 +405,7 @@ mod tests {
         root_body.dynamic_blocks.push(outer_dyn);
 
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).expect("expanded");
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "outer");
         assert_eq!(expanded.blocks[0].body.blocks.len(), 1);
@@ -412,7 +420,7 @@ mod tests {
 
         let dyn_bad_coll = DynamicBlock::new(
             "bad".to_string(),
-            Expression::Number(Number::from_str("42").expect("num"), span.clone()),
+            Expression::Number(Number::from_str("42").unwrap(), span.clone()),
             None,
             None,
             Body::new(span.clone()),
@@ -482,7 +490,7 @@ mod tests {
         let mut inner_block_body = Body::new(span.clone());
         let bad_dyn = DynamicBlock::new(
             "bad".to_string(),
-            Expression::Number(Number::from_str("42").expect("num"), span.clone()),
+            Expression::Number(Number::from_str("42").unwrap(), span.clone()),
             None,
             None,
             Body::new(span.clone()),
@@ -510,7 +518,7 @@ mod tests {
         let mut bad_content = Body::new(span.clone());
         let bad_nested_dyn = DynamicBlock::new(
             "bad_nested".to_string(),
-            Expression::Number(Number::from_str("42").expect("num"), span.clone()),
+            Expression::Number(Number::from_str("42").unwrap(), span.clone()),
             None,
             None,
             Body::new(span.clone()),

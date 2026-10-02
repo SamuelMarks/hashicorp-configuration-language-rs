@@ -249,50 +249,58 @@ impl VarManager {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
     fn test_parse_var_flag_primitives_and_compounds() {
         // Boolean
-        let (k1, v1) = parse_var_flag("enabled=true").expect("parse ok");
+        let (k1, v1) = parse_var_flag("enabled=true").unwrap();
         assert_eq!(k1, "enabled");
         assert_eq!(v1.data.as_ref(), &ValueData::Bool(true));
 
-        let (k2, v2) = parse_var_flag("disabled=false").expect("parse ok");
+        let (k2, v2) = parse_var_flag("disabled=false").unwrap();
         assert_eq!(k2, "disabled");
         assert_eq!(v2.data.as_ref(), &ValueData::Bool(false));
 
         // Null
-        let (kn, vn) = parse_var_flag("empty=null").expect("parse ok");
+        let (kn, vn) = parse_var_flag("empty=null").unwrap();
         assert_eq!(kn, "empty");
         assert!(vn.is_null());
 
         // Number
-        let (k3, v3) = parse_var_flag("port=8080").expect("parse ok");
+        let (k3, v3) = parse_var_flag("port=8080").unwrap();
         assert_eq!(k3, "port");
         assert_eq!(v3.ty(), &Type::Number);
 
         // String
-        let (k4, v4) = parse_var_flag("env=\"production\"").expect("parse ok");
+        let (k4, v4) = parse_var_flag("env=\"production\"").unwrap();
         assert_eq!(k4, "env");
         assert_eq!(v4.data.as_ref(), &ValueData::String("production".into()));
 
-        let (k5, v5) = parse_var_flag("raw_str=staging").expect("parse ok");
+        let (k5, v5) = parse_var_flag("raw_str=staging").unwrap();
         assert_eq!(k5, "raw_str");
         assert_eq!(v5.data.as_ref(), &ValueData::String("staging".into()));
 
         // Tuple/List
-        let (k6, v6) = parse_var_flag("ports=[80, 443]").expect("parse ok");
+        let (k6, v6) = parse_var_flag("ports=[80, 443]").unwrap();
         assert_eq!(k6, "ports");
         assert!(matches!(v6.ty(), Type::Tuple(_) | Type::List(_)));
 
         // Object
-        let (k7, v7) = parse_var_flag("tags={\"env\": \"prod\"}").expect("parse ok");
+        let (k7, v7) = parse_var_flag("tags={\"env\": \"prod\"}").unwrap();
         assert_eq!(k7, "tags");
         assert!(matches!(v7.data.as_ref(), ValueData::Object(_)));
 
         // Compound evaluation failure fallback to string
-        let (k8, v8) = parse_var_flag("bad_eval=[1 / 0]").expect("parse ok");
+        let (k8, v8) = parse_var_flag("bad_eval=[1 / 0]").unwrap();
         assert_eq!(k8, "bad_eval");
         assert_eq!(v8.data.as_ref(), &ValueData::String("[1 / 0]".into()));
 
@@ -305,49 +313,41 @@ mod tests {
     fn test_var_manager_and_var_files() {
         let temp_dir = std::env::temp_dir().join(format!("test_vm_dir_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).expect("create tempdir");
+        std::fs::create_dir_all(&temp_dir).unwrap();
 
         let f_hcl = temp_dir.join("test.pkrvars.hcl");
-        std::fs::write(&f_hcl, "env = \"dev\"\ncount = 1\n").expect("write hcl");
+        std::fs::write(&f_hcl, "env = \"dev\"\ncount = 1\n").unwrap();
 
         let f_json = temp_dir.join("test.pkrvars.json");
         std::fs::write(
             &f_json,
             "{\n  \"env\": \"staging\",\n  \"active\": true\n}\n",
         )
-        .expect("write json");
+        .unwrap();
 
         let mut mgr = VarManager::new();
-        mgr.add_var_file(&f_hcl).expect("add hcl file");
+        mgr.add_var_file(&f_hcl).unwrap();
         assert_eq!(mgr.variables().len(), 2);
 
         // JSON overrides env="dev" with env="staging" and adds active=true
-        mgr.add_var_file(&f_json).expect("add json file");
+        mgr.add_var_file(&f_json).unwrap();
         assert_eq!(mgr.variables().len(), 3);
         assert_eq!(
-            mgr.variables()
-                .get("env")
-                .expect("env exists")
-                .data
-                .as_ref(),
+            mgr.variables().get("env").unwrap().data.as_ref(),
             &ValueData::String("staging".into())
         );
 
         // CLI flag override takes highest precedence
-        mgr.add_var_flag("env=prod").expect("add var flag");
+        mgr.add_var_flag("env=prod").unwrap();
         assert_eq!(
-            mgr.variables()
-                .get("env")
-                .expect("env exists")
-                .data
-                .as_ref(),
+            mgr.variables().get("env").unwrap().data.as_ref(),
             &ValueData::String("prod".into())
         );
 
         // Populate context
         let mut ctx = Context::new();
         mgr.populate_context(&mut ctx);
-        let var_scope = ctx.get_variable("var").expect("var scope");
+        let var_scope = ctx.get_variable("var").unwrap();
         assert!(var_scope.to_string().contains("prod"));
 
         // Extension method
@@ -368,17 +368,17 @@ mod tests {
 
         // Test syntax error in HCL var file
         let syntax_err_file = temp_dir.join("syntax_err.pkrvars.hcl");
-        std::fs::write(&syntax_err_file, "bad = = syntax").expect("write syntax err");
+        std::fs::write(&syntax_err_file, "bad = = syntax").unwrap();
         assert!(parse_var_file(&syntax_err_file).is_err());
 
         // Test evaluation error in HCL var file
         let eval_err_file = temp_dir.join("eval_err.pkrvars.hcl");
-        std::fs::write(&eval_err_file, "bad_num = 10 / 0\n").expect("write eval err");
+        std::fs::write(&eval_err_file, "bad_num = 10 / 0\n").unwrap();
         assert!(parse_var_file(&eval_err_file).is_err());
 
         // Test invalid JSON var file
         let bad_json_file = temp_dir.join("bad.pkrvars.json");
-        std::fs::write(&bad_json_file, "{ invalid json }").expect("write bad json");
+        std::fs::write(&bad_json_file, "{ invalid json }").unwrap();
         assert!(parse_var_file(&bad_json_file).is_err());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -458,13 +458,13 @@ mod tests {
         // File with no extension parsed as HCL body
         let no_ext_file = temp_dir.join("vars_without_ext");
         assert!(std::fs::write(&no_ext_file, "flag = true\n").is_ok());
-        let parsed_no_ext = parse_var_file(&no_ext_file).expect("parsed ok");
+        let parsed_no_ext = parse_var_file(&no_ext_file).unwrap();
         assert!(parsed_no_ext.contains_key("flag"));
 
         // File with uppercase .JSON extension parsed as JSON
         let upper_json_file = temp_dir.join("vars.JSON");
         assert!(std::fs::write(&upper_json_file, "{\"active\": false}").is_ok());
-        let parsed_upper = parse_var_file(&upper_json_file).expect("parsed ok");
+        let parsed_upper = parse_var_file(&upper_json_file).unwrap();
         assert!(parsed_upper.contains_key("active"));
 
         // 5. Clone and Debug on VarManager

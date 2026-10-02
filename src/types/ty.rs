@@ -592,6 +592,14 @@ impl Type {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -738,8 +746,8 @@ mod tests {
     #[test]
     fn test_type_msgpack_roundtrip() {
         let ty = Type::List(Box::new(Type::String));
-        let bytes = ty.to_msgpack().expect("encoded");
-        let decoded = Type::from_msgpack(&bytes).expect("decoded");
+        let bytes = ty.to_msgpack().unwrap();
+        let decoded = Type::from_msgpack(&bytes).unwrap();
         assert_eq!(decoded, ty);
 
         assert!(Type::from_msgpack(&[]).is_err());
@@ -806,31 +814,31 @@ mod tests {
         // Execute all closures in ops_full
         assert!((ops_full.equals)(&(), &()));
         assert_eq!((ops_full.hash)(&()), 1);
-        assert!(ops_full.conversion_to.as_ref().expect("conv_to")(&(), &Type::Dynamic).is_none());
+        assert!(ops_full.conversion_to.as_ref().unwrap()(&(), &Type::Dynamic).is_none());
         assert!(
-            ops_full.conversion_from.as_ref().expect("conv_from")(&crate::types::val::Value::null(
+            ops_full.conversion_from.as_ref().unwrap()(&crate::types::val::Value::null(
                 Type::Dynamic
             ))
             .is_none()
         );
-        assert!(ops_full.add.as_ref().expect("add")(&(), &()).is_ok());
-        assert!(ops_full.sub.as_ref().expect("sub")(&(), &()).is_ok());
-        assert!(ops_full.mul.as_ref().expect("mul")(&(), &()).is_ok());
-        assert!(ops_full.div.as_ref().expect("div")(&(), &()).is_ok());
-        assert!(ops_full.modulo.as_ref().expect("modulo")(&(), &()).is_ok());
-        assert!(ops_full.neg.as_ref().expect("neg")(&()).is_ok());
+        assert!(ops_full.add.as_ref().unwrap()(&(), &()).is_ok());
+        assert!(ops_full.sub.as_ref().unwrap()(&(), &()).is_ok());
+        assert!(ops_full.mul.as_ref().unwrap()(&(), &()).is_ok());
+        assert!(ops_full.div.as_ref().unwrap()(&(), &()).is_ok());
+        assert!(ops_full.modulo.as_ref().unwrap()(&(), &()).is_ok());
+        assert!(ops_full.neg.as_ref().unwrap()(&()).is_ok());
         assert_eq!(
-            ops_full.cmp.as_ref().expect("cmp")(&(), &()),
+            ops_full.cmp.as_ref().unwrap()(&(), &()),
             Ok(std::cmp::Ordering::Equal)
         );
         assert!(
-            ops_full.index_get.as_ref().expect("index_get")(
+            ops_full.index_get.as_ref().unwrap()(
                 &(),
                 &crate::types::val::Value::null(Type::Dynamic)
             )
             .is_ok()
         );
-        assert!(ops_full.attr_get.as_ref().expect("attr_get")(&(), "attr").is_ok());
+        assert!(ops_full.attr_get.as_ref().unwrap()(&(), "attr").is_ok());
 
         // Test difference in equals and hash when type names match
         let eq_alt: CapsuleEqualsFn = std::sync::Arc::new(|_, _| false);

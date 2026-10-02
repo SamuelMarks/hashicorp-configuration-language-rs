@@ -69,6 +69,14 @@ impl FunctionBlock {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::number::Number;
     use std::str::FromStr;
@@ -81,10 +89,7 @@ mod tests {
             type_expr: None,
             span: span.clone(),
         }];
-        let body = Expression::Number(
-            Number::from_str("42").expect("expected value"),
-            span.clone(),
-        );
+        let body = Expression::Number(Number::from_str("42").unwrap(), span.clone());
 
         let fb = FunctionBlock::new("test_func".to_string(), params, None, body, span.clone())
             .with_variadic_param(Some(FunctionParam {

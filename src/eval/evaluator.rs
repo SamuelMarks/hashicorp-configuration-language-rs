@@ -1665,6 +1665,13 @@ impl<'a> Evaluator<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
 
     #[test]
     fn test_eval_binary_logical_right_errors() {
@@ -1675,12 +1682,12 @@ mod tests {
             BinaryOp::And,
             Box::new(Expression::Bool(true, empty_span())),
             Box::new(Expression::Number(
-                Number::from_str("1").expect("ok"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             )),
             empty_span(),
         );
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -1693,12 +1700,12 @@ mod tests {
             BinaryOp::Or,
             Box::new(Expression::Bool(false, empty_span())),
             Box::new(Expression::Number(
-                Number::from_str("1").expect("ok"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             )),
             empty_span(),
         );
-        let errs = evaluator.evaluate(&expr2).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr2).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -1728,13 +1735,13 @@ mod tests {
             let expr = Expression::BinaryOp(
                 op,
                 Box::new(Expression::Number(
-                    Number::from_str("1").expect("ok"),
+                    Number::from_str("1").unwrap(),
                     empty_span(),
                 )),
                 Box::new(Expression::Variable("unk".to_string(), empty_span())),
                 empty_span(),
             );
-            let val = Evaluator::new(&ctx).evaluate(&expr).expect("expected ok").0;
+            let val = Evaluator::new(&ctx).evaluate(&expr).unwrap().0;
             assert!(val.is_unknown());
         }
     }
@@ -1749,7 +1756,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let val = Evaluator::new(&ctx).evaluate(&expr).expect("expected ok").0;
+        let val = Evaluator::new(&ctx).evaluate(&expr).unwrap().0;
         assert_eq!(val.ty(), &Type::Bool);
         assert!(val.is_unknown());
 
@@ -1759,10 +1766,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let val2 = Evaluator::new(&ctx)
-            .evaluate(&expr2)
-            .expect("expected ok")
-            .0;
+        let val2 = Evaluator::new(&ctx).evaluate(&expr2).unwrap().0;
         assert_eq!(val2.ty(), &Type::Bool);
         assert!(val2.is_unknown());
     }
@@ -1775,32 +1779,26 @@ mod tests {
         let expr3 = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Number(
-                Number::from_str("1").expect("expected value"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             )),
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let val3 = Evaluator::new(&ctx)
-            .evaluate(&expr3)
-            .expect("expected ok")
-            .0;
+        let val3 = Evaluator::new(&ctx).evaluate(&expr3).unwrap().0;
         assert_eq!(val3.ty(), &Type::Number);
         assert!(val3.is_unknown());
 
         let expr4 = Expression::BinaryOp(
             BinaryOp::Eq,
             Box::new(Expression::Number(
-                Number::from_str("1").expect("expected value"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             )),
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let val4 = Evaluator::new(&ctx)
-            .evaluate(&expr4)
-            .expect("expected ok")
-            .0;
+        let val4 = Evaluator::new(&ctx).evaluate(&expr4).unwrap().0;
         assert_eq!(val4.ty(), &Type::Bool);
         assert!(val4.is_unknown());
     }
@@ -1822,23 +1820,23 @@ mod tests {
         let evaluator = Evaluator::new(&ctx);
 
         let expr = Expression::Null(empty_span());
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert!(val.is_null());
 
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::Bool(true, empty_span());
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
 
         let evaluator = Evaluator::new(&ctx);
-        let n = Number::from_str("42").expect("expected value");
+        let n = Number::from_str("42").unwrap();
         let expr = Expression::Number(n.clone(), empty_span());
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Number, ValueData::Number(n)));
 
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::String("hello".to_string(), empty_span());
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(Type::String, ValueData::String("hello".to_string()))
@@ -1852,7 +1850,7 @@ mod tests {
 
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::Variable("foo".to_string(), empty_span());
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
 
         // Local variable
@@ -1865,7 +1863,7 @@ mod tests {
         );
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::Variable("local.bar".to_string(), empty_span());
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(
@@ -1878,7 +1876,7 @@ mod tests {
         let _evaluator = Evaluator::new(&ctx);
         let expr = Expression::Variable("bar".to_string(), empty_span());
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert_eq!(errs.errors().len(), 1);
         assert!(
             errs.errors()[0]
@@ -1901,7 +1899,7 @@ mod tests {
             empty_span(),
         );
 
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Tuple(vec![Type::Bool, Type::String]));
     }
 
@@ -1915,7 +1913,7 @@ mod tests {
 
         let expr = Expression::Object(vec![(k1, v1)], empty_span());
 
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         let mut expected_map = BTreeMap::new();
         expected_map.insert("k1".to_string(), Type::Bool);
         assert_eq!(val.ty(), &Type::object(expected_map));
@@ -1931,24 +1929,24 @@ mod tests {
             Box::new(Expression::Bool(true, empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
 
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
             UnaryOp::Neg,
             Box::new(Expression::Number(
-                Number::from_str("10").expect("expected value"),
+                Number::from_str("10").unwrap(),
                 empty_span(),
             )),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("-10").expect("expected value"))
+                ValueData::Number(Number::from_str("-10").unwrap())
             )
         );
     }
@@ -1964,7 +1962,7 @@ mod tests {
             Box::new(Expression::Bool(false, empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
 
         // Short-circuit AND
@@ -1976,7 +1974,7 @@ mod tests {
             Box::new(Expression::Variable("missing".to_string(), empty_span())),
             empty_span(),
         );
-        let (val2, _) = evaluator.evaluate(&expr2).expect("expected value");
+        let (val2, _) = evaluator.evaluate(&expr2).unwrap();
         assert_eq!(val2, Value::new(Type::Bool, ValueData::Bool(false)));
     }
 
@@ -1987,23 +1985,17 @@ mod tests {
         let evaluator = Evaluator::new(&ctx);
         let cond = Conditional {
             cond_expr: Expression::Bool(true, empty_span()),
-            true_expr: Expression::Number(
-                Number::from_str("1").expect("expected value"),
-                empty_span(),
-            ),
-            false_expr: Expression::Number(
-                Number::from_str("2").expect("expected value"),
-                empty_span(),
-            ),
+            true_expr: Expression::Number(Number::from_str("1").unwrap(), empty_span()),
+            false_expr: Expression::Number(Number::from_str("2").unwrap(), empty_span()),
         };
         let expr = Expression::Conditional(Box::new(cond), empty_span());
 
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("1").expect("expected value"))
+                ValueData::Number(Number::from_str("1").unwrap())
             )
         );
     }
@@ -2021,7 +2013,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Bool);
 
         let evaluator = Evaluator::new(&ctx);
@@ -2031,7 +2023,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (val2, _) = evaluator.evaluate(&expr2).expect("expected value");
+        let (val2, _) = evaluator.evaluate(&expr2).unwrap();
         assert_eq!(val2.ty(), &Type::Number);
         assert!(val2.is_unknown());
     }
@@ -2046,7 +2038,7 @@ mod tests {
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert_eq!(errs.errors().len(), 1);
         assert!(
             errs.errors()[0]
@@ -2065,24 +2057,24 @@ mod tests {
             BinaryOp::And,
             Box::new(Expression::Bool(true, empty_span())),
             Box::new(Expression::Number(
-                Number::from_str("1").expect("expected value"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             )),
             empty_span(),
         );
-        let _errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let _errs = evaluator.evaluate(&expr).err().unwrap();
 
         let evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::BinaryOp(
             BinaryOp::Or,
             Box::new(Expression::Bool(false, empty_span())),
             Box::new(Expression::Number(
-                Number::from_str("1").expect("expected value"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             )),
             empty_span(),
         );
-        let _errs = evaluator.evaluate(&expr2).expect_err("expected error");
+        let _errs = evaluator.evaluate(&expr2).err().unwrap();
     }
 
     #[test]
@@ -2097,7 +2089,7 @@ mod tests {
             Box::new(Expression::Bool(true, empty_span())),
             empty_span(),
         );
-        let (_val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (_val, _) = evaluator.evaluate(&expr).unwrap();
 
         let evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::BinaryOp(
@@ -2106,7 +2098,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (_val, _) = evaluator.evaluate(&expr2).expect("expected value");
+        let (_val, _) = evaluator.evaluate(&expr2).unwrap();
 
         let evaluator = Evaluator::new(&ctx);
         let expr3 = Expression::BinaryOp(
@@ -2115,7 +2107,7 @@ mod tests {
             Box::new(Expression::Bool(false, empty_span())),
             empty_span(),
         );
-        let (_val, _) = evaluator.evaluate(&expr3).expect("expected value");
+        let (_val, _) = evaluator.evaluate(&expr3).unwrap();
 
         let evaluator = Evaluator::new(&ctx);
         let expr4 = Expression::BinaryOp(
@@ -2124,7 +2116,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (_val, _) = evaluator.evaluate(&expr4).expect("expected value");
+        let (_val, _) = evaluator.evaluate(&expr4).unwrap();
     }
     #[test]
     fn test_eval_unary_errors_and_unknown() {
@@ -2137,7 +2129,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Bool);
 
         let evaluator = Evaluator::new(&ctx);
@@ -2146,19 +2138,19 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Number);
 
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
             UnaryOp::Not,
             Box::new(Expression::Number(
-                Number::from_str("1").expect("expected value"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             )),
             empty_span(),
         );
-        let _errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let _errs = evaluator.evaluate(&expr).err().unwrap();
 
         let _evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
@@ -2167,7 +2159,7 @@ mod tests {
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2184,31 +2176,22 @@ mod tests {
         let evaluator = Evaluator::new(&ctx);
         let cond = Conditional {
             cond_expr: Expression::Variable("unk".to_string(), empty_span()),
-            true_expr: Expression::Number(
-                Number::from_str("1").expect("expected value"),
-                empty_span(),
-            ),
-            false_expr: Expression::Number(
-                Number::from_str("2").expect("expected value"),
-                empty_span(),
-            ),
+            true_expr: Expression::Number(Number::from_str("1").unwrap(), empty_span()),
+            false_expr: Expression::Number(Number::from_str("2").unwrap(), empty_span()),
         };
         let expr = Expression::Conditional(Box::new(cond), empty_span());
-        let (_val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (_val, _) = evaluator.evaluate(&expr).unwrap();
 
         // Unknown with bad types
         let _evaluator = Evaluator::new(&ctx);
         let cond2 = Conditional {
             cond_expr: Expression::Variable("unk".to_string(), empty_span()),
-            true_expr: Expression::Number(
-                Number::from_str("1").expect("expected value"),
-                empty_span(),
-            ),
+            true_expr: Expression::Number(Number::from_str("1").unwrap(), empty_span()),
             false_expr: Expression::Bool(false, empty_span()),
         };
         let expr2 = Expression::Conditional(Box::new(cond2), empty_span());
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr2).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr2).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2219,22 +2202,13 @@ mod tests {
         // Bad cond
         let _evaluator = Evaluator::new(&ctx);
         let cond3 = Conditional {
-            cond_expr: Expression::Number(
-                Number::from_str("1").expect("expected value"),
-                empty_span(),
-            ),
-            true_expr: Expression::Number(
-                Number::from_str("1").expect("expected value"),
-                empty_span(),
-            ),
-            false_expr: Expression::Number(
-                Number::from_str("2").expect("expected value"),
-                empty_span(),
-            ),
+            cond_expr: Expression::Number(Number::from_str("1").unwrap(), empty_span()),
+            true_expr: Expression::Number(Number::from_str("1").unwrap(), empty_span()),
+            false_expr: Expression::Number(Number::from_str("2").unwrap(), empty_span()),
         };
         let expr3 = Expression::Conditional(Box::new(cond3), empty_span());
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr3).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr3).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2251,7 +2225,7 @@ mod tests {
 
         for expr in exprs {
             let evaluator = Evaluator::new(&ctx);
-            let val = evaluator.evaluate(&expr).expect("expected value").0;
+            let val = evaluator.evaluate(&expr).unwrap().0;
             assert_eq!(
                 val,
                 Value::new(Type::String, ValueData::String(String::new()))
@@ -2268,7 +2242,8 @@ mod tests {
                 }),
                 empty_span(),
             ))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2290,7 +2265,7 @@ mod tests {
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2301,13 +2276,13 @@ mod tests {
         let _evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::Object(
             vec![(
-                Expression::Number(Number::from_str("1").expect("expected value"), empty_span()),
+                Expression::Number(Number::from_str("1").unwrap(), empty_span()),
                 Expression::Bool(true, empty_span()),
             )],
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr2).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr2).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2332,16 +2307,16 @@ mod tests {
             let expr = Expression::BinaryOp(
                 op,
                 Box::new(Expression::Number(
-                    Number::from_str(lhs).expect("expected value"),
+                    Number::from_str(lhs).unwrap(),
                     empty_span(),
                 )),
                 Box::new(Expression::Number(
-                    Number::from_str(rhs).expect("expected value"),
+                    Number::from_str(rhs).unwrap(),
                     empty_span(),
                 )),
                 empty_span(),
             );
-            let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+            let (val, _) = evaluator.evaluate(&expr).unwrap();
             assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(expected)));
         }
 
@@ -2353,7 +2328,7 @@ mod tests {
             Box::new(Expression::String("true".to_string(), empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
 
         let evaluator = Evaluator::new(&ctx);
@@ -2363,7 +2338,7 @@ mod tests {
             Box::new(Expression::String("true".to_string(), empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
     }
 
@@ -2380,7 +2355,7 @@ mod tests {
             Box::new(Expression::Variable("unk_num".to_string(), empty_span())),
             empty_span(),
         );
-        let (_val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (_val, _) = evaluator.evaluate(&expr).unwrap();
 
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
@@ -2389,7 +2364,7 @@ mod tests {
             Box::new(Expression::Variable("unk_num".to_string(), empty_span())),
             empty_span(),
         );
-        let (_val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (_val, _) = evaluator.evaluate(&expr).unwrap();
     }
 
     #[test]
@@ -2406,7 +2381,7 @@ mod tests {
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2426,7 +2401,7 @@ mod tests {
         };
         let (val, _) = Evaluator::new(&ctx)
             .evaluate(&Expression::Traversal(Box::new(t1), empty_span()))
-            .expect("expected success");
+            .unwrap();
         assert_eq!(
             *val.data,
             ValueData::Array(vec![Value::new(Type::Bool, ValueData::Bool(true))])
@@ -2439,7 +2414,8 @@ mod tests {
         };
         let errs = Evaluator::new(&ctx)
             .evaluate(&Expression::Traversal(Box::new(t2), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2492,7 +2468,7 @@ mod tests {
         };
         let (val_names, _) = Evaluator::new(&ctx)
             .evaluate(&Expression::Traversal(Box::new(t3), empty_span()))
-            .expect("expected success");
+            .unwrap();
         assert_eq!(
             *val_names.data,
             ValueData::Array(vec![
@@ -2511,7 +2487,7 @@ mod tests {
         };
         let (val_null, _) = Evaluator::new(&ctx)
             .evaluate(&Expression::Traversal(Box::new(t_null), empty_span()))
-            .expect("expected success");
+            .unwrap();
         assert_eq!(*val_null.data, ValueData::Array(Vec::new()));
 
         // 5. Empty list short-circuiting: [].* returns empty list
@@ -2524,7 +2500,7 @@ mod tests {
         };
         let (val_empty, _) = Evaluator::new(&ctx)
             .evaluate(&Expression::Traversal(Box::new(t_empty), empty_span()))
-            .expect("expected success");
+            .unwrap();
         assert_eq!(*val_empty.data, ValueData::Array(Vec::new()));
 
         // 6. Chained full splat with indexing: clusters[*].nodes[0].ip
@@ -2585,7 +2561,7 @@ mod tests {
                 Box::new(t_chained_full),
                 empty_span(),
             ))
-            .expect("expected success");
+            .unwrap();
         assert_eq!(
             *val_ips.data,
             ValueData::Array(vec![
@@ -2617,7 +2593,7 @@ mod tests {
         };
         let (val_marked, _) = eval_marked
             .evaluate(&Expression::Traversal(Box::new(t_marked), empty_span()))
-            .expect("expected success");
+            .unwrap();
         assert!(
             val_marked
                 .marks
@@ -2639,7 +2615,7 @@ mod tests {
         };
         let (val_unk, _) = eval_unk
             .evaluate(&Expression::Traversal(Box::new(t_unk), empty_span()))
-            .expect("expected success");
+            .unwrap();
         assert!(val_unk.is_unknown());
     }
 
@@ -2665,9 +2641,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected success");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(*val.data, ValueData::String("host-1".to_string()));
 
         // 2. Calling concat with expand_final on a list of lists: concat([["a"], ["b", "c"]]...)
@@ -2694,9 +2668,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_concat, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_concat)
-            .expect("expected success");
+        let (val_concat, _) = Evaluator::new(&ctx).evaluate(&expr_concat).unwrap();
         assert_eq!(
             *val_concat.data,
             ValueData::Array(vec![
@@ -2745,9 +2717,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_mark, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_mark)
-            .expect("expected success");
+        let (val_mark, _) = Evaluator::new(&ctx).evaluate(&expr_mark).unwrap();
         assert_eq!(*val_mark.data, ValueData::Bool(true));
 
         let expr_unmark = Expression::FuncCall(
@@ -2758,9 +2728,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_unmark, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_unmark)
-            .expect("expected success");
+        let (val_unmark, _) = Evaluator::new(&ctx).evaluate(&expr_unmark).unwrap();
         assert_eq!(*val_unmark.data, ValueData::Bool(false));
 
         // 4. Expanding a set
@@ -2797,9 +2765,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_count, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_set)
-            .expect("expected success");
+        let (val_count, _) = Evaluator::new(&ctx).evaluate(&expr_set).unwrap();
         assert_eq!(
             *val_count.data,
             ValueData::Number(Number::new(BigDecimal::from(1)))
@@ -2821,9 +2787,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_unk, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_unk)
-            .expect("expected success");
+        let (val_unk, _) = Evaluator::new(&ctx).evaluate(&expr_unk).unwrap();
         assert!(val_unk.is_unknown());
 
         // 6. Expanding non-sequence (diagnostic error)
@@ -2838,9 +2802,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let errs = Evaluator::new(&ctx)
-            .evaluate(&expr_bad)
-            .expect_err("expected error");
+        let errs = Evaluator::new(&ctx).evaluate(&expr_bad).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -2895,9 +2857,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_try1, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_try_fallback)
-            .expect("try fallback should succeed");
+        let (val_try1, _) = Evaluator::new(&ctx).evaluate(&expr_try_fallback).unwrap();
         assert_eq!(*val_try1.data, ValueData::String("fallback".to_string()));
 
         // 2. try(obj.existing, "fallback") -> returns "found" immediately
@@ -2921,9 +2881,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_try2, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_try_found)
-            .expect("try existing should succeed");
+        let (val_try2, _) = Evaluator::new(&ctx).evaluate(&expr_try_found).unwrap();
         assert_eq!(*val_try2.data, ValueData::String("found".to_string()));
 
         // 3. Cascading try: try(arr[100], obj.missing, 42) -> 42
@@ -2960,9 +2918,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_try3, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_try_cascade)
-            .expect("cascading try should succeed");
+        let (val_try3, _) = Evaluator::new(&ctx).evaluate(&expr_try_cascade).unwrap();
         assert_eq!(
             *val_try3.data,
             ValueData::Number(Number::new(BigDecimal::from(42)))
@@ -2977,9 +2933,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_try_zero = Evaluator::new(&ctx)
-            .evaluate(&expr_try_zero)
-            .expect_err("zero arg try should fail");
+        let err_try_zero = Evaluator::new(&ctx).evaluate(&expr_try_zero).err().unwrap();
         assert!(
             err_try_zero.errors()[0]
                 .error
@@ -3019,7 +2973,8 @@ mod tests {
         );
         let err_try_fail = Evaluator::new(&ctx)
             .evaluate(&expr_try_all_fail)
-            .expect_err("all failing try should error");
+            .err()
+            .unwrap();
         assert!(
             err_try_fail.errors()[0]
                 .error
@@ -3045,9 +3000,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_can1, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_can_false)
-            .expect("can should succeed");
+        let (val_can1, _) = Evaluator::new(&ctx).evaluate(&expr_can_false).unwrap();
         assert_eq!(*val_can1.data, ValueData::Bool(false));
 
         // 7. can(obj.existing) -> true
@@ -3068,9 +3021,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_can2, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_can_true)
-            .expect("can should succeed");
+        let (val_can2, _) = Evaluator::new(&ctx).evaluate(&expr_can_true).unwrap();
         assert_eq!(*val_can2.data, ValueData::Bool(true));
 
         // 8. can(arr[0] / 0) division by zero -> false
@@ -3093,9 +3044,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_can_div, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_can_div_zero)
-            .expect("can should succeed");
+        let (val_can_div, _) = Evaluator::new(&ctx).evaluate(&expr_can_div_zero).unwrap();
         assert_eq!(*val_can_div.data, ValueData::Bool(false));
 
         // 9. can(unknown_expr) -> unknown bool
@@ -3108,9 +3057,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_can_unk, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_can_unk)
-            .expect("can should succeed");
+        let (val_can_unk, _) = Evaluator::new(&ctx).evaluate(&expr_can_unk).unwrap();
         assert!(val_can_unk.is_unknown());
         assert_eq!(val_can_unk.ty(), &Type::Bool);
 
@@ -3125,7 +3072,8 @@ mod tests {
         );
         let err_can_bad = Evaluator::new(&ctx)
             .evaluate(&expr_can_bad_arity)
-            .expect_err("can with 0 args should fail");
+            .err()
+            .unwrap();
         assert!(
             err_can_bad.errors()[0]
                 .error
@@ -3198,9 +3146,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_add, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_add_ok)
-            .expect("should coerce string to number");
+        let (val_add, _) = Evaluator::new(&ctx).evaluate(&expr_add_ok).unwrap();
         assert_eq!(
             *val_add.data,
             ValueData::Number(Number::new(BigDecimal::from(30)))
@@ -3218,9 +3164,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_few = Evaluator::new(&ctx)
-            .evaluate(&expr_add_few)
-            .expect_err("should fail with arity error");
+        let err_few = Evaluator::new(&ctx).evaluate(&expr_add_few).err().unwrap();
         assert!(
             err_few.errors()[0]
                 .error
@@ -3241,9 +3185,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_many = Evaluator::new(&ctx)
-            .evaluate(&expr_add_many)
-            .expect_err("should fail with arity error");
+        let err_many = Evaluator::new(&ctx).evaluate(&expr_add_many).err().unwrap();
         assert!(
             err_many.errors()[0]
                 .error
@@ -3265,7 +3207,8 @@ mod tests {
         );
         let err_incompat = Evaluator::new(&ctx)
             .evaluate(&expr_add_incompat)
-            .expect_err("should fail with type mismatch");
+            .err()
+            .unwrap();
         assert!(
             err_incompat.errors()[0]
                 .error
@@ -3285,9 +3228,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_null = Evaluator::new(&ctx)
-            .evaluate(&expr_add_null)
-            .expect_err("should fail with null error");
+        let err_null = Evaluator::new(&ctx).evaluate(&expr_add_null).err().unwrap();
         assert!(
             err_null.errors()[0]
                 .error
@@ -3342,9 +3283,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val_join, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_join_ok)
-            .expect("variadic call succeeds");
+        let (val_join, _) = Evaluator::new(&ctx).evaluate(&expr_join_ok).unwrap();
         assert_eq!(*val_join.data, ValueData::String("a:b:c".to_string()));
 
         // Variadic arity error: missing fixed parameter
@@ -3356,9 +3295,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_join_few = Evaluator::new(&ctx)
-            .evaluate(&expr_join_few)
-            .expect_err("too few arguments");
+        let err_join_few = Evaluator::new(&ctx).evaluate(&expr_join_few).err().unwrap();
         assert!(
             err_join_few.errors()[0]
                 .error
@@ -3378,7 +3315,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t1), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3394,7 +3332,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t2), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3417,7 +3356,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t3), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(errs.errors()[0].error.to_string().contains("not found"));
 
         // Index array with non-number
@@ -3433,7 +3373,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t4), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3446,16 +3387,14 @@ mod tests {
         let t4 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("arr".to_string(), empty_span())),
             operators: vec![TraversalOperator::Index(
-                Expression::Number(
-                    Number::from_str("10").expect("expected value"),
-                    empty_span(),
-                ),
+                Expression::Number(Number::from_str("10").unwrap(), empty_span()),
                 empty_span(),
             )],
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t4), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3471,7 +3410,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t4), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3487,7 +3427,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t4), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3506,7 +3447,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t5), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(errs.errors()[0].error.to_string().contains("not found"));
 
         // Index unknown index
@@ -3526,7 +3468,7 @@ mod tests {
         };
         let (_val, _) = evaluator
             .evaluate(&Expression::Traversal(Box::new(t5), empty_span()))
-            .expect("expected value");
+            .unwrap();
     }
     #[test]
     fn test_eval_for_expr_errors() {
@@ -3545,7 +3487,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3568,7 +3511,7 @@ mod tests {
         };
         let (_val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect("expected value");
+            .unwrap();
 
         // bad cond
         let arr = Value::new(
@@ -3584,14 +3527,15 @@ mod tests {
             key_expr: None,
             val_expr: Box::new(Expression::Bool(true, empty_span())),
             cond_expr: Some(Box::new(Expression::Number(
-                Number::from_str("1").expect("expected value"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             ))),
             grouping: false,
         };
         let errs = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3612,7 +3556,7 @@ mod tests {
         };
         let (val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect("expected value");
+            .unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Array(vec![]));
 
         // map bad key
@@ -3628,7 +3572,8 @@ mod tests {
         };
         let errs = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3664,7 +3609,7 @@ mod tests {
         };
         let (val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect("expected value");
+            .unwrap();
 
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
@@ -3689,7 +3634,7 @@ mod tests {
             "a".to_string(),
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("1").expect("expected value")),
+                ValueData::Number(Number::from_str("1").unwrap()),
             ),
         );
         let obj = Value::new(Type::object(BTreeMap::new()), ValueData::Object(map));
@@ -3708,12 +3653,12 @@ mod tests {
         };
         let (val, _) = evaluator
             .evaluate(&Expression::Traversal(Box::new(t1), empty_span()))
-            .expect("expected value");
+            .unwrap();
         assert_eq!(
             val,
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("1").expect("expected value"))
+                ValueData::Number(Number::from_str("1").unwrap())
             )
         );
 
@@ -3724,7 +3669,7 @@ mod tests {
         };
         let (val2, _) = evaluator
             .evaluate(&Expression::Traversal(Box::new(t2), empty_span()))
-            .expect("expected value");
+            .unwrap();
         assert_eq!(val2, Value::new(Type::Bool, ValueData::Bool(true)));
     }
 
@@ -3738,14 +3683,8 @@ mod tests {
             val_var: "v".to_string(),
             collection: Box::new(Expression::Tuple(
                 vec![
-                    Expression::Number(
-                        Number::from_str("1").expect("expected value"),
-                        empty_span(),
-                    ),
-                    Expression::Number(
-                        Number::from_str("2").expect("expected value"),
-                        empty_span(),
-                    ),
+                    Expression::Number(Number::from_str("1").unwrap(), empty_span()),
+                    Expression::Number(Number::from_str("2").unwrap(), empty_span()),
                 ],
                 empty_span(),
             )),
@@ -3761,16 +3700,16 @@ mod tests {
 
         let (val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect("expected value");
+            .unwrap();
 
         let expected_arr = vec![
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("-1").expect("expected value")),
+                ValueData::Number(Number::from_str("-1").unwrap()),
             ),
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("-2").expect("expected value")),
+                ValueData::Number(Number::from_str("-2").unwrap()),
             ),
         ];
         assert_eq!(val.data.as_ref(), &ValueData::Array(expected_arr));
@@ -3782,7 +3721,7 @@ mod tests {
         let evaluator = Evaluator::new(&ctx);
 
         let k1 = Expression::String("a".to_string(), empty_span());
-        let v1 = Expression::Number(Number::from_str("1").expect("expected value"), empty_span());
+        let v1 = Expression::Number(Number::from_str("1").unwrap(), empty_span());
 
         let f = ForExpr {
             key_var: Some("k".to_string()),
@@ -3803,13 +3742,13 @@ mod tests {
 
         let (val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect("expected value");
+            .unwrap();
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
             "a".to_string(),
             Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("-1").expect("expected value")),
+                ValueData::Number(Number::from_str("-1").unwrap()),
             ),
         );
         assert_eq!(val.data.as_ref(), &ValueData::Object(expected_map));
@@ -3827,7 +3766,7 @@ mod tests {
         };
         let (_val, _) = evaluator
             .evaluate(&Expression::Traversal(Box::new(t1), empty_span()))
-            .expect("expected value");
+            .unwrap();
 
         let arr = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         ctx.set_variable("arr", arr);
@@ -3835,16 +3774,14 @@ mod tests {
         let t2 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("arr".to_string(), empty_span())),
             operators: vec![TraversalOperator::Index(
-                Expression::Number(
-                    Number::from_str("-1").expect("expected value"),
-                    empty_span(),
-                ),
+                Expression::Number(Number::from_str("-1").unwrap(), empty_span()),
                 empty_span(),
             )],
         };
         let errs = evaluator
             .evaluate(&Expression::Traversal(Box::new(t2), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3863,14 +3800,15 @@ mod tests {
             key_expr: None,
             val_expr: Box::new(Expression::Bool(true, empty_span())),
             cond_expr: Some(Box::new(Expression::Number(
-                Number::from_str("1").expect("expected value"),
+                Number::from_str("1").unwrap(),
                 empty_span(),
             ))),
             grouping: false,
         };
         let errs = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
-            .expect_err("expected error");
+            .err()
+            .unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -3888,7 +3826,7 @@ mod tests {
         };
         let (_val, _) = evaluator
             .evaluate(&Expression::Traversal(Box::new(t3), empty_span()))
-            .expect("expected value");
+            .unwrap();
     }
 
     #[test]
@@ -3899,7 +3837,7 @@ mod tests {
             Value::new(
                 Type::Number,
                 ValueData::Number(crate::number::Number::new(
-                    std::str::FromStr::from_str("42.0").expect("expected value"),
+                    std::str::FromStr::from_str("42.0").unwrap(),
                 )),
             ),
         );
@@ -3952,7 +3890,7 @@ mod tests {
 
         let result = evaluator.evaluate(&expr);
         assert!(result.is_err());
-        let diags = result.expect_err("expected error");
+        let diags = result.err().unwrap();
         assert_eq!(diags.errors().len(), 1); // One for object interpolation
         assert!(
             diags.errors()[0]
@@ -3971,32 +3909,28 @@ mod tests {
         let expr = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Add,
             Box::new(Expression::Number(
-                crate::number::Number::new(
-                    std::str::FromStr::from_str("1.0").expect("expected value"),
-                ),
+                crate::number::Number::new(std::str::FromStr::from_str("1.0").unwrap()),
                 empty_span(),
             )),
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
 
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert!(val.is_unknown());
         assert_eq!(*val.ty(), Type::Number);
 
         let expr2 = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Eq,
             Box::new(Expression::Number(
-                crate::number::Number::new(
-                    std::str::FromStr::from_str("1.0").expect("expected value"),
-                ),
+                crate::number::Number::new(std::str::FromStr::from_str("1.0").unwrap()),
                 empty_span(),
             )),
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
         let evaluator2 = Evaluator::new(&ctx);
-        let (val2, _) = evaluator2.evaluate(&expr2).expect("expected value");
+        let (val2, _) = evaluator2.evaluate(&expr2).unwrap();
         assert!(val2.is_unknown());
         assert_eq!(*val2.ty(), Type::Bool);
     }
@@ -4015,7 +3949,7 @@ mod tests {
             empty_span(),
         );
 
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::String);
     }
 
@@ -4032,7 +3966,7 @@ mod tests {
             empty_span(),
         );
 
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert!(val.is_unknown());
         assert_eq!(*val.ty(), Type::Number);
     }
@@ -4049,7 +3983,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
 
         let evaluator = Evaluator::new(&ctx);
@@ -4059,7 +3993,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
 
         // Also Splat stub hit
@@ -4072,7 +4006,7 @@ mod tests {
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4083,7 +4017,7 @@ mod tests {
 
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::Template(vec![], empty_span());
-        let val = evaluator.evaluate(&expr).expect("expected value").0;
+        let val = evaluator.evaluate(&expr).unwrap().0;
         assert_eq!(
             val,
             Value::new(Type::String, ValueData::String(String::new()))
@@ -4109,7 +4043,7 @@ mod tests {
         );
         let _evaluator = Evaluator::new(&ctx);
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4128,7 +4062,7 @@ mod tests {
         );
         let _evaluator = Evaluator::new(&ctx);
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4144,7 +4078,7 @@ mod tests {
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4159,7 +4093,7 @@ mod tests {
             empty_span(),
         );
         let evaluator = Evaluator::new(&ctx);
-        let errs = evaluator.evaluate(&expr).expect_err("expected error");
+        let errs = evaluator.evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4172,18 +4106,13 @@ mod tests {
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Tuple(vec![], empty_span())),
                 operators: vec![crate::ast::expr::TraversalOperator::Index(
-                    Expression::Number(
-                        crate::number::Number::from_str("1").expect("expected value"),
-                        empty_span(),
-                    ),
+                    Expression::Number(crate::number::Number::from_str("1").unwrap(), empty_span()),
                     empty_span(),
                 )],
             }),
             empty_span(),
         );
-        let errs = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect_err("expected error");
+        let errs = Evaluator::new(&ctx).evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4202,9 +4131,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let errs = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect_err("expected error");
+        let errs = Evaluator::new(&ctx).evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4231,9 +4158,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let errs = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect_err("expected error");
+        let errs = Evaluator::new(&ctx).evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4264,9 +4189,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let errs = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect_err("expected error");
+        let errs = Evaluator::new(&ctx).evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4303,9 +4226,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let errs = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect_err("expected error");
+        let errs = Evaluator::new(&ctx).evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4369,9 +4290,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let errs = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect_err("expected error");
+        let errs = Evaluator::new(&ctx).evaluate(&expr).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -4382,9 +4301,7 @@ mod tests {
         // test Parentheses
         let expr =
             Expression::Parentheses(Box::new(Expression::Bool(true, empty_span())), empty_span());
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected value");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
 
         // test Conditional false branch
@@ -4396,9 +4313,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected value");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(Type::String, ValueData::String("false".to_string()))
@@ -4411,9 +4326,7 @@ mod tests {
             Box::new(Expression::Bool(true, empty_span())),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected value");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
 
         // test BinaryOp::Or evaluating RHS
@@ -4423,9 +4336,7 @@ mod tests {
             Box::new(Expression::Bool(false, empty_span())),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected value");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
 
         // test Index success
@@ -4436,18 +4347,13 @@ mod tests {
                     empty_span(),
                 )),
                 operators: vec![crate::ast::expr::TraversalOperator::Index(
-                    Expression::Number(
-                        crate::number::Number::from_str("0").expect("expected value"),
-                        empty_span(),
-                    ),
+                    Expression::Number(crate::number::Number::from_str("0").unwrap(), empty_span()),
                     empty_span(),
                 )],
             }),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected value");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(Type::String, ValueData::String("a".to_string()))
@@ -4470,9 +4376,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected value");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(Type::String, ValueData::String("v".to_string()))
@@ -4494,9 +4398,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx)
-            .evaluate(&expr)
-            .expect("expected value");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(
             val.data.as_ref(),
             &ValueData::Array(vec![Value::new(Type::Bool, ValueData::Bool(true))])
@@ -4526,7 +4428,7 @@ mod tests {
             )],
             empty_span(),
         );
-        let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+        let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(
             val,
             Value::new(Type::String, ValueData::String("s".to_string()))
@@ -4565,7 +4467,7 @@ mod tests {
                 Box::new(Expression::Variable("unk".to_string(), empty_span())),
                 empty_span(),
             );
-            let (val, _) = evaluator.evaluate(&expr).expect("expected value");
+            let (val, _) = evaluator.evaluate(&expr).unwrap();
             assert_eq!(*val.ty(), Type::Bool);
         }
     }
@@ -4577,7 +4479,7 @@ mod tests {
             b = false || 123
         ";
         let ctx = Context::new();
-        let body = crate::api::parse(input).expect("parsed");
+        let body = crate::api::parse(input).unwrap();
         let res_a = Evaluator::new(&ctx).evaluate(&body.attributes["a"].expr);
         let res_b = Evaluator::new(&ctx).evaluate(&body.attributes["b"].expr);
         assert!(res_a.is_err());
@@ -4607,7 +4509,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_if_true).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_if_true).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("Admin".to_string()))
@@ -4615,7 +4517,7 @@ mod tests {
 
         // If false with else
         ctx.set_variable("admin", Value::new(Type::Bool, ValueData::Bool(false)));
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_if_true).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_if_true).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("User".to_string()))
@@ -4634,7 +4536,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_no_else).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_no_else).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String(String::new()))
@@ -4662,7 +4564,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_elif).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_elif).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("C".to_string()))
@@ -4682,14 +4584,14 @@ mod tests {
             span.clone(),
         );
         ctx.set_variable("unk", Value::unknown(Type::Bool));
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_unk_cond).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_unk_cond).unwrap();
         assert!(v.is_unknown());
 
         // If condition not boolean
         let expr_bad_cond = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::If {
-                    cond: Expression::Number(Number::from_str("123").expect("ok"), span.clone()),
+                    cond: Expression::Number(Number::from_str("123").unwrap(), span.clone()),
                     true_expr: vec![],
                     else_ifs: vec![],
                     false_expr: None,
@@ -4716,7 +4618,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_elif_unk).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_elif_unk).unwrap();
         assert!(v.is_unknown());
 
         // Else if condition not boolean
@@ -4764,7 +4666,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_arr).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_arr).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("[a][b]".to_string()))
@@ -4800,9 +4702,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_for_key_val)
-            .expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_key_val).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("0:x;1:y;".to_string()))
@@ -4833,7 +4733,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_set).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_set).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("set_item".to_string()))
@@ -4871,7 +4771,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_obj).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_obj).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("k1=v1".to_string()))
@@ -4890,7 +4790,7 @@ mod tests {
             )],
             span.clone(),
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_unk).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_unk).unwrap();
         assert!(v.is_unknown());
 
         // For collection null
@@ -4914,10 +4814,7 @@ mod tests {
                 Directive::For {
                     key_var: None,
                     val_var: "x".to_string(),
-                    collection: Expression::Number(
-                        Number::from_str("42").expect("ok"),
-                        span.clone(),
-                    ),
+                    collection: Expression::Number(Number::from_str("42").unwrap(), span.clone()),
                     body: vec![],
                 },
                 span.clone(),
@@ -4937,7 +4834,7 @@ mod tests {
             )],
             span,
         );
-        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_strip).expect("eval");
+        let (v, _) = Evaluator::new(&ctx).evaluate(&expr_strip).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String(String::new()))
@@ -4958,10 +4855,10 @@ mod tests {
                 ]),
             ),
         );
-        let body = crate::api::parse(input).expect("parsed");
+        let body = crate::api::parse(input).unwrap();
         let (val, _) = Evaluator::new(&full_ctx)
             .evaluate(&body.attributes["greeting"].expr)
-            .expect("eval");
+            .unwrap();
         assert_eq!(
             val,
             Value::new(
@@ -4987,7 +4884,7 @@ mod tests {
         ctx.set_variable("sens_str", sens_str);
 
         let parse_expr = |s: &str| {
-            let body = crate::api::parse(&format!("v = {s}")).expect("valid hcl");
+            let body = crate::api::parse(&format!("v = {s}")).unwrap();
             body.attributes["v"].expr.clone()
         };
 
@@ -5001,7 +4898,7 @@ mod tests {
         ];
         for (expr_str, expected_ty) in cases {
             let expr = parse_expr(expr_str);
-            let (val, _) = Evaluator::new(&ctx).evaluate(&expr).expect("eval succeeds");
+            let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
             assert_eq!(val.ty(), &expected_ty);
             assert!(
                 val.has_mark(&ValueMark::Sensitive),
@@ -5045,7 +4942,7 @@ mod tests {
         ];
         for expr_str in cmp_cases {
             let expr = parse_expr(expr_str);
-            let (val, _) = Evaluator::new(&ctx).evaluate(&expr).expect("eval succeeds");
+            let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
             assert_eq!(val.ty(), &Type::Bool);
             assert_eq!(val.data.as_ref(), &ValueData::Bool(true));
             assert!(
@@ -5063,7 +4960,7 @@ mod tests {
         ];
         for expr_str in log_cases {
             let expr = parse_expr(expr_str);
-            let (val, _) = Evaluator::new(&ctx).evaluate(&expr).expect("eval succeeds");
+            let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
             assert_eq!(val.data.as_ref(), &ValueData::Bool(true));
             assert!(
                 val.has_mark(&ValueMark::Sensitive),
@@ -5073,17 +4970,17 @@ mod tests {
 
         // Unary ops
         let not_expr = parse_expr("!sens_bool");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&not_expr).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&not_expr).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(false));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         let neg_expr = parse_expr("-sens_num");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&neg_expr).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&neg_expr).unwrap();
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         // Conditionals
         let cond_expr = parse_expr("sens_bool ? \"yes\" : \"no\"");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&cond_expr).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&cond_expr).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("yes".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
@@ -5098,12 +4995,12 @@ mod tests {
         ctx.set_variable("marked_obj", marked_obj);
 
         let t_attr = parse_expr("marked_obj.secret");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&t_attr).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&t_attr).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("pass123".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         let t_idx = parse_expr("marked_obj[\"secret\"]");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&t_idx).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&t_idx).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("pass123".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
@@ -5118,7 +5015,7 @@ mod tests {
         ctx.set_variable("marked_arr", marked_arr);
 
         let t_arr_idx = parse_expr("marked_arr[0]");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&t_arr_idx).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&t_arr_idx).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("item0".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
@@ -5132,13 +5029,13 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx).evaluate(&t_arr_legacy).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&t_arr_legacy).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("item0".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         // String templates & interpolation
         let tpl_expr = parse_expr("\"prefix-${sens_str}-suffix\"");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_expr).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_expr).unwrap();
         assert_eq!(
             val.data.as_ref(),
             &ValueData::String("prefix-vault-suffix".into())
@@ -5146,7 +5043,7 @@ mod tests {
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         let tpl_if = parse_expr("\"result: %{ if sens_bool }visible%{ endif }\"");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_if).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_if).unwrap();
         assert_eq!(
             val.data.as_ref(),
             &ValueData::String("result: visible".into())
@@ -5154,7 +5051,7 @@ mod tests {
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         let tpl_for = parse_expr("\"items: %{ for x in marked_arr }${x}%{ endfor }\"");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_for).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_for).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("items: item0".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
@@ -5171,18 +5068,18 @@ mod tests {
             }),
             empty_span(),
         );
-        let (val, _) = Evaluator::new(&ctx).evaluate(&for_tuple).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&for_tuple).unwrap();
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         // Functions: standard library marks propagation
         let func_upper = parse_expr("upper(sens_str)");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&func_upper).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&func_upper).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("VAULT".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
 
         // Functions: sensitive, issensitive, nonsensitive
         let is_sens = parse_expr("issensitive(sens_str)");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&is_sens).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&is_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(true));
         assert!(
             !val.has_mark(&ValueMark::Sensitive),
@@ -5190,12 +5087,12 @@ mod tests {
         );
 
         let is_not_sens = parse_expr("issensitive(\"plain\")");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&is_not_sens).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&is_not_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(false));
         assert!(!val.has_mark(&ValueMark::Sensitive));
 
         let non_sens = parse_expr("nonsensitive(sens_str)");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&non_sens).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&non_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("vault".into()));
         assert!(
             !val.has_mark(&ValueMark::Sensitive),
@@ -5203,7 +5100,7 @@ mod tests {
         );
 
         let make_sens = parse_expr("sensitive(\"raw\")");
-        let (val, _) = Evaluator::new(&ctx).evaluate(&make_sens).expect("eval");
+        let (val, _) = Evaluator::new(&ctx).evaluate(&make_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("raw".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
     }
@@ -5849,7 +5746,7 @@ mod tests {
         );
 
         let evaluator = Evaluator::new(&ctx);
-        let diags = evaluator.evaluate(&expr).expect_err("addition should fail");
+        let diags = evaluator.evaluate(&expr).err().unwrap();
 
         assert!(diags.has_errors());
         let diag = &diags.errors()[0];
@@ -5860,7 +5757,7 @@ mod tests {
             .eval_callouts
             .iter()
             .find(|c| c.expression_text == "var.count")
-            .expect("count callout found");
+            .unwrap();
         assert_eq!(count_callout.evaluated_value, "10");
 
         // Check that var.secret_token was recorded and masked
@@ -5868,7 +5765,7 @@ mod tests {
             .eval_callouts
             .iter()
             .find(|c| c.expression_text == "var.secret_token")
-            .expect("secret callout found");
+            .unwrap();
         assert_eq!(secret_callout.evaluated_value, "(sensitive value)");
     }
 
@@ -5907,7 +5804,8 @@ mod tests {
         let expr_var = Expression::Variable("user_cont".to_string(), empty_span());
         let err_var = Evaluator::new(&child_ctx)
             .evaluate(&expr_var)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         let diag_var = &err_var.errors()[0];
         assert_eq!(
             diag_var.detail.as_deref(),
@@ -5918,7 +5816,8 @@ mod tests {
         let expr_parent = Expression::Variable("var.instance_typ".to_string(), empty_span());
         let err_parent = Evaluator::new(&child_ctx)
             .evaluate(&expr_parent)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         let diag_parent = &err_parent.errors()[0];
         assert_eq!(
             diag_parent.detail.as_deref(),
@@ -5938,7 +5837,8 @@ mod tests {
         );
         let err_attr = Evaluator::new(&child_ctx)
             .evaluate(&expr_attr)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         let diag_attr = &err_attr.errors()[0];
         assert_eq!(diag_attr.detail.as_deref(), Some("Did you mean .hostname?"));
 
@@ -5955,7 +5855,8 @@ mod tests {
         );
         let err_idx = Evaluator::new(&child_ctx)
             .evaluate(&expr_idx)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         let diag_idx = &err_idx.errors()[0];
         assert_eq!(
             diag_idx.detail.as_deref(),
@@ -6092,7 +5993,7 @@ mod tests {
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_add, _) = Evaluator::new(&ctx).evaluate(&expr_add).expect("eval add");
+        let (res_add, _) = Evaluator::new(&ctx).evaluate(&expr_add).unwrap();
         assert_eq!(
             res_add.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(6, 8, 10, 12))
@@ -6104,7 +6005,7 @@ mod tests {
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_sub, _) = Evaluator::new(&ctx).evaluate(&expr_sub).expect("eval sub");
+        let (res_sub, _) = Evaluator::new(&ctx).evaluate(&expr_sub).unwrap();
         assert_eq!(
             res_sub.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(4, 4, 4, 4))
@@ -6116,7 +6017,7 @@ mod tests {
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_mul, _) = Evaluator::new(&ctx).evaluate(&expr_mul).expect("eval mul");
+        let (res_mul, _) = Evaluator::new(&ctx).evaluate(&expr_mul).unwrap();
         assert_eq!(
             res_mul.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(19, 22, 43, 50))
@@ -6128,7 +6029,7 @@ mod tests {
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_div, _) = Evaluator::new(&ctx).evaluate(&expr_div).expect("eval div");
+        let (res_div, _) = Evaluator::new(&ctx).evaluate(&expr_div).unwrap();
         assert_eq!(
             res_div.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(5, 3, 2, 2))
@@ -6140,7 +6041,7 @@ mod tests {
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_mod, _) = Evaluator::new(&ctx).evaluate(&expr_mod).expect("eval mod");
+        let (res_mod, _) = Evaluator::new(&ctx).evaluate(&expr_mod).unwrap();
         assert_eq!(
             res_mod.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(0, 0, 1, 0))
@@ -6152,7 +6053,7 @@ mod tests {
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_neg, _) = Evaluator::new(&ctx).evaluate(&expr_neg).expect("eval neg");
+        let (res_neg, _) = Evaluator::new(&ctx).evaluate(&expr_neg).unwrap();
         assert_eq!(
             res_neg.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(-1, -2, -3, -4))
@@ -6171,7 +6072,7 @@ mod tests {
             Box::new(Expression::Variable("m3".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_lt, _) = Evaluator::new(&ctx).evaluate(&expr_lt).expect("eval lt");
+        let (res_lt, _) = Evaluator::new(&ctx).evaluate(&expr_lt).unwrap();
         assert_eq!(*res_lt.data, ValueData::Bool(true));
 
         let expr_lte = Expression::BinaryOp(
@@ -6180,7 +6081,7 @@ mod tests {
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_lte, _) = Evaluator::new(&ctx).evaluate(&expr_lte).expect("eval lte");
+        let (res_lte, _) = Evaluator::new(&ctx).evaluate(&expr_lte).unwrap();
         assert_eq!(*res_lte.data, ValueData::Bool(true));
 
         let expr_greater = Expression::BinaryOp(
@@ -6189,9 +6090,7 @@ mod tests {
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_greater, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_greater)
-            .expect("eval gt");
+        let (res_greater, _) = Evaluator::new(&ctx).evaluate(&expr_greater).unwrap();
         assert_eq!(*res_greater.data, ValueData::Bool(true));
 
         let expr_greatereq = Expression::BinaryOp(
@@ -6200,9 +6099,7 @@ mod tests {
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_greatereq, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_greatereq)
-            .expect("eval gte");
+        let (res_greatereq, _) = Evaluator::new(&ctx).evaluate(&expr_greatereq).unwrap();
         assert_eq!(*res_greatereq.data, ValueData::Bool(true));
 
         let expr_eq = Expression::BinaryOp(
@@ -6211,7 +6108,7 @@ mod tests {
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_eq, _) = Evaluator::new(&ctx).evaluate(&expr_eq).expect("eval eq");
+        let (res_eq, _) = Evaluator::new(&ctx).evaluate(&expr_eq).unwrap();
         assert_eq!(*res_eq.data, ValueData::Bool(true));
 
         let expr_noteq = Expression::BinaryOp(
@@ -6220,9 +6117,7 @@ mod tests {
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_noteq, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_noteq)
-            .expect("eval neq");
+        let (res_noteq, _) = Evaluator::new(&ctx).evaluate(&expr_noteq).unwrap();
         assert_eq!(*res_noteq.data, ValueData::Bool(true));
 
         // 4. Attribute access: .a, .b, .c, .d
@@ -6233,9 +6128,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_a, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_attr_a)
-            .expect("eval attr a");
+        let (res_a, _) = Evaluator::new(&ctx).evaluate(&expr_attr_a).unwrap();
         assert_eq!(*res_a.data, ValueData::Number(1.into()));
 
         // 5. Indexing: [0], [1], [2], [3] and legacy index .0
@@ -6249,9 +6142,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_idx, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_idx_2)
-            .expect("eval idx 2");
+        let (res_idx, _) = Evaluator::new(&ctx).evaluate(&expr_idx_2).unwrap();
         assert_eq!(*res_idx.data, ValueData::Number(3.into()));
 
         let expr_legacy_idx = Expression::Traversal(
@@ -6261,9 +6152,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_legacy, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_legacy_idx)
-            .expect("eval legacy idx");
+        let (res_legacy, _) = Evaluator::new(&ctx).evaluate(&expr_legacy_idx).unwrap();
         assert_eq!(*res_legacy.data, ValueData::Number(4.into()));
 
         for (attr_name, expected_num) in [("b", 2), ("c", 3), ("d", 4)] {
@@ -6277,9 +6166,7 @@ mod tests {
                 }),
                 empty_span(),
             );
-            let (res, _) = Evaluator::new(&ctx)
-                .evaluate(&expr_attr)
-                .expect("eval attr");
+            let (res, _) = Evaluator::new(&ctx).evaluate(&expr_attr).unwrap();
             assert_eq!(*res.data, ValueData::Number(expected_num.into()));
         }
 
@@ -6294,7 +6181,7 @@ mod tests {
                 }),
                 empty_span(),
             );
-            let (res, _) = Evaluator::new(&ctx).evaluate(&expr_idx).expect("eval idx");
+            let (res, _) = Evaluator::new(&ctx).evaluate(&expr_idx).unwrap();
             assert_eq!(*res.data, ValueData::Number(expected_num.into()));
         }
 
@@ -6308,9 +6195,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_str_idx = Evaluator::new(&ctx)
-            .evaluate(&expr_str_idx)
-            .expect_err("should fail");
+        let err_str_idx = Evaluator::new(&ctx).evaluate(&expr_str_idx).err().unwrap();
         assert!(
             err_str_idx.errors()[0]
                 .error
@@ -6324,7 +6209,7 @@ mod tests {
             Box::new(Expression::Number(42.into(), empty_span())),
             empty_span(),
         );
-        let (res_m_eq_num, _) = Evaluator::new(&ctx).evaluate(&expr_m_eq_num).expect("eval");
+        let (res_m_eq_num, _) = Evaluator::new(&ctx).evaluate(&expr_m_eq_num).unwrap();
         assert_eq!(*res_m_eq_num.data, ValueData::Bool(false));
 
         let other_capsule = Value::capsule_with_ops(
@@ -6343,9 +6228,7 @@ mod tests {
             Box::new(Expression::Variable("other".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_other, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_m_eq_other)
-            .expect("eval");
+        let (res_other, _) = Evaluator::new(&ctx).evaluate(&expr_m_eq_other).unwrap();
         assert_eq!(*res_other.data, ValueData::Bool(false));
 
         let corrupt_matrix = Value::new(m1_val.ty().clone(), ValueData::Capsule(Arc::new(999_i32)));
@@ -6384,9 +6267,7 @@ mod tests {
             Box::new(Expression::Variable("m_zero".to_string(), empty_span())),
             empty_span(),
         );
-        let err_div = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_div)
-            .expect_err("should fail");
+        let err_div = Evaluator::new(&ctx).evaluate(&expr_bad_div).err().unwrap();
         assert!(
             err_div.errors()[0]
                 .error
@@ -6402,9 +6283,7 @@ mod tests {
             Box::new(Expression::Variable("m_div_d0".to_string(), empty_span())),
             empty_span(),
         );
-        let err_div_d0 = Evaluator::new(&ctx)
-            .evaluate(&expr_div_d0)
-            .expect_err("should fail");
+        let err_div_d0 = Evaluator::new(&ctx).evaluate(&expr_div_d0).err().unwrap();
         assert!(
             err_div_d0.errors()[0]
                 .error
@@ -6419,9 +6298,7 @@ mod tests {
             Box::new(Expression::Variable("m_zero".to_string(), empty_span())),
             empty_span(),
         );
-        let err_mod = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_mod)
-            .expect_err("should fail");
+        let err_mod = Evaluator::new(&ctx).evaluate(&expr_bad_mod).err().unwrap();
         assert!(
             err_mod.errors()[0]
                 .error
@@ -6440,9 +6317,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_attr = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_attr)
-            .expect_err("should fail");
+        let err_attr = Evaluator::new(&ctx).evaluate(&expr_bad_attr).err().unwrap();
         assert!(
             err_attr.errors()[0]
                 .error
@@ -6461,9 +6336,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_idx = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_idx)
-            .expect_err("should fail");
+        let err_idx = Evaluator::new(&ctx).evaluate(&expr_bad_idx).err().unwrap();
         assert!(
             err_idx.errors()[0]
                 .error
@@ -6486,9 +6359,7 @@ mod tests {
             Box::new(Expression::Variable("bare".to_string(), empty_span())),
             empty_span(),
         );
-        let err_bare_neg = Evaluator::new(&ctx)
-            .evaluate(&expr_bare_neg)
-            .expect_err("should fail");
+        let err_bare_neg = Evaluator::new(&ctx).evaluate(&expr_bare_neg).err().unwrap();
         assert!(
             err_bare_neg.errors()[0]
                 .error
@@ -6509,7 +6380,8 @@ mod tests {
         );
         let err_bare_attr = Evaluator::new(&ctx)
             .evaluate(&expr_bare_attr)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         assert!(
             err_bare_attr.errors()[0]
                 .error
@@ -6528,9 +6400,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_bare_idx = Evaluator::new(&ctx)
-            .evaluate(&expr_bare_idx)
-            .expect_err("should fail");
+        let err_bare_idx = Evaluator::new(&ctx).evaluate(&expr_bare_idx).err().unwrap();
         assert!(
             err_bare_idx.errors()[0]
                 .error
@@ -6548,7 +6418,8 @@ mod tests {
         );
         let err_bare_legacy = Evaluator::new(&ctx)
             .evaluate(&expr_bare_legacy)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         assert!(
             err_bare_legacy.errors()[0]
                 .error
@@ -6566,9 +6437,7 @@ mod tests {
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_unk_add, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_unk_add)
-            .expect("eval unk add");
+        let (res_unk_add, _) = Evaluator::new(&ctx).evaluate(&expr_unk_add).unwrap();
         assert!(res_unk_add.is_unknown());
         assert_eq!(res_unk_add.ty(), m1_val.ty());
 
@@ -6577,9 +6446,7 @@ mod tests {
             Box::new(Expression::Variable("unk_cap".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_unk_neg, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_unk_neg)
-            .expect("eval unk neg");
+        let (res_unk_neg, _) = Evaluator::new(&ctx).evaluate(&expr_unk_neg).unwrap();
         assert!(res_unk_neg.is_unknown());
         assert_eq!(res_unk_neg.ty(), m1_val.ty());
 
@@ -6592,46 +6459,44 @@ mod tests {
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_marked_add, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_marked_add)
-            .expect("eval marked add");
+        let (res_marked_add, _) = Evaluator::new(&ctx).evaluate(&expr_marked_add).unwrap();
         assert!(res_marked_add.has_mark(&crate::types::val::ValueMark::Sensitive));
 
         // 10. Direct closure error invocations (when downcast_ref fails on invalid payload)
         let invalid_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(12345_u32);
         let valid_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(Matrix2x2(1, 2, 3, 4));
 
-        let add_fn = ops.add.as_ref().expect("add hook missing");
+        let add_fn = ops.add.as_ref().unwrap();
         assert!(add_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(add_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
 
-        let sub_fn = ops.sub.as_ref().expect("sub hook missing");
+        let sub_fn = ops.sub.as_ref().unwrap();
         assert!(sub_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(sub_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
 
-        let mul_fn = ops.mul.as_ref().expect("mul hook missing");
+        let mul_fn = ops.mul.as_ref().unwrap();
         assert!(mul_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(mul_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
 
-        let div_fn = ops.div.as_ref().expect("div hook missing");
+        let div_fn = ops.div.as_ref().unwrap();
         assert!(div_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(div_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
 
-        let mod_fn = ops.modulo.as_ref().expect("modulo hook missing");
+        let mod_fn = ops.modulo.as_ref().unwrap();
         assert!(mod_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(mod_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
 
-        let neg_fn = ops.neg.as_ref().expect("neg hook missing");
+        let neg_fn = ops.neg.as_ref().unwrap();
         assert!(neg_fn(invalid_any.as_ref()).is_err());
 
-        let cmp_fn = ops.cmp.as_ref().expect("cmp hook missing");
+        let cmp_fn = ops.cmp.as_ref().unwrap();
         assert!(cmp_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(cmp_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
 
-        let attr_fn = ops.attr_get.as_ref().expect("attr_get hook missing");
+        let attr_fn = ops.attr_get.as_ref().unwrap();
         assert!(attr_fn(invalid_any.as_ref(), "a").is_err());
 
-        let idx_fn = ops.index_get.as_ref().expect("index_get hook missing");
+        let idx_fn = ops.index_get.as_ref().unwrap();
         assert!(
             idx_fn(
                 invalid_any.as_ref(),
@@ -6720,9 +6585,7 @@ mod tests {
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
             empty_span(),
         );
-        let err_add = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_add)
-            .expect_err("should fail");
+        let err_add = Evaluator::new(&ctx).evaluate(&expr_bad_add).err().unwrap();
         assert!(
             err_add.errors()[0]
                 .error
@@ -6737,9 +6600,7 @@ mod tests {
             Box::new(Expression::Variable("bad".to_string(), empty_span())),
             empty_span(),
         );
-        let err_cmp = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_cmp)
-            .expect_err("should fail");
+        let err_cmp = Evaluator::new(&ctx).evaluate(&expr_bad_cmp).err().unwrap();
         assert!(
             err_cmp.errors()[0]
                 .error
@@ -6755,7 +6616,8 @@ mod tests {
         );
         let err_cmp_l = Evaluator::new(&ctx)
             .evaluate(&expr_bad_cmp_left)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         assert!(
             err_cmp_l.errors()[0]
                 .error
@@ -6769,9 +6631,7 @@ mod tests {
             Box::new(Expression::Variable("bad".to_string(), empty_span())),
             empty_span(),
         );
-        let err_neg = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_neg)
-            .expect_err("should fail");
+        let err_neg = Evaluator::new(&ctx).evaluate(&expr_bad_neg).err().unwrap();
         assert!(
             err_neg.errors()[0]
                 .error
@@ -6789,7 +6649,8 @@ mod tests {
         );
         let err_legacy = Evaluator::new(&ctx)
             .evaluate(&expr_bad_legacy)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         assert!(
             err_legacy.errors()[0]
                 .error
@@ -6804,9 +6665,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_rhs_unk_add, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_rhs_unk_add)
-            .expect("eval");
+        let (res_rhs_unk_add, _) = Evaluator::new(&ctx).evaluate(&expr_rhs_unk_add).unwrap();
         assert!(res_rhs_unk_add.is_unknown());
         assert_eq!(res_rhs_unk_add.ty(), ok_val.ty());
 
@@ -6816,9 +6675,7 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_rhs_unk_sub, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_rhs_unk_sub)
-            .expect("eval");
+        let (res_rhs_unk_sub, _) = Evaluator::new(&ctx).evaluate(&expr_rhs_unk_sub).unwrap();
         assert!(res_rhs_unk_sub.is_unknown());
         assert_eq!(res_rhs_unk_sub.ty(), ok_val.ty());
 
@@ -6828,9 +6685,7 @@ mod tests {
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_left_unk_sub, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_left_unk_sub)
-            .expect("eval");
+        let (res_left_unk_sub, _) = Evaluator::new(&ctx).evaluate(&expr_left_unk_sub).unwrap();
         assert!(res_left_unk_sub.is_unknown());
         assert_eq!(res_left_unk_sub.ty(), ok_val.ty());
 
@@ -6841,9 +6696,7 @@ mod tests {
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_unk_num_add, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_unk_num_add)
-            .expect("eval");
+        let (res_unk_num_add, _) = Evaluator::new(&ctx).evaluate(&expr_unk_num_add).unwrap();
         assert!(res_unk_num_add.is_unknown());
         assert_eq!(res_unk_num_add.ty(), ok_val.ty());
 
@@ -6853,9 +6706,7 @@ mod tests {
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_unk_num_sub, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_unk_num_sub)
-            .expect("eval");
+        let (res_unk_num_sub, _) = Evaluator::new(&ctx).evaluate(&expr_unk_num_sub).unwrap();
         assert!(res_unk_num_sub.is_unknown());
         assert_eq!(res_unk_num_sub.ty(), ok_val.ty());
 
@@ -6866,7 +6717,7 @@ mod tests {
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_rhs_cap, _) = Evaluator::new(&ctx).evaluate(&expr_rhs_cap).expect("eval");
+        let (res_rhs_cap, _) = Evaluator::new(&ctx).evaluate(&expr_rhs_cap).unwrap();
         assert_eq!(
             res_rhs_cap.downcast_ref::<FailableCapsule>(),
             Some(&FailableCapsule(1))
@@ -6900,9 +6751,7 @@ mod tests {
             Box::new(Expression::Variable("other_cap".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_co, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_cap_other)
-            .expect("eval");
+        let (res_co, _) = Evaluator::new(&ctx).evaluate(&expr_cap_other).unwrap();
         assert_eq!(*res_co.data, ValueData::Bool(false));
 
         let corrupt_failable = Value::new(val1.ty().clone(), ValueData::Capsule(Arc::new(999_i32)));
@@ -6917,7 +6766,8 @@ mod tests {
         );
         let err_add_r = Evaluator::new(&ctx)
             .evaluate(&expr_add_right_bad)
-            .expect_err("should fail");
+            .err()
+            .unwrap();
         assert!(
             err_add_r.errors()[0]
                 .error
@@ -6932,7 +6782,7 @@ mod tests {
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_add_ok, _) = Evaluator::new(&ctx).evaluate(&expr_add_ok).expect("eval");
+        let (res_add_ok, _) = Evaluator::new(&ctx).evaluate(&expr_add_ok).unwrap();
         assert_eq!(
             res_add_ok.downcast_ref::<FailableCapsule>(),
             Some(&FailableCapsule(2))
@@ -6951,7 +6801,7 @@ mod tests {
                 Box::new(Expression::Variable("ok".to_string(), empty_span())),
                 empty_span(),
             );
-            let (res_cmp_ok, _) = Evaluator::new(&ctx).evaluate(&expr_cmp_ok).expect("eval");
+            let (res_cmp_ok, _) = Evaluator::new(&ctx).evaluate(&expr_cmp_ok).unwrap();
             assert_eq!(*res_cmp_ok.data, ValueData::Bool(expected));
         }
 
@@ -6961,7 +6811,7 @@ mod tests {
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_neg_ok, _) = Evaluator::new(&ctx).evaluate(&expr_neg_ok).expect("eval");
+        let (res_neg_ok, _) = Evaluator::new(&ctx).evaluate(&expr_neg_ok).unwrap();
         assert_eq!(
             res_neg_ok.downcast_ref::<FailableCapsule>(),
             Some(&FailableCapsule(-1))
@@ -6975,7 +6825,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_idx_ok, _) = Evaluator::new(&ctx).evaluate(&expr_idx_ok).expect("eval");
+        let (res_idx_ok, _) = Evaluator::new(&ctx).evaluate(&expr_idx_ok).unwrap();
         assert_eq!(*res_idx_ok.data, ValueData::Number(1.into()));
 
         let expr_bad_idx = Expression::Traversal(
@@ -6985,9 +6835,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let err_bad_idx = Evaluator::new(&ctx)
-            .evaluate(&expr_bad_idx)
-            .expect_err("should fail");
+        let err_bad_idx = Evaluator::new(&ctx).evaluate(&expr_bad_idx).err().unwrap();
         assert!(
             err_bad_idx.errors()[0]
                 .error
@@ -7021,9 +6869,7 @@ mod tests {
                 Box::new(Expression::Variable("full".to_string(), empty_span())),
                 empty_span(),
             );
-            let (res, _) = Evaluator::new(&ctx)
-                .evaluate(&expr_mixed)
-                .expect("eval mixed");
+            let (res, _) = Evaluator::new(&ctx).evaluate(&expr_mixed).unwrap();
             assert_eq!(res.downcast_ref::<i32>(), Some(&exp_val));
         }
 
@@ -7036,7 +6882,7 @@ mod tests {
         );
         let (res_cmp_left, _) = Evaluator::new(&ctx)
             .evaluate(&expr_cmp_left_non_cap)
-            .expect("eval");
+            .unwrap();
         assert_eq!(*res_cmp_left.data, ValueData::Bool(true));
 
         // Comparison with capsule on left and non-capsule on right
@@ -7048,7 +6894,7 @@ mod tests {
         );
         let (res_cmp_right, _) = Evaluator::new(&ctx)
             .evaluate(&expr_cmp_right_non_cap)
-            .expect("eval");
+            .unwrap();
         assert_eq!(*res_cmp_right.data, ValueData::Bool(true));
 
         // Arithmetic with capsule on left and non-capsule on right
@@ -7058,9 +6904,7 @@ mod tests {
             Box::new(Expression::Variable("num".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_arnc, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_arith_rnc)
-            .expect("eval");
+        let (res_arnc, _) = Evaluator::new(&ctx).evaluate(&expr_arith_rnc).unwrap();
         assert_eq!(res_arnc.downcast_ref::<i32>(), Some(&100));
 
         // 7. Value::cmp ordering check with ops.cmp
@@ -7087,7 +6931,7 @@ mod tests {
         );
         let (val_var, _) = Evaluator::new(&ctx)
             .evaluate(&Expression::Variable("var.x".to_string(), empty_span()))
-            .expect("eval var.x");
+            .unwrap();
         assert_eq!(
             val_var,
             Value::new(Type::String, ValueData::String("val1".to_string()))
@@ -7099,7 +6943,7 @@ mod tests {
         );
         let (val_loc, _) = Evaluator::new(&ctx)
             .evaluate(&Expression::Variable("local.y".to_string(), empty_span()))
-            .expect("eval local.y");
+            .unwrap();
         assert_eq!(
             val_loc,
             Value::new(Type::String, ValueData::String("val2".to_string()))
@@ -7115,7 +6959,8 @@ mod tests {
                 "var.configuraton_option".to_string(),
                 empty_span(),
             ))
-            .expect_err("should fail with typo");
+            .err()
+            .unwrap();
         assert!(
             diags_typo.errors()[0]
                 .detail
@@ -7142,7 +6987,8 @@ mod tests {
         );
         let diags_func = Evaluator::new(&ctx)
             .evaluate(&expr_typo_func)
-            .expect_err("should fail with func typo");
+            .err()
+            .unwrap();
         assert!(
             diags_func.errors()[0]
                 .detail
@@ -7159,9 +7005,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_valid_fn, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_valid_func)
-            .expect("eval valid target_function");
+        let (res_valid_fn, _) = Evaluator::new(&ctx).evaluate(&expr_valid_func).unwrap();
         assert_eq!(*res_valid_fn.data, ValueData::Number(1.into()));
 
         // 4. String addition where left can coerce to number ("123") but right cannot ("abc")
@@ -7171,9 +7015,7 @@ mod tests {
             Box::new(Expression::String("abc".to_string(), empty_span())),
             empty_span(),
         );
-        let (res_str_add, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_str_num_add)
-            .expect("eval str add");
+        let (res_str_add, _) = Evaluator::new(&ctx).evaluate(&expr_str_num_add).unwrap();
         assert_eq!(
             res_str_add,
             Value::new(Type::String, ValueData::String("123abc".to_string()))
@@ -7186,7 +7028,7 @@ mod tests {
             Box::new(Expression::Bool(true, empty_span())),
             empty_span(),
         );
-        let (res_or, _) = Evaluator::new(&ctx).evaluate(&expr_or).expect("eval or");
+        let (res_or, _) = Evaluator::new(&ctx).evaluate(&expr_or).unwrap();
         assert_eq!(*res_or.data, ValueData::Bool(true));
 
         // 6. Function with signature and variadic param where args.len() < expected_fixed
@@ -7231,9 +7073,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_fn_var, _) = Evaluator::new(&ctx_fn)
-            .evaluate(&expr_valid_var)
-            .expect("eval valid fn_var");
+        let (res_fn_var, _) = Evaluator::new(&ctx_fn).evaluate(&expr_valid_var).unwrap();
         assert_eq!(*res_fn_var.data, ValueData::String("ok".to_string()));
 
         // 7. Template with unknown interpolation
@@ -7249,9 +7089,7 @@ mod tests {
             ],
             empty_span(),
         );
-        let (res_tpl_unk, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_template_unk)
-            .expect("eval");
+        let (res_tpl_unk, _) = Evaluator::new(&ctx).evaluate(&expr_template_unk).unwrap();
         assert!(res_tpl_unk.is_unknown());
 
         // 8. Built-in special functions try, can, nonsensitive, issensitive
@@ -7286,7 +7124,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_can_unk, _) = Evaluator::new(&ctx).evaluate(&expr_can_unk).expect("eval");
+        let (res_can_unk, _) = Evaluator::new(&ctx).evaluate(&expr_can_unk).unwrap();
         assert!(res_can_unk.is_unknown());
 
         let expr_nonsens = Expression::FuncCall(
@@ -7297,7 +7135,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_nonsens, _) = Evaluator::new(&ctx).evaluate(&expr_nonsens).expect("eval");
+        let (res_nonsens, _) = Evaluator::new(&ctx).evaluate(&expr_nonsens).unwrap();
         assert_eq!(*res_nonsens.data, ValueData::String("secret".to_string()));
 
         let expr_issens = Expression::FuncCall(
@@ -7308,7 +7146,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_issens, _) = Evaluator::new(&ctx).evaluate(&expr_issens).expect("eval");
+        let (res_issens, _) = Evaluator::new(&ctx).evaluate(&expr_issens).unwrap();
         assert_eq!(*res_issens.data, ValueData::Bool(false));
 
         // 9. expand_final edge cases
@@ -7320,9 +7158,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_exp_empty, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_exp_empty)
-            .expect("eval");
+        let (res_exp_empty, _) = Evaluator::new(&ctx).evaluate(&expr_exp_empty).unwrap();
         assert!(res_exp_empty.is_unknown());
 
         let expr_exp_unk = Expression::FuncCall(
@@ -7333,7 +7169,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_exp_unk, _) = Evaluator::new(&ctx).evaluate(&expr_exp_unk).expect("eval");
+        let (res_exp_unk, _) = Evaluator::new(&ctx).evaluate(&expr_exp_unk).unwrap();
         assert!(res_exp_unk.is_unknown());
 
         // 10. Div and Mod by zero
@@ -7369,9 +7205,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_et, _) = Evaluator::new(&ctx)
-            .evaluate(&expr_empty_trav)
-            .expect("eval");
+        let (res_et, _) = Evaluator::new(&ctx).evaluate(&expr_empty_trav).unwrap();
         assert_eq!(*res_et.data, ValueData::Number(1.into()));
 
         // 13. Functions with allow_null and Dynamic parameters
@@ -7403,9 +7237,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_null, _) = Evaluator::new(&ctx_null)
-            .evaluate(&expr_call_null)
-            .expect("eval");
+        let (res_null, _) = Evaluator::new(&ctx_null).evaluate(&expr_call_null).unwrap();
         assert_eq!(*res_null.data, ValueData::String("ok".to_string()));
 
         let sig_dyn = FunctionSignature::with_static_return_type(
@@ -7436,9 +7268,7 @@ mod tests {
             empty_span(),
         );
         ctx_null.set_variable("dyn_arg", Value::unknown(Type::Dynamic));
-        let (res_dyn, _) = Evaluator::new(&ctx_null)
-            .evaluate(&expr_call_dyn)
-            .expect("eval");
+        let (res_dyn, _) = Evaluator::new(&ctx_null).evaluate(&expr_call_dyn).unwrap();
         assert_eq!(*res_dyn.data, ValueData::String("ok".to_string()));
 
         // 14. Dynamic return type calculation branches
@@ -7458,9 +7288,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_calc, _) = Evaluator::new(&ctx_null)
-            .evaluate(&expr_calc)
-            .expect("eval");
+        let (res_calc, _) = Evaluator::new(&ctx_null).evaluate(&expr_calc).unwrap();
         assert_eq!(*res_calc.data, ValueData::Number(10.into()));
 
         let sig_calc_err = FunctionSignature::with_static_return_type(vec![], Type::Dynamic)
@@ -7479,9 +7307,7 @@ mod tests {
             }),
             empty_span(),
         );
-        let (res_calc_err, _) = Evaluator::new(&ctx_null)
-            .evaluate(&expr_calc_err)
-            .expect("eval");
+        let (res_calc_err, _) = Evaluator::new(&ctx_null).evaluate(&expr_calc_err).unwrap();
         assert_eq!(*res_calc_err.data, ValueData::Number(10.into()));
 
         // 15. Non-string on right with string on left in Add

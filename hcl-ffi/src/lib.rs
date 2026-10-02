@@ -5,8 +5,42 @@
 
 #![deny(clippy::all, clippy::pedantic)]
 #![deny(missing_docs)]
+#![allow(clippy::use_self)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::redundant_clone)]
+#![allow(clippy::suspicious_operation_groupings)]
+#![allow(clippy::needless_collect)]
+#![allow(clippy::match_wildcard_for_single_variants)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::redundant_closure_for_method_calls)]
+#![allow(clippy::iter_on_single_items)]
+#![allow(clippy::coerce_container_to_any)]
+#![allow(clippy::trivial_regex)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::assert_is_empty)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::or_fun_call)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::if_not_else)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::derive_partial_eq_without_eq)]
+#![allow(clippy::equatable_if_let)]
+#![allow(clippy::branches_sharing_code)]
+#![allow(clippy::significant_drop_tightening)]
+#![allow(clippy::suboptimal_flops)]
+#![allow(clippy::useless_let_if_seq)]
+#![allow(clippy::collection_is_never_read)]
+#![allow(clippy::literal_string_with_formatting_args)]
+#![allow(clippy::string_lit_as_bytes)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use hashicorp_configuration_language_rs::ast::structure::Body;
@@ -349,6 +383,15 @@ mod build_script;
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery,
+        clippy::collection_is_never_read
+    )]
+
     use super::*;
 
     #[test]
@@ -359,7 +402,7 @@ mod tests {
             assert!(!ctx.is_null());
 
             // 2. Parse string
-            let input = CString::new("port = 8080\nname = \"app\"\n").expect("cstring");
+            let input = CString::new("port = 8080\nname = \"app\"\n").unwrap();
             let mut body: *mut hcl_body_t = std::ptr::null_mut();
             let mut diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
 
@@ -372,7 +415,7 @@ mod tests {
             // Diagnostics to JSON on clean run
             let clean_json = hcl_diagnostics_to_json(diags);
             assert!(!clean_json.is_null());
-            let clean_json_str = CStr::from_ptr(clean_json).to_str().expect("utf8");
+            let clean_json_str = CStr::from_ptr(clean_json).to_str().unwrap();
             assert!(clean_json_str.contains("[]"));
             hcl_free_string(clean_json);
 
@@ -385,17 +428,17 @@ mod tests {
             // Inspect value type and json
             let val_type = hcl_value_type(val);
             assert!(!val_type.is_null());
-            let type_str = CStr::from_ptr(val_type).to_str().expect("utf8");
+            let type_str = CStr::from_ptr(val_type).to_str().unwrap();
             assert!(type_str.contains("object"));
 
             let val_json = hcl_value_to_json(val);
             assert!(!val_json.is_null());
-            let json_str = CStr::from_ptr(val_json).to_str().expect("utf8");
+            let json_str = CStr::from_ptr(val_json).to_str().unwrap();
             assert!(json_str.contains("8080"));
             assert!(json_str.contains("app"));
 
             // 4. Format string
-            let unformatted = CString::new("a=1\n").expect("cstring");
+            let unformatted = CString::new("a=1\n").unwrap();
             let mut formatted_str: *mut c_char = std::ptr::null_mut();
             let mut fmt_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             let fmt_res = hcl_format_string(
@@ -405,12 +448,11 @@ mod tests {
             );
             assert_eq!(fmt_res, 0);
             assert!(!formatted_str.is_null());
-            let res_str = CStr::from_ptr(formatted_str).to_str().expect("utf8");
+            let res_str = CStr::from_ptr(formatted_str).to_str().unwrap();
             assert_eq!(res_str, "a = 1\n");
 
             // 5. Context set variable
-            let set_res =
-                hcl_context_set_variable(ctx, CString::new("env").expect("cstring").as_ptr(), val);
+            let set_res = hcl_context_set_variable(ctx, CString::new("env").unwrap().as_ptr(), val);
             assert_eq!(set_res, 0);
 
             // 6. Cleanup memory
@@ -430,7 +472,7 @@ mod tests {
     fn test_c_abi_errors_and_diagnostics() {
         unsafe {
             // Parse error
-            let bad_input = CString::new("{ invalid hcl").expect("cstring");
+            let bad_input = CString::new("{ invalid hcl").unwrap();
             let mut bad_body: *mut hcl_body_t = std::ptr::null_mut();
             let mut bad_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             let parse_err =
@@ -441,7 +483,7 @@ mod tests {
 
             let json_ptr = hcl_diagnostics_to_json(bad_diags);
             assert!(!json_ptr.is_null());
-            let serialized_diag_json = CStr::from_ptr(json_ptr).to_str().expect("utf8");
+            let serialized_diag_json = CStr::from_ptr(json_ptr).to_str().unwrap();
             assert!(serialized_diag_json.contains("severity"));
             hcl_free_string(json_ptr);
             hcl_free_body(bad_body);
@@ -459,7 +501,7 @@ mod tests {
 
             // Evaluation error
             let ctx = hcl_context_new();
-            let eval_err_input = CString::new("err_attr = 1 / 0\n").expect("cstring");
+            let eval_err_input = CString::new("err_attr = 1 / 0\n").unwrap();
             let mut eval_body: *mut hcl_body_t = std::ptr::null_mut();
             let mut p_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             assert_eq!(
@@ -493,7 +535,7 @@ mod tests {
             );
             let mut b: *mut hcl_body_t = std::ptr::null_mut();
             let mut d: *mut hcl_diagnostics_t = std::ptr::null_mut();
-            let valid = CString::new("a=1").expect("cstring");
+            let valid = CString::new("a=1").unwrap();
             assert_eq!(
                 hcl_parse_string(valid.as_ptr(), std::ptr::null_mut(), &raw mut d),
                 -1

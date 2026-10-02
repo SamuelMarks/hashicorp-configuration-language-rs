@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 use crate::ast::expr::Expression;
 use crate::parse::parser::Parser;
 
@@ -1495,7 +1502,7 @@ fn test_heredoc_indentation_stripping_and_directives() {
     );
     let (val, _) = Evaluator::new(&ctx)
         .evaluate(&body_tpl.attributes["msg"].expr)
-        .expect("eval");
+        .unwrap();
     assert_eq!(
         val.data.as_ref(),
         &ValueData::String("hello,Aliceworld!".into())
@@ -2243,7 +2250,7 @@ service "web" {
 
     // 4. Propagate AST-attached comments back into CST during serialization and structural re-encoding
     let mut cst_body = crate::cst::builder::CstBody::new();
-    crate::encode::EncodeBody::encode_into_body(&body, &mut cst_body).expect("encode succeeds");
+    crate::encode::EncodeBody::encode_into_body(&body, &mut cst_body).unwrap();
     let mut rendered = String::new();
     cst_body.render(&mut rendered);
 

@@ -530,15 +530,20 @@ fn walk_dir_recursive(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::error::HclError;
     use std::collections::BTreeMap;
 
     fn eval_fs_func(name: &str, args: &[Value]) -> Result<Value, String> {
-        let func = functions()
-            .into_iter()
-            .find(|f| f.name == name)
-            .expect("found");
+        let func = functions().into_iter().find(|f| f.name == name).unwrap();
         (func.func)(args)
     }
 
@@ -555,20 +560,20 @@ mod tests {
         let _ = std::fs::create_dir_all(&temp_dir);
 
         let file_path = temp_dir.join("test_file.txt");
-        std::fs::write(&file_path, "Hello Filesystem!").expect("write test file");
-        let path_str = file_path.to_str().expect("valid path");
+        std::fs::write(&file_path, "Hello Filesystem!").unwrap();
+        let path_str = file_path.to_str().unwrap();
 
         let p_val = Value::new(Type::String, ValueData::String(path_str.to_string()));
 
         // file
-        let content = eval_fs_func("file", std::slice::from_ref(&p_val)).expect("read file");
+        let content = eval_fs_func("file", std::slice::from_ref(&p_val)).unwrap();
         assert_eq!(
             content.data.as_ref(),
             &ValueData::String("Hello Filesystem!".into())
         );
 
         // fileexists
-        let exists = eval_fs_func("fileexists", std::slice::from_ref(&p_val)).expect("exists");
+        let exists = eval_fs_func("fileexists", std::slice::from_ref(&p_val)).unwrap();
         assert_eq!(exists.data.as_ref(), &ValueData::Bool(true));
         let not_exists = eval_fs_func(
             "fileexists",
@@ -577,18 +582,18 @@ mod tests {
                 ValueData::String("nonexistent.txt".into()),
             )],
         )
-        .expect("not exists");
+        .unwrap();
         assert_eq!(not_exists.data.as_ref(), &ValueData::Bool(false));
 
         // filebase64
-        let b64 = eval_fs_func("filebase64", std::slice::from_ref(&p_val)).expect("b64");
+        let b64 = eval_fs_func("filebase64", std::slice::from_ref(&p_val)).unwrap();
         assert_eq!(
             b64.data.as_ref(),
             &ValueData::String(BASE64_STANDARD.encode("Hello Filesystem!"))
         );
 
         // filebase64sha256
-        let b64sha = eval_fs_func("filebase64sha256", std::slice::from_ref(&p_val)).expect("sha");
+        let b64sha = eval_fs_func("filebase64sha256", std::slice::from_ref(&p_val)).unwrap();
         let mut hasher = Sha256::new();
         hasher.update(b"Hello Filesystem!");
         let expected_hash = BASE64_STANDARD.encode(hasher.finalize());
@@ -660,21 +665,21 @@ mod tests {
                 vars_val,
             ],
         )
-        .expect("eval templatefile");
+        .unwrap();
         assert_eq!(
             tpl_res.data.as_ref(),
             &ValueData::String("Hello, Rust! Port: 8080".into())
         );
 
         // filemd5
-        let fmd5 = eval_fs_func("filemd5", std::slice::from_ref(&p_val)).expect("filemd5");
+        let fmd5 = eval_fs_func("filemd5", std::slice::from_ref(&p_val)).unwrap();
         assert_eq!(
             fmd5.data.as_ref(),
             &ValueData::String(format!("{:x}", md5::compute(b"Hello Filesystem!")))
         );
 
         // filesha1
-        let fsha1 = eval_fs_func("filesha1", std::slice::from_ref(&p_val)).expect("filesha1");
+        let fsha1 = eval_fs_func("filesha1", std::slice::from_ref(&p_val)).unwrap();
         let mut hasher1 = Sha1::new();
         hasher1.update(b"Hello Filesystem!");
         assert_eq!(
@@ -683,7 +688,7 @@ mod tests {
         );
 
         // filesha256
-        let fsha256 = eval_fs_func("filesha256", std::slice::from_ref(&p_val)).expect("filesha256");
+        let fsha256 = eval_fs_func("filesha256", std::slice::from_ref(&p_val)).unwrap();
         let mut hasher256 = Sha256::new();
         hasher256.update(b"Hello Filesystem!");
         assert_eq!(
@@ -692,7 +697,7 @@ mod tests {
         );
 
         // filesha512
-        let fsha512 = eval_fs_func("filesha512", std::slice::from_ref(&p_val)).expect("filesha512");
+        let fsha512 = eval_fs_func("filesha512", std::slice::from_ref(&p_val)).unwrap();
         let mut hasher512 = Sha512::new();
         hasher512.update(b"Hello Filesystem!");
         assert_eq!(
@@ -704,22 +709,22 @@ mod tests {
         let unk_str = Value::unknown(Type::String);
         assert!(
             eval_fs_func("filemd5", std::slice::from_ref(&unk_str))
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_fs_func("filesha1", std::slice::from_ref(&unk_str))
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_fs_func("filesha256", std::slice::from_ref(&unk_str))
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_fs_func("filesha512", std::slice::from_ref(&unk_str))
-                .expect("ok")
+                .unwrap()
                 .is_unknown()
         );
 

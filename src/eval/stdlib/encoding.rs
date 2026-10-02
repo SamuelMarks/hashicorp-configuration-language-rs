@@ -544,16 +544,21 @@ fn csvdecode_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     use crate::eval::func::Function;
     use std::str::FromStr;
 
     fn get_func(name: &str) -> Function {
-        functions()
-            .into_iter()
-            .find(|f| f.name == name)
-            .expect("expected value")
+        functions().into_iter().find(|f| f.name == name).unwrap()
     }
 
     fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
@@ -576,9 +581,7 @@ mod tests {
     fn num_val(s: &str) -> Value {
         Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str(s).expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
         )
     }
 
@@ -597,7 +600,7 @@ mod tests {
     fn test_base64decode() {
         assert_eq!(
             eval_func("base64decode", &[str_val("aGVsbG8=")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hello".to_string())
@@ -605,7 +608,7 @@ mod tests {
         assert!(eval_func("base64decode", &[]).is_err());
         assert!(
             eval_func("base64decode", &[unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("base64decode", &[str_val("invalid!")]).is_err()); // decode error
@@ -636,86 +639,78 @@ mod tests {
 
         assert!(
             (b64dec.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (b64enc.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (txtdec.func)(&[unk.clone(), s.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (txtdec.func)(&[s.clone(), unk.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (txtenc.func)(&[unk.clone(), s.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (txtenc.func)(&[s.clone(), unk.clone()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (gunz.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
-        assert!(
-            (gz.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!((gz.func)(std::slice::from_ref(&unk)).unwrap().is_unknown());
         assert!(
             (urlbase64dec.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (urlbase64enc.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (jenc.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (jdec.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (yenc.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             (ydec.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
-        assert!(
-            (csv.func)(std::slice::from_ref(&unk))
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!((csv.func)(std::slice::from_ref(&unk)).unwrap().is_unknown());
     }
 
     #[test]
     fn test_base64encode() {
         assert_eq!(
             eval_func("base64encode", &[str_val("hello")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("aGVsbG8=".to_string())
@@ -723,7 +718,7 @@ mod tests {
         assert!(eval_func("base64encode", &[]).is_err());
         assert!(
             eval_func("base64encode", &[unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -733,26 +728,25 @@ mod tests {
         let non_str = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         assert_eq!(
             eval_func("textdecodebase64", &[str_val("aGVsbG8="), str_val("UTF-8")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("hello".to_string())
         );
         // Multi-charset: UTF-16LE for "hello" -> "aABlAGwAbABvAA==" or similar
-        let utf16le_enc = eval_func("textencodebase64", &[str_val("hello"), str_val("UTF-16LE")])
-            .expect("expected value");
-        let utf16le_dec = eval_func("textdecodebase64", &[utf16le_enc, str_val("UTF-16LE")])
-            .expect("expected value");
+        let utf16le_enc =
+            eval_func("textencodebase64", &[str_val("hello"), str_val("UTF-16LE")]).unwrap();
+        let utf16le_dec =
+            eval_func("textdecodebase64", &[utf16le_enc, str_val("UTF-16LE")]).unwrap();
         assert_eq!(
             utf16le_dec.data.as_ref(),
             &ValueData::String("hello".to_string())
         );
 
         // Multi-charset: UTF-16BE
-        let be_encoded = eval_func("textencodebase64", &[str_val("hello"), str_val("UTF-16BE")])
-            .expect("expected value");
-        let be_decoded = eval_func("textdecodebase64", &[be_encoded, str_val("UTF-16BE")])
-            .expect("expected value");
+        let be_encoded =
+            eval_func("textencodebase64", &[str_val("hello"), str_val("UTF-16BE")]).unwrap();
+        let be_decoded = eval_func("textdecodebase64", &[be_encoded, str_val("UTF-16BE")]).unwrap();
         assert_eq!(
             be_decoded.data.as_ref(),
             &ValueData::String("hello".to_string())
@@ -763,9 +757,9 @@ mod tests {
             "textencodebase64",
             &[str_val("Café"), str_val("windows-1252")],
         )
-        .expect("expected value");
-        let w1252_dec = eval_func("textdecodebase64", &[w1252_enc, str_val("windows-1252")])
-            .expect("expected value");
+        .unwrap();
+        let w1252_dec =
+            eval_func("textdecodebase64", &[w1252_enc, str_val("windows-1252")]).unwrap();
         assert_eq!(
             w1252_dec.data.as_ref(),
             &ValueData::String("Café".to_string())
@@ -774,12 +768,12 @@ mod tests {
         assert!(eval_func("textdecodebase64", &[]).is_err());
         assert!(
             eval_func("textdecodebase64", &[unk_val(), str_val("utf-8")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("textdecodebase64", &[str_val("aGVsbG8="), unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("textdecodebase64", &[str_val("aGVsbG8="), non_str.clone()]).is_err());
@@ -803,7 +797,7 @@ mod tests {
         let non_str = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         assert_eq!(
             eval_func("textencodebase64", &[str_val("hello"), str_val("UTF-8")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("aGVsbG8=".to_string())
@@ -813,9 +807,8 @@ mod tests {
             "textencodebase64",
             &[str_val("こんにちは"), str_val("Shift_JIS")],
         )
-        .expect("shift_jis encode ok");
-        let sjis_dec = eval_func("textdecodebase64", &[sjis_enc, str_val("Shift_JIS")])
-            .expect("shift_jis decode ok");
+        .unwrap();
+        let sjis_dec = eval_func("textdecodebase64", &[sjis_enc, str_val("Shift_JIS")]).unwrap();
         assert_eq!(
             sjis_dec.data.as_ref(),
             &ValueData::String("こんにちは".to_string())
@@ -833,12 +826,12 @@ mod tests {
         assert!(eval_func("textencodebase64", &[]).is_err());
         assert!(
             eval_func("textencodebase64", &[unk_val(), str_val("utf-8")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("textencodebase64", &[str_val("hello"), unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("textencodebase64", &[str_val("hello"), non_str.clone()]).is_err());
@@ -854,30 +847,26 @@ mod tests {
 
     #[test]
     fn test_base64gzip() {
-        let res = eval_func("base64gzip", &[str_val("hello")]).expect("expected value");
+        let res = eval_func("base64gzip", &[str_val("hello")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::String(String::new()))
         );
         assert!(eval_func("base64gzip", &[]).is_err());
-        assert!(
-            eval_func("base64gzip", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("base64gzip", &[unk_val()]).unwrap().is_unknown());
     }
 
     #[test]
     fn test_base64gunzip() {
         let original = "Hello, HCL v2 gzip compression!";
-        let gzipped = eval_func("base64gzip", &[str_val(original)]).expect("gzip ok");
-        let gunzipped = eval_func("base64gunzip", &[gzipped]).expect("gunzip ok");
+        let gzipped = eval_func("base64gzip", &[str_val(original)]).unwrap();
+        let gunzipped = eval_func("base64gunzip", &[gzipped]).unwrap();
         assert_eq!(*gunzipped.data, ValueData::String(original.to_string()));
 
         assert!(eval_func("base64gunzip", &[]).is_err());
         assert!(
             eval_func("base64gunzip", &[unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("base64gunzip", &[str_val("invalid base64!")]).is_err());
@@ -885,8 +874,8 @@ mod tests {
 
         // Gzip containing invalid UTF-8 bytes to cover UTF-8 decode error
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&[0xFF, 0xFE, 0xFD]).expect("write ok");
-        let invalid_utf8_gz = encoder.finish().expect("finish ok");
+        encoder.write_all(&[0xFF, 0xFE, 0xFD]).unwrap();
+        let invalid_utf8_gz = encoder.finish().unwrap();
         let b64 = base64::engine::general_purpose::STANDARD.encode(&invalid_utf8_gz);
         assert!(eval_func("base64gunzip", &[str_val(&b64)]).is_err());
     }
@@ -895,7 +884,7 @@ mod tests {
     fn test_urlbase64decode() {
         assert_eq!(
             eval_func("urlbase64decode", &[str_val("aGVsbG8")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(), // no padding
             &ValueData::String("hello".to_string())
@@ -903,7 +892,7 @@ mod tests {
         assert!(eval_func("urlbase64decode", &[]).is_err());
         assert!(
             eval_func("urlbase64decode", &[unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("urlbase64decode", &[str_val("invalid!")]).is_err()); // decode error
@@ -914,7 +903,7 @@ mod tests {
     fn test_urlbase64encode() {
         assert_eq!(
             eval_func("urlbase64encode", &[str_val("hello")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             &ValueData::String("aGVsbG8".to_string())
@@ -922,7 +911,7 @@ mod tests {
         assert!(eval_func("urlbase64encode", &[]).is_err());
         assert!(
             eval_func("urlbase64encode", &[unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -930,18 +919,14 @@ mod tests {
     #[test]
     fn test_csvdecode() {
         let csv = "a,b\n1,2";
-        let res = eval_func("csvdecode", &[str_val(csv)]).expect("expected value");
+        let res = eval_func("csvdecode", &[str_val(csv)]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
 
         assert!(eval_func("csvdecode", &[]).is_err());
-        assert!(
-            eval_func("csvdecode", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("csvdecode", &[unk_val()]).unwrap().is_unknown());
 
         // invalid csv headers / records
         assert!(eval_func("csvdecode", &[str_val("a,b\n\"")]).is_err());
@@ -976,14 +961,12 @@ mod tests {
 
         let complex = Value::new(Type::Map(Box::new(Type::Dynamic)), ValueData::Object(map));
 
-        let json_str =
-            eval_func("jsonencode", std::slice::from_ref(&complex)).expect("expected value");
-        let yaml_str =
-            eval_func("yamlencode", std::slice::from_ref(&complex)).expect("expected value");
+        let json_str = eval_func("jsonencode", std::slice::from_ref(&complex)).unwrap();
+        let yaml_str = eval_func("yamlencode", std::slice::from_ref(&complex)).unwrap();
 
         // decode them back to hit json_to_val / yaml_to_val
-        let json_decoded = eval_func("jsondecode", &[json_str]).expect("expected value");
-        let yaml_decoded = eval_func("yamldecode", &[yaml_str]).expect("expected value");
+        let json_decoded = eval_func("jsondecode", &[json_str]).unwrap();
+        let yaml_decoded = eval_func("yamldecode", &[yaml_str]).unwrap();
 
         assert_eq!(
             std::mem::discriminant(&*json_decoded.data),
@@ -996,8 +979,8 @@ mod tests {
 
         // Test decode invalid number handling (which falls back to 0) or extremely large floats
         // "1e10000" might parse to infinity in json, which isn't valid, but let's test empty sequences
-        let json_arr = eval_func("jsondecode", &[str_val("[null, true, \"s\", 42, [], {}]")])
-            .expect("expected value");
+        let json_arr =
+            eval_func("jsondecode", &[str_val("[null, true, \"s\", 42, [], {}]")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*json_arr.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
@@ -1007,15 +990,14 @@ mod tests {
             "yamldecode",
             &[str_val("- null\n- true\n- s\n- 42\n- []\n- {}")],
         )
-        .expect("expected value");
+        .unwrap();
         assert_eq!(
             std::mem::discriminant(&*yaml_arr.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
 
         // YAML tagged value and non-string key
-        let res =
-            eval_func("yamldecode", &[str_val("a: !custom tagged\n1: a")]).expect("expected value");
+        let res = eval_func("yamldecode", &[str_val("a: !custom tagged\n1: a")]).unwrap();
         // custom tag should hit the Tagged branch
         assert_eq!(
             std::mem::discriminant(&*res.data),
@@ -1036,7 +1018,7 @@ mod tests {
         );
         assert!(eval_func("jsonencode", &[obj]).is_ok());
         assert!(eval_func("jsonencode", &[]).is_err());
-        let res = eval_func("jsonencode", &[unk_val()]).expect("expected value");
+        let res = eval_func("jsonencode", &[unk_val()]).unwrap();
         assert!(res.is_unknown());
     }
 
@@ -1044,11 +1026,7 @@ mod tests {
     fn test_jsondecode() {
         assert!(eval_func("jsondecode", &[str_val("{}")]).is_ok());
         assert!(eval_func("jsondecode", &[]).is_err());
-        assert!(
-            eval_func("jsondecode", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("jsondecode", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("jsondecode", &[str_val("{")]).is_err()); // invalid json
     }
 
@@ -1060,7 +1038,7 @@ mod tests {
         );
         assert!(eval_func("yamlencode", &[obj]).is_ok());
         assert!(eval_func("yamlencode", &[]).is_err());
-        let res = eval_func("yamlencode", &[unk_val()]).expect("expected value");
+        let res = eval_func("yamlencode", &[unk_val()]).unwrap();
         assert!(res.is_unknown());
     }
 
@@ -1068,11 +1046,7 @@ mod tests {
     fn test_yamldecode() {
         assert!(eval_func("yamldecode", &[str_val("a: 1")]).is_ok());
         assert!(eval_func("yamldecode", &[]).is_err());
-        assert!(
-            eval_func("yamldecode", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("yamldecode", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("yamldecode", &[str_val("{invalid")]).is_err()); // invalid yaml
 
         // yamldecode empty string -> may return Null or error

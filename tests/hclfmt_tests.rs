@@ -1,4 +1,11 @@
 //! Integration tests for the `hclfmt` command-line binary.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 
 use std::fs;
 use std::io::Write;
@@ -7,7 +14,7 @@ use std::process::{Command, Stdio};
 fn temp_test_dir(prefix: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("hclfmt_test_{prefix}_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).expect("failed to create temp dir");
+    fs::create_dir_all(&dir).unwrap();
     dir
 }
 

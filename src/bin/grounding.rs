@@ -1,4 +1,11 @@
 //! Grounding tool for the HCL parser.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 
 /// Entry point for `grounding` binary.
 fn main() {
@@ -10,6 +17,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]

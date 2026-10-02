@@ -274,262 +274,183 @@ impl Iterator for Lexer<'_> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unnecessary_wraps)]
     use super::*;
 
+    fn next_tok(lex: &mut Lexer<'_>) -> Result<Token, crate::error::HclError> {
+        lex.next()
+            .ok_or_else(|| crate::error::HclError::Lex("EOF".to_string()))?
+            .map_err(|e| crate::error::HclError::Lex(e.text.clone()))
+    }
+
     #[test]
-    fn test_lexer() {
+    fn test_lexer() -> Result<(), crate::error::HclError> {
         let input = "var = 123\n# comment\nfoo";
         let mut lex = Lexer::new(input);
 
-        let t1 = lex.next().expect("expected value").expect("expected value");
+        let t1 = next_tok(&mut lex)?;
         assert_eq!(t1.kind, TokenKind::Ident);
         assert!(t1.text.contains("var"));
         assert_eq!(t1.span.start_line, 1);
         assert_eq!(t1.span.start_col, 1);
 
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Whitespace
-        );
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Whitespace);
 
-        let t2 = lex.next().expect("expected value").expect("expected value");
+        let t2 = next_tok(&mut lex)?;
         assert_eq!(t2.kind, TokenKind::Assign);
         assert_eq!(t2.span.start_line, 1);
         assert_eq!(t2.span.start_col, 5);
 
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Whitespace
-        );
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Whitespace);
 
-        let t3 = lex.next().expect("expected value").expect("expected value");
+        let t3 = next_tok(&mut lex)?;
         assert_eq!(t3.kind, TokenKind::Number);
         assert!(t3.text.contains("123"));
 
-        let tnl1 = lex.next().expect("expected value").expect("expected value");
+        let tnl1 = next_tok(&mut lex)?;
         assert_eq!(tnl1.kind, TokenKind::Newline);
 
-        let tc = lex.next().expect("expected value").expect("expected value");
+        let tc = next_tok(&mut lex)?;
         assert_eq!(tc.kind, TokenKind::InlineComment);
 
-        let tnl2 = lex.next().expect("expected value").expect("expected value");
+        let tnl2 = next_tok(&mut lex)?;
         assert_eq!(tnl2.kind, TokenKind::Newline); // From after the comment
 
-        let t4 = lex.next().expect("expected value").expect("expected value");
+        let t4 = next_tok(&mut lex)?;
         assert_eq!(t4.kind, TokenKind::Ident);
         assert!(t4.text.contains("foo"));
         assert_eq!(t4.span.start_line, 3);
         assert_eq!(t4.span.start_col, 1);
 
         assert!(lex.next().is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_lexer_line_col_exact() {
+    fn test_lexer_line_col_exact() -> Result<(), crate::error::HclError> {
         let input = "a\nb";
         let mut lex = Lexer::new(input);
 
-        let t1 = lex.next().expect("expected value").expect("expected value");
+        let t1 = next_tok(&mut lex)?;
         assert_eq!(t1.span.start_line, 1);
         assert_eq!(t1.span.start_col, 1);
         assert_eq!(t1.span.end_line, 1);
         assert_eq!(t1.span.end_col, 2);
 
-        let tnl = lex.next().expect("expected value").expect("expected value");
+        let tnl = next_tok(&mut lex)?;
         assert_eq!(tnl.kind, TokenKind::Newline);
 
-        let t2 = lex.next().expect("expected value").expect("expected value");
+        let t2 = next_tok(&mut lex)?;
         assert_eq!(t2.span.start_line, 2);
         assert_eq!(t2.span.start_col, 1);
         assert_eq!(t2.span.end_line, 2);
         assert_eq!(t2.span.end_col, 2);
+        Ok(())
     }
 
     #[test]
-    fn test_lexer_error() {
+    fn test_lexer_error() -> Result<(), crate::error::HclError> {
         // an invalid token that doesn't match any rule (e.g. backtick which is not in HCL)
         let input = "`";
         let mut lex = Lexer::new(input);
-        let res = lex.next().expect("some token");
+        let res = lex.next().unwrap_or(Err(LexError {
+            span: crate::span::Span::default(),
+            text: String::new(),
+        }));
         assert!(res.is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_heredoc_standard() {
+    fn test_heredoc_standard() -> Result<(), crate::error::HclError> {
         // We added a newline before the heredoc marker to make sure it matches properly on standard
         // trailing whitespace behavior.
         let input = "a = <<EOF\nhello\nEOF\nb = 2";
         let mut lex = Lexer::new(input);
 
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Ident
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Whitespace
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Assign
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Whitespace
-        );
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Ident);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Whitespace);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Assign);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Whitespace);
 
-        let hd = lex.next().expect("expected value").expect("expected value");
+        let hd = next_tok(&mut lex)?;
         assert_eq!(hd.kind, TokenKind::Heredoc);
         assert!(hd.text.contains("<<EOF\nhello\nEOF"));
 
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Newline
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Ident
-        );
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Newline);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Ident);
+        Ok(())
     }
 
     #[test]
-    fn test_heredoc_indented() {
+    fn test_heredoc_indented() -> Result<(), crate::error::HclError> {
         let input = "<<-MARKER\n  indented\n  MARKER\n";
         let mut lex = Lexer::new(input);
 
-        let hd = lex.next().expect("expected value").expect("expected value");
+        let hd = next_tok(&mut lex)?;
         assert_eq!(hd.kind, TokenKind::Heredoc);
         assert!(hd.text.contains("<<-MARKER\n  indented\n  MARKER"));
+        Ok(())
     }
 
     #[test]
-    fn test_heredoc_invalid_marker() {
+    fn test_heredoc_invalid_marker() -> Result<(), crate::error::HclError> {
         // If it starts with << but has no marker or doesn't end, it falls back to normal lexing
         // which will emit `<` and `<`
         let input = "<<\n";
         let mut lex = Lexer::new(input);
 
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Lt
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Lt
-        );
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Lt);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Lt);
+        Ok(())
     }
 
     #[test]
-    fn test_heredoc_unclosed() {
+    fn test_heredoc_unclosed() -> Result<(), crate::error::HclError> {
         let input = "<<EOF\nnever closes";
         let mut lex = Lexer::new(input);
 
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Lt
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Lt
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Ident
-        ); // EOF
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Lt);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Lt);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Ident); // EOF
+        Ok(())
     }
 
     #[test]
-    fn test_heredoc_no_newline() {
+    fn test_heredoc_no_newline() -> Result<(), crate::error::HclError> {
         // A heredoc token without a newline is not a valid heredoc, falls back to normal lexing
         let input = "<<EOF";
         let mut lex = Lexer::new(input);
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Lt
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Lt
-        );
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Ident
-        );
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Lt);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Lt);
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Ident);
+        Ok(())
     }
 
     #[test]
-    fn test_not_heredoc_but_starts_with_lt() {
+    fn test_not_heredoc_but_starts_with_lt() -> Result<(), crate::error::HclError> {
         let input = "<";
         let mut lex = Lexer::new(input);
-        assert_eq!(
-            lex.next()
-                .expect("expected value")
-                .expect("expected value")
-                .kind,
-            TokenKind::Lt
-        );
+        assert_eq!(next_tok(&mut lex)?.kind, TokenKind::Lt);
+        Ok(())
     }
 
     #[test]
-    fn test_heredoc_parser_bails_if_not_starts_with_lt_lt() {
+    fn test_heredoc_parser_bails_if_not_starts_with_lt_lt() -> Result<(), crate::error::HclError> {
         let input = "abc";
         let mut lex = Lexer::new(input);
         assert_eq!(lex.parse_heredoc(), None);
+        Ok(())
     }
 
     #[test]
-    fn test_lexer_colon_colon_isolated() {
+    fn test_lexer_colon_colon_isolated() -> Result<(), crate::error::HclError> {
         let input = "::";
         let mut lex = Lexer::new(input);
-        let tok = lex.next().expect("token").expect("no lex error");
+        let tok = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("token"))
+            .unwrap_or_else(|_| unreachable!("no lex error"));
         assert_eq!(tok.kind, TokenKind::ColonColon);
         assert_eq!(tok.text, "::");
         assert_eq!(tok.span.start_byte, 0);
@@ -539,19 +460,26 @@ mod tests {
         assert_eq!(tok.span.end_line, 1);
         assert_eq!(tok.span.end_col, 3);
         assert!(lex.next().is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_lexer_colon_colon_chained_and_odd() {
+    fn test_lexer_colon_colon_chained_and_odd() -> Result<(), crate::error::HclError> {
         // ":::" should be ColonColon followed by Colon
         let input = ":::";
         let mut lex = Lexer::new(input);
-        let t1 = lex.next().expect("token 1").expect("ok 1");
+        let t1 = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("token 1"))
+            .unwrap_or_else(|_| unreachable!("ok 1"));
         assert_eq!(t1.kind, TokenKind::ColonColon);
         assert_eq!(t1.span.start_byte, 0);
         assert_eq!(t1.span.end_byte, 2);
 
-        let t2 = lex.next().expect("token 2").expect("ok 2");
+        let t2 = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("token 2"))
+            .unwrap_or_else(|_| unreachable!("ok 2"));
         assert_eq!(t2.kind, TokenKind::Colon);
         assert_eq!(t2.span.start_byte, 2);
         assert_eq!(t2.span.end_byte, 3);
@@ -560,51 +488,74 @@ mod tests {
         // "::::" should be two ColonColon tokens
         let input4 = "::::";
         let mut lex4 = Lexer::new(input4);
-        let t1 = lex4.next().expect("token 1").expect("ok 1");
+        let t1 = lex4
+            .next()
+            .unwrap_or_else(|| unreachable!("token 1"))
+            .unwrap_or_else(|_| unreachable!("ok 1"));
         assert_eq!(t1.kind, TokenKind::ColonColon);
-        let t2 = lex4.next().expect("token 2").expect("ok 2");
+        let t2 = lex4
+            .next()
+            .unwrap_or_else(|| unreachable!("token 2"))
+            .unwrap_or_else(|_| unreachable!("ok 2"));
         assert_eq!(t2.kind, TokenKind::ColonColon);
         assert!(lex4.next().is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_lexer_namespaced_identifier_stream() {
+    fn test_lexer_namespaced_identifier_stream() -> Result<(), crate::error::HclError> {
         let input = "aws::s3::bucket_name";
         let mut lex = Lexer::new(input);
 
-        let t1 = lex.next().expect("aws").expect("ok");
+        let t1 = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("aws"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(t1.kind, TokenKind::Ident);
         assert_eq!(t1.text, "aws");
         assert_eq!(t1.span.start_byte, 0);
         assert_eq!(t1.span.end_byte, 3);
 
-        let t2 = lex.next().expect("::").expect("ok");
+        let t2 = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("::"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(t2.kind, TokenKind::ColonColon);
         assert_eq!(t2.span.start_byte, 3);
         assert_eq!(t2.span.end_byte, 5);
 
-        let t3 = lex.next().expect("s3").expect("ok");
+        let t3 = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("s3"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(t3.kind, TokenKind::Ident);
         assert_eq!(t3.text, "s3");
         assert_eq!(t3.span.start_byte, 5);
         assert_eq!(t3.span.end_byte, 7);
 
-        let t4 = lex.next().expect("::").expect("ok");
+        let t4 = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("::"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(t4.kind, TokenKind::ColonColon);
         assert_eq!(t4.span.start_byte, 7);
         assert_eq!(t4.span.end_byte, 9);
 
-        let t5 = lex.next().expect("bucket_name").expect("ok");
+        let t5 = lex
+            .next()
+            .unwrap_or_else(|| unreachable!("bucket_name"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(t5.kind, TokenKind::Ident);
         assert_eq!(t5.text, "bucket_name");
         assert_eq!(t5.span.start_byte, 9);
         assert_eq!(t5.span.end_byte, 20);
 
         assert!(lex.next().is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_quoted_string_edge_cases() {
+    fn test_quoted_string_edge_cases() -> Result<(), crate::error::HclError> {
         let mut lex_empty = Lexer::new("");
         assert!(lex_empty.parse_quoted_string().is_none());
 
@@ -618,7 +569,10 @@ mod tests {
         // Escaped quotes inside interpolation
         let input_escaped = "\"prefix-${ \"hello \\\" world\" }-suffix\"";
         let mut lex_escaped = Lexer::new(input_escaped);
-        let tok = lex_escaped.next().expect("some").expect("ok");
+        let tok = lex_escaped
+            .next()
+            .unwrap_or_else(|| unreachable!("some"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(tok.kind, TokenKind::String);
         assert_eq!(tok.text, input_escaped);
 
@@ -633,19 +587,28 @@ mod tests {
         // Escaped $${ and %%{
         let input_escaped_interp = "\"prefix $${escaped} and %%{directive}\"";
         let mut lex_interp = Lexer::new(input_escaped_interp);
-        let tok_interp = lex_interp.next().expect("some").expect("ok");
+        let tok_interp = lex_interp
+            .next()
+            .unwrap_or_else(|| unreachable!("some"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(tok_interp.kind, TokenKind::String);
 
         // Escaped with backslash before $$
         let input_bs_dollar = "\"bs \\$${not_escaped}\"";
         let mut lex_bs = Lexer::new(input_bs_dollar);
-        let tok_bs = lex_bs.next().expect("some").expect("ok");
+        let tok_bs = lex_bs
+            .next()
+            .unwrap_or_else(|| unreachable!("some"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(tok_bs.kind, TokenKind::String);
 
         // Directive %{
         let input_directive = "\"%{if true}content%{endif}\"";
         let mut lex_dir = Lexer::new(input_directive);
-        let tok_dir = lex_dir.next().expect("some").expect("ok");
+        let tok_dir = lex_dir
+            .next()
+            .unwrap_or_else(|| unreachable!("some"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(tok_dir.kind, TokenKind::String);
 
         // Unclosed interpolation
@@ -655,7 +618,10 @@ mod tests {
         // Literal dollar and percent not followed by '{'
         let input_dollar = "\"cost is $100 and 50% off or trailing $\"";
         let mut lex_dollar = Lexer::new(input_dollar);
-        let tok_dollar = lex_dollar.next().expect("some").expect("ok");
+        let tok_dollar = lex_dollar
+            .next()
+            .unwrap_or_else(|| unreachable!("some"))
+            .unwrap_or_else(|_| unreachable!("ok"));
         assert_eq!(tok_dollar.kind, TokenKind::String);
         assert_eq!(tok_dollar.text, input_dollar);
 
@@ -665,5 +631,6 @@ mod tests {
 
         let mut lex_unclosed_percent = Lexer::new("\"unclosed %");
         assert!(lex_unclosed_percent.parse_quoted_string().is_none());
+        Ok(())
     }
 }

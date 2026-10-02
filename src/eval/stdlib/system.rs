@@ -150,6 +150,14 @@ pub fn env_func_with_provider(provider: Arc<dyn Environment>) -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     #[test]
@@ -170,8 +178,8 @@ mod tests {
         let env_fn = env_func_with_provider(mock.clone());
 
         // 1. Existing var
-        let res = (env_fn.func)(&[Value::new(Type::String, ValueData::String("FOO".into()))])
-            .expect("eval ok");
+        let res =
+            (env_fn.func)(&[Value::new(Type::String, ValueData::String("FOO".into()))]).unwrap();
         assert_eq!(res.data.as_ref(), &ValueData::String("bar".to_string()));
 
         // 1b. Existing var with fallback provided (fallback ignored)
@@ -179,7 +187,7 @@ mod tests {
             Value::new(Type::String, ValueData::String("FOO".into())),
             Value::new(Type::String, ValueData::String("ignored".into())),
         ])
-        .expect("eval ok");
+        .unwrap();
         assert_eq!(
             res_existing_fb.data.as_ref(),
             &ValueData::String("bar".to_string())
@@ -190,7 +198,7 @@ mod tests {
             Type::String,
             ValueData::String("MISSING".into()),
         )])
-        .expect("eval ok");
+        .unwrap();
         assert_eq!(res_missing.data.as_ref(), &ValueData::String(String::new()));
 
         // 3. Missing var with custom fallback
@@ -198,7 +206,7 @@ mod tests {
             Value::new(Type::String, ValueData::String("MISSING".into())),
             Value::new(Type::String, ValueData::String("fallback_val".into())),
         ])
-        .expect("eval ok");
+        .unwrap();
         assert_eq!(
             res_fb.data.as_ref(),
             &ValueData::String("fallback_val".to_string())
@@ -209,14 +217,14 @@ mod tests {
         assert_eq!(mock.get_var("FOO"), None);
 
         // 5. Unknown argument propagation
-        let res_unk = (env_fn.func)(&[Value::unknown(Type::String)]).expect("eval ok");
+        let res_unk = (env_fn.func)(&[Value::unknown(Type::String)]).unwrap();
         assert!(res_unk.is_unknown());
 
         let res_unk_fb = (env_fn.func)(&[
             Value::new(Type::String, ValueData::String("VAR".into())),
             Value::unknown(Type::String),
         ])
-        .expect("eval ok");
+        .unwrap();
         assert!(res_unk_fb.is_unknown());
 
         // 6. Error handling

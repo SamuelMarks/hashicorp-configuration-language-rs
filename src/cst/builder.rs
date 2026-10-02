@@ -3,6 +3,7 @@
 //! Provides [`CstFile`], [`CstBody`], [`CstBlock`], and [`CstAttribute`] for creating,
 //! mutating, and serializing concrete syntax trees while preserving comments,
 //! indentation, and whitespace trivia.
+use std::fmt::Write;
 
 use crate::ast::expr::{BinaryOp, Expression, TemplatePart, Traversal, TraversalOperator, UnaryOp};
 use crate::cst::document::{Document, DocumentItem, TokenStream};
@@ -856,7 +857,7 @@ impl CstBody {
         }
         out.push_str(&block.block_type);
         for lbl in &block.labels {
-            out.push_str(&format!(" {lbl:?}"));
+            let _ = write!(out, " {lbl:?}");
         }
         out.push_str(" {\n");
         block.body.render(out);
@@ -1461,6 +1462,14 @@ fn format_template_part(part: &TemplatePart, out: &mut String) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::number::Number;
     use crate::types::ty::Type;
@@ -1496,7 +1505,7 @@ mod tests {
             "count",
             &Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("3").expect("num")),
+                ValueData::Number(Number::from_str("3").unwrap()),
             ),
         );
         file.body_mut()
@@ -1570,7 +1579,7 @@ mod tests {
     #[test]
     fn test_cst_file_parse_and_roundtrip() {
         let input = "name = \"foo\"\n\nblock \"type\" \"name\" {\n  attr = true\n}\n";
-        let file = CstFile::parse(input).expect("parsed");
+        let file = CstFile::parse(input).unwrap();
         assert_eq!(file.body().attributes().len(), 1);
         assert_eq!(file.body().blocks().len(), 1);
 
@@ -1589,7 +1598,7 @@ mod tests {
 
         // Unquoted block label in parse, with comments and newlines for render coverage
         let input = "  # comment\n  attr = 1\n  block unquoted_label {\n    inner = 2\n  }\n\n";
-        let parsed = CstFile::parse(input).expect("parsed unquoted");
+        let parsed = CstFile::parse(input).unwrap();
         assert_eq!(parsed.body().blocks()[0].labels(), &["unquoted_label"]);
 
         // Render with leading and trailing tokens
@@ -2199,9 +2208,9 @@ mod tests {
         // replace_attribute_expr
         let replacement_expr = Expression::Number(Number::from(42_i64), span.clone());
         file.replace_attribute_expr("attr1", &replacement_expr)
-            .expect("replaced attr1");
+            .unwrap();
         file.replace_attribute_expr("attr2", &replacement_expr)
-            .expect("replaced attr2");
+            .unwrap();
         let rendered = file.write_to_string();
         assert!(rendered.contains("42"));
 
@@ -2369,10 +2378,8 @@ resource "aws_subnet" "sub" {
 }
 "#;
 
-        let mut file = CstFile::parse(input).expect("parsed");
-        let vpc_block = file
-            .block_mut("resource", &["aws_vpc", "main"])
-            .expect("vpc block exists");
+        let mut file = CstFile::parse(input).unwrap();
+        let vpc_block = file.block_mut("resource", &["aws_vpc", "main"]).unwrap();
 
         // 1. Remove first item in block
         let removed_first = vpc_block.body.remove_attribute("cidr_block");
@@ -2389,16 +2396,12 @@ resource "aws_subnet" "sub" {
         assert!(rendered_after_first.contains("  enable_dns_hostnames = true"));
 
         // 2. Remove middle item in block
-        let vpc_block = file
-            .block_mut("resource", &["aws_vpc", "main"])
-            .expect("vpc block exists");
+        let vpc_block = file.block_mut("resource", &["aws_vpc", "main"]).unwrap();
         let removed_mid = vpc_block.body.remove_attribute("enable_dns_hostnames");
         assert!(removed_mid.is_some());
 
         // 3. Remove last and only remaining item in block
-        let vpc_block = file
-            .block_mut("resource", &["aws_vpc", "main"])
-            .expect("vpc block exists");
+        let vpc_block = file.block_mut("resource", &["aws_vpc", "main"]).unwrap();
         let removed_last = vpc_block.body.remove_attribute("enable_dns_support");
         assert!(removed_last.is_some());
         assert_eq!(vpc_block.body.items, [] as [CstItem; 0]);

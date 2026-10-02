@@ -386,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)
         print(f"Successfully saved changes to {readme_path.name}")
-        return 1
+        return 0
 
     return 0
 

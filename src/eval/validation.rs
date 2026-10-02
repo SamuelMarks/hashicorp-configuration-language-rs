@@ -208,6 +208,14 @@ fn evaluate_validation_internal(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::api::parse;
     use crate::ast::expr::Expression;
@@ -248,7 +256,7 @@ mod tests {
                 error_message = "Port must be 8080."
             }
         "#;
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         assert_eq!(body.validations.len(), 1);
 
         let res = evaluate_validation(&body.validations[0], &mut ctx);
@@ -268,7 +276,7 @@ mod tests {
                 error_message = format("Port %d is invalid, must be 8080.", var.port)
             }
         "#;
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         assert_eq!(body.validations.len(), 1);
 
         let res = evaluate_validation(&body.validations[0], &mut ctx);
@@ -293,7 +301,7 @@ mod tests {
                 error_message = "Status must be true."
             }
         "#;
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_ok());
     }
@@ -308,7 +316,7 @@ mod tests {
                 error_message = "Flag must not be null."
             }
         "#;
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_err());
         let errs = res.unwrap_err();
@@ -332,7 +340,7 @@ mod tests {
                 error_message = "Should be bool."
             }
         "#;
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_err());
         let errs = res.unwrap_err();
@@ -362,7 +370,7 @@ mod tests {
                 }
             }
         "#;
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         let lifecycle_block = &body.blocks[0];
         assert_eq!(lifecycle_block.body.preconditions.len(), 1);
         assert_eq!(lifecycle_block.body.postconditions.len(), 1);
@@ -415,7 +423,7 @@ mod tests {
             }
         "#;
 
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         let all_res = evaluate_all_validations(&body, &mut ctx);
         assert!(all_res.is_err());
         let errs = all_res.unwrap_err();
@@ -573,7 +581,7 @@ mod tests {
                 }
             }
         "#;
-        let body = parse(input).expect("parse success");
+        let body = parse(input).unwrap();
         let res = evaluate_all_validations(&body, &mut ctx);
         assert!(res.is_ok());
     }

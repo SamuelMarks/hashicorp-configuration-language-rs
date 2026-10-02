@@ -1450,6 +1450,45 @@ impl Value {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
+    #[test]
+    fn test_valued_data_clone_all_variants() {
+        let v1 = ValueData::Null;
+        let _ = v1.clone();
+
+        let v2 = ValueData::Unknown(None);
+        let _ = v2.clone();
+
+        let v3 = ValueData::Bool(true);
+        let _ = v3.clone();
+
+        let v4 = ValueData::Number(Number::from(1));
+        let _ = v4.clone();
+
+        let v5 = ValueData::String("test".to_string());
+        let _ = v5.clone();
+
+        let v6 = ValueData::Array(vec![]);
+        let _ = v6.clone();
+
+        let v7 = ValueData::Set(BTreeSet::new());
+        let _ = v7.clone();
+
+        let v8 = ValueData::Object(BTreeMap::new());
+        let _ = v8.clone();
+
+        // Capsule
+        let v9 = ValueData::Capsule(std::sync::Arc::new(1));
+        let _ = v9.clone();
+    }
+
     use super::*;
     use bigdecimal::BigDecimal;
     use std::str::FromStr;
@@ -1485,21 +1524,15 @@ mod tests {
 
         let n1 = Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str("1.0").expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str("1.0").unwrap())),
         );
         let n2 = Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str("1.0").expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str("1.0").unwrap())),
         );
         let n3 = Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str("2.0").expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str("2.0").unwrap())),
         );
         assert_eq!(n1, n2);
         assert_ne!(n1, n3);
@@ -1587,9 +1620,7 @@ mod tests {
         let mut h6 = DefaultHasher::new();
         let v5 = Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str("1.0").expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str("1.0").unwrap())),
         );
         v5.hash(&mut h6);
 
@@ -1624,48 +1655,46 @@ mod tests {
     #[test]
     fn test_value_coerce() {
         let val_unk = Value::unknown(Type::String);
-        let coerced_unk = val_unk.coerce(&Type::Number).expect("expected value");
+        let coerced_unk = val_unk.coerce(&Type::Number).unwrap();
         assert!(coerced_unk.is_unknown());
         assert_eq!(coerced_unk.ty(), &Type::Number);
 
         let val_null = Value::null(Type::String);
-        let coerced_null = val_null.coerce(&Type::Number).expect("expected value");
+        let coerced_null = val_null.coerce(&Type::Number).unwrap();
         assert!(coerced_null.is_null());
         assert_eq!(coerced_null.ty(), &Type::Number);
 
         let val_str = Value::new(Type::String, ValueData::String("1".to_string()));
-        let coerced_num = val_str.coerce(&Type::Number).expect("expected value");
+        let coerced_num = val_str.coerce(&Type::Number).unwrap();
         assert_eq!(coerced_num.ty(), &Type::Number);
 
         let val_num = Value::new(
             Type::Number,
-            ValueData::Number(Number::from_str("1").expect("expected value")),
+            ValueData::Number(Number::from_str("1").unwrap()),
         );
-        let coerced_str = val_num.coerce(&Type::String).expect("expected value");
+        let coerced_str = val_num.coerce(&Type::String).unwrap();
         assert_eq!(coerced_str.ty(), &Type::String);
 
         let val_bool_true = Value::new(Type::Bool, ValueData::Bool(true));
-        let coerced_str_true = val_bool_true.coerce(&Type::String).expect("expected value");
+        let coerced_str_true = val_bool_true.coerce(&Type::String).unwrap();
         assert_eq!(
             coerced_str_true.data.as_ref(),
             &ValueData::String("true".to_string())
         );
 
         let val_bool_false = Value::new(Type::Bool, ValueData::Bool(false));
-        let coerced_str_false = val_bool_false
-            .coerce(&Type::String)
-            .expect("expected value");
+        let coerced_str_false = val_bool_false.coerce(&Type::String).unwrap();
         assert_eq!(
             coerced_str_false.data.as_ref(),
             &ValueData::String("false".to_string())
         );
 
         let val_str_true = Value::new(Type::String, ValueData::String("true".to_string()));
-        let coerced_bool_true = val_str_true.coerce(&Type::Bool).expect("expected value");
+        let coerced_bool_true = val_str_true.coerce(&Type::Bool).unwrap();
         assert_eq!(coerced_bool_true.data.as_ref(), &ValueData::Bool(true));
 
         let val_str_false = Value::new(Type::String, ValueData::String("false".to_string()));
-        let coerced_bool_false = val_str_false.coerce(&Type::Bool).expect("expected value");
+        let coerced_bool_false = val_str_false.coerce(&Type::Bool).unwrap();
         assert_eq!(coerced_bool_false.data.as_ref(), &ValueData::Bool(false));
 
         let val_str_bad = Value::new(Type::String, ValueData::String("bad".to_string()));
@@ -1684,11 +1713,11 @@ mod tests {
         assert!(invalid_bool.coerce(&Type::String).is_err());
 
         // Dynamic target and self type coercion
-        let coerced_dyn = val_num.coerce(&Type::Dynamic).expect("expected value");
+        let coerced_dyn = val_num.coerce(&Type::Dynamic).unwrap();
         assert_eq!(coerced_dyn, val_num);
 
         let val_dyn = Value::new(Type::Dynamic, ValueData::Null);
-        let coerced_from_dyn = val_dyn.coerce(&Type::Number).expect("expected value");
+        let coerced_from_dyn = val_dyn.coerce(&Type::Number).unwrap();
         assert_eq!(coerced_from_dyn, val_dyn);
 
         // Unsupported coercion fallback (e.g. Number to Bool)
@@ -1725,22 +1754,18 @@ mod tests {
         // Successful downcast
         let downcasted = cap_val.downcast::<CustomResource>();
         assert!(downcasted.is_ok());
-        assert_eq!(downcasted.expect("ok").id, "res-123");
+        assert_eq!(downcasted.unwrap().id, "res-123");
 
         // Wrong target type downcast (using another capsule type)
         let cap_u32 = Value::capsule("other", 100_u32);
         assert_eq!(cap_u32.downcast_ref::<CustomResource>(), None);
-        let err = cap_u32
-            .downcast::<CustomResource>()
-            .expect_err("should fail");
+        let err = cap_u32.downcast::<CustomResource>().err().unwrap();
         assert!(err.to_string().contains("Capsule downcast error"));
 
         // Non-capsule downcast
         let non_cap = Value::new(Type::String, ValueData::String("test".into()));
         assert_eq!(non_cap.downcast_ref::<CustomResource>(), None);
-        let non_cap_err = non_cap
-            .downcast::<CustomResource>()
-            .expect_err("should fail");
+        let non_cap_err = non_cap.downcast::<CustomResource>().err().unwrap();
         assert!(non_cap_err.to_string().contains("Capsule downcast error"));
         assert!(non_cap.as_capsule_any().is_none());
 
@@ -1781,10 +1806,7 @@ mod tests {
         assert_eq!(h1.finish(), h2.finish());
 
         // Coerce
-        assert_eq!(
-            cap_val.coerce(cap_val.ty()).expect("expected value"),
-            cap_val
-        );
+        assert_eq!(cap_val.coerce(cap_val.ty()).unwrap(), cap_val);
         assert!(cap_val.coerce(&Type::String).is_err());
         assert!(
             Value::new(Type::String, ValueData::String("x".into()))
@@ -1808,7 +1830,7 @@ mod tests {
             signature: None,
         };
 
-        let result = (func.func)(&[cap_val]).expect("function succeeded");
+        let result = (func.func)(&[cap_val]).unwrap();
         assert_eq!(
             result.downcast_ref::<CustomResource>(),
             Some(&CustomResource {
@@ -1939,14 +1961,14 @@ mod tests {
         // Coerce preserves marks
         let sens_str =
             Value::new(Type::String, ValueData::String("42".into())).mark(ValueMark::Sensitive);
-        let coerced_num = sens_str.coerce(&Type::Number).expect("coerce succeeds");
+        let coerced_num = sens_str.coerce(&Type::Number).unwrap();
         assert!(coerced_num.has_mark(&ValueMark::Sensitive));
 
         let unk_sens = Value::unknown(Type::String).mark(ValueMark::Sensitive);
         assert!(
             unk_sens
                 .coerce(&Type::Number)
-                .expect("ok")
+                .unwrap()
                 .has_mark(&ValueMark::Sensitive)
         );
 
@@ -1954,7 +1976,7 @@ mod tests {
         assert!(
             null_sens
                 .coerce(&Type::Number)
-                .expect("ok")
+                .unwrap()
                 .has_mark(&ValueMark::Sensitive)
         );
     }
@@ -1990,11 +2012,11 @@ mod tests {
         let ref_digit = Refinement::new()
             .with_prefix("100")
             .with_string_length(3, 10)
-            .expect("ok");
+            .unwrap();
         let unk_str_digit = Value::unknown_refined(Type::String, ref_digit);
-        let coerced_num = unk_str_digit.coerce(&Type::Number).expect("ok");
+        let coerced_num = unk_str_digit.coerce(&Type::Number).unwrap();
         assert_eq!(coerced_num.ty, Type::Number);
-        let ref_after = coerced_num.refinement().expect("has refinement");
+        let ref_after = coerced_num.refinement().unwrap();
         assert!(ref_after.string_prefix.is_none());
         assert!(ref_after.string_length_min.is_none());
 
@@ -2006,7 +2028,7 @@ mod tests {
         }
 
         // String to Number with prefix == None
-        let ref_no_prefix = Refinement::new().with_string_length(1, 10).expect("ok");
+        let ref_no_prefix = Refinement::new().with_string_length(1, 10).unwrap();
         let unk_str_no_prefix = Value::unknown_refined(Type::String, ref_no_prefix);
         assert!(unk_str_no_prefix.coerce(&Type::Number).is_ok());
 
@@ -2021,11 +2043,11 @@ mod tests {
                 crate::number::Number::from(1),
                 crate::number::Number::from(50),
             )
-            .expect("ok");
+            .unwrap();
         let unk_num = Value::unknown_refined(Type::Number, ref_num);
-        let coerced_str = unk_num.coerce(&Type::String).expect("ok");
+        let coerced_str = unk_num.coerce(&Type::String).unwrap();
         assert_eq!(coerced_str.ty, Type::String);
-        let ref_str_after = coerced_str.refinement().expect("has refinement");
+        let ref_str_after = coerced_str.refinement().unwrap();
         assert!(ref_str_after.number_min.is_none());
         assert!(ref_str_after.number_max.is_none());
 
@@ -2033,7 +2055,7 @@ mod tests {
         let ref_not_null = Refinement::not_null();
         let unk_val_other = Value::unknown_refined(Type::Set(Box::new(Type::String)), ref_not_null);
         let target_list = Type::List(Box::new(Type::String));
-        let coerced_other = unk_val_other.coerce(&target_list).expect("ok");
+        let coerced_other = unk_val_other.coerce(&target_list).unwrap();
         assert_eq!(coerced_other.ty, target_list);
 
         // Unknown refinement validation error in coerce
@@ -2145,7 +2167,7 @@ mod tests {
             .with_step(PathStep::Index(1_i64.encode_value()))
             .with_step(PathStep::Key("host".encode_value()));
 
-        let val = root.get_path(&path).expect("resolved path");
+        let val = root.get_path(&path).unwrap();
         assert_eq!(val.to_string(), "\"node-2\"");
 
         // 2. get_path error branches
@@ -2176,7 +2198,7 @@ mod tests {
             visited_paths.push(p.to_string());
             Ok(true)
         })
-        .expect("walk succeeds");
+        .unwrap();
         assert!(
             visited_paths
                 .iter()
@@ -2192,9 +2214,9 @@ mod tests {
                     Ok(val.clone())
                 }
             })
-            .expect("transform succeeds");
+            .unwrap();
 
-        let redacted_val = transformed.get_path(&path).expect("redacted host");
+        let redacted_val = transformed.get_path(&path).unwrap();
         assert_eq!(redacted_val.to_string(), "\"REDACTED\"");
     }
 
@@ -2740,7 +2762,7 @@ mod tests {
         ]);
         let marked_root = root_val
             .mark_path(&path_pass, ValueMark::Sensitive)
-            .expect("mark database.password");
+            .unwrap();
 
         assert!(marked_root.has_marked_children());
         let sens_paths = marked_root.paths_with_mark(&ValueMark::Sensitive);
@@ -2754,7 +2776,7 @@ mod tests {
         ]);
         let marked_both = marked_root
             .mark_path(&path_srv, ValueMark::Sensitive)
-            .expect("mark servers[1]");
+            .unwrap();
 
         let both_paths = marked_both.paths_with_mark(&ValueMark::Sensitive);
         assert_eq!(both_paths.len(), 2);
@@ -2767,29 +2789,25 @@ mod tests {
         let custom_mark = ValueMark::custom("env:prod");
         let marked_custom = marked_both
             .mark_path(&path_tag, custom_mark.clone())
-            .expect("mark tags.env");
+            .unwrap();
 
         assert_eq!(marked_custom.paths_with_mark(&custom_mark).len(), 1);
 
         // 4. Mark root path directly
         let marked_root_self = marked_custom
             .mark_path(&Path::empty(), ValueMark::Sensitive)
-            .expect("mark root");
+            .unwrap();
         assert!(marked_root_self.has_mark(&ValueMark::Sensitive));
 
         // 5. Unmark path
-        let (unmarked_pass, removed_marks) = marked_both
-            .unmark_path(&path_pass)
-            .expect("unmark database.password");
+        let (unmarked_pass, removed_marks) = marked_both.unmark_path(&path_pass).unwrap();
         assert!(removed_marks.contains(&ValueMark::Sensitive));
         let remaining = unmarked_pass.paths_with_mark(&ValueMark::Sensitive);
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].to_string(), "servers[1]");
 
         // Unmark root
-        let (unmarked_all_root, root_rem) = marked_root_self
-            .unmark_path(&Path::empty())
-            .expect("unmark root");
+        let (unmarked_all_root, root_rem) = marked_root_self.unmark_path(&Path::empty()).unwrap();
         assert!(root_rem.contains(&ValueMark::Sensitive));
         assert!(!unmarked_all_root.has_mark(&ValueMark::Sensitive));
 
@@ -2900,7 +2918,7 @@ mod tests {
         );
         let (val_pass, _) = crate::eval::evaluator::Evaluator::new(&eval_ctx)
             .evaluate(&expr_pass)
-            .expect("eval database.password");
+            .unwrap();
         assert!(val_pass.has_mark(&ValueMark::Sensitive));
 
         let expr_host = crate::ast::expr::Expression::Traversal(
@@ -2921,7 +2939,7 @@ mod tests {
         );
         let (val_host, _) = crate::eval::evaluator::Evaluator::new(&eval_ctx)
             .evaluate(&expr_host)
-            .expect("eval database.host");
+            .unwrap();
         assert!(!val_host.has_mark(&ValueMark::Sensitive));
 
         let expr_s1 = crate::ast::expr::Expression::Traversal(
@@ -2945,7 +2963,7 @@ mod tests {
         );
         let (val_s1, _) = crate::eval::evaluator::Evaluator::new(&eval_ctx)
             .evaluate(&expr_s1)
-            .expect("eval servers[1]");
+            .unwrap();
         assert!(val_s1.has_mark(&ValueMark::Sensitive));
 
         let expr_s0 = crate::ast::expr::Expression::Traversal(
@@ -2969,7 +2987,7 @@ mod tests {
         );
         let (val_s0, _) = crate::eval::evaluator::Evaluator::new(&eval_ctx)
             .evaluate(&expr_s0)
-            .expect("eval servers[0]");
+            .unwrap();
         assert!(!val_s0.has_mark(&ValueMark::Sensitive));
     }
 
@@ -3146,12 +3164,12 @@ mod tests {
         // Successful unmark_path_steps on array and object
         let (unmarked_arr_step, _) = base_arr
             .unmark_path_steps(&[PathStep::Index(0_i64.encode_value())], &Path::empty())
-            .expect("unmark array step");
+            .unwrap();
         assert_eq!(unmarked_arr_step, base_arr);
 
         let (unmarked_obj_step, _) = base_obj
             .unmark_path_steps(&[PathStep::Key("k".encode_value())], &Path::empty())
-            .expect("unmark object step");
+            .unwrap();
         assert_eq!(unmarked_obj_step, base_obj);
 
         // 4. has_marked_children recursive for Set and Array
@@ -3234,9 +3252,8 @@ mod tests {
         assert!(val_with_m.refinement().is_none());
         assert!(val_with_m.refinement_arc().is_none());
 
-        let msgpack_bytes = val_with_m.to_msgpack().expect("serialize msgpack");
-        let deserialized_val =
-            Value::from_msgpack(&msgpack_bytes, val_with_m.ty()).expect("deserialize msgpack");
+        let msgpack_bytes = val_with_m.to_msgpack().unwrap();
+        let deserialized_val = Value::from_msgpack(&msgpack_bytes, val_with_m.ty()).unwrap();
         assert_eq!(deserialized_val, val_with_m);
 
         assert!(val_with_m.as_capsule_any().is_none());
@@ -3534,14 +3551,14 @@ mod tests {
     struct Counter(i32);
 
     #[test]
-    fn test_capsule_methods() {
+    fn test_capsule_methods() -> Result<(), crate::error::HclError> {
         let eq_fn: crate::types::ty::CapsuleEqualsFn = std::sync::Arc::new(|a, b| {
-            let c1 = a.downcast_ref::<Counter>().expect("counter");
-            let c2 = b.downcast_ref::<Counter>().expect("counter");
+            let c1 = a.downcast_ref::<Counter>().unwrap();
+            let c2 = b.downcast_ref::<Counter>().unwrap();
             c1 == c2
         });
         let hash_fn: crate::types::ty::CapsuleHashFn = std::sync::Arc::new(|a| {
-            let c = a.downcast_ref::<Counter>().expect("counter");
+            let c = a.downcast_ref::<Counter>().unwrap();
             c.0 as u64
         });
 
@@ -3582,23 +3599,17 @@ mod tests {
 
         // 1. Valid method invocation
         let delta_val = Value::new(Type::Number, ValueData::Number(5.into()));
-        let res = cap_val
-            .call_method("increment", &[delta_val])
-            .expect("method call ok");
+        let res = cap_val.call_method("increment", &[delta_val])?;
         assert_eq!(res.to_string(), "15");
 
         // 2. Unknown argument propagation
         let unk_arg = Value::unknown(Type::Number);
-        let unk_res = cap_val
-            .call_method("increment", &[unk_arg])
-            .expect("unknown propagation ok");
+        let unk_res = cap_val.call_method("increment", &[unk_arg])?;
         assert!(unk_res.is_unknown());
 
         // 3. Mark propagation
         let marked_cap = cap_val.mark(ValueMark::Sensitive);
-        let marked_res = marked_cap
-            .call_method("increment", &[])
-            .expect("call with default arg ok");
+        let marked_res = marked_cap.call_method("increment", &[])?;
         assert!(marked_res.is_sensitive());
         assert_eq!(marked_res.to_string(), "(sensitive value)");
         assert_eq!(marked_res.unmark().0.to_string(), "11");
@@ -3606,7 +3617,8 @@ mod tests {
         // 4. Method not found error
         let err = cap_val
             .call_method("decrement", &[])
-            .expect_err("should not find decrement");
+            .err()
+            .ok_or(crate::error::HclError::Eval("expected error".into()))?;
         assert_eq!(
             err,
             crate::error::HclError::CapsuleMethodNotFound {
@@ -3643,5 +3655,6 @@ mod tests {
 
         let bad_any = "not a counter";
         assert!((ops_arc.methods["increment"])(&bad_any, &[]).is_err());
+        Ok(())
     }
 }

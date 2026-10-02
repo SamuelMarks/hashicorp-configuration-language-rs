@@ -580,6 +580,14 @@ impl Attribute {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::lex::token::TokenKind;
     use crate::span::Span;

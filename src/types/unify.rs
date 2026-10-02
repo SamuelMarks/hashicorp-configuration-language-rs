@@ -161,6 +161,14 @@ pub fn validate_unknown_refinement(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use std::collections::BTreeMap;
 
@@ -343,17 +351,17 @@ mod tests {
         opt_b_set.insert("port".to_string());
         let obj_opt_b = Type::object_with_optional(opt_b_attrs.clone(), opt_b_set);
 
-        let unified_opt = unify(&obj_opt_a, &obj_opt_b).expect("unifies");
+        let unified_opt = unify(&obj_opt_a, &obj_opt_b).unwrap();
         assert!(unified_opt.is_attr_optional("port"));
         assert!(!unified_opt.is_attr_optional("name"));
 
-        let unified_opt_rev = unify(&obj_opt_b, &obj_opt_a).expect("unifies rev");
+        let unified_opt_rev = unify(&obj_opt_b, &obj_opt_a).unwrap();
         assert!(unified_opt_rev.is_attr_optional("port"));
         assert!(!unified_opt_rev.is_attr_optional("name"));
 
         // When a_opt is empty but b_opt is not empty
         let obj_no_opt = Type::object(opt_b_attrs);
-        let unified_from_no_opt = unify(&obj_no_opt, &obj_opt_b).expect("unifies");
+        let unified_from_no_opt = unify(&obj_no_opt, &obj_opt_b).unwrap();
         assert!(!unified_from_no_opt.is_attr_optional("port"));
 
         // When one object has optional attributes, but keys differ -> fall back to Map unification
@@ -391,19 +399,19 @@ mod tests {
         let r1 = Refinement::not_null().with_prefix("pre-");
         let r2 = Refinement::not_null().with_prefix("pre-prod-");
 
-        let unified = unify_refinement(Some(&r1), Some(&r2)).expect("ok");
+        let unified = unify_refinement(Some(&r1), Some(&r2)).unwrap();
         assert_eq!(
             unified.as_ref().and_then(|r| r.string_prefix.as_deref()),
             Some("pre-prod-")
         );
 
-        let unified_single = unify_refinement(Some(&r1), None).expect("ok");
+        let unified_single = unify_refinement(Some(&r1), None).unwrap();
         assert_eq!(unified_single, Some(r1.clone()));
 
-        let unified_reverse = unify_refinement(None, Some(&r2)).expect("ok");
+        let unified_reverse = unify_refinement(None, Some(&r2)).unwrap();
         assert_eq!(unified_reverse, Some(r2.clone()));
 
-        let unified_none = unify_refinement(None, None).expect("ok");
+        let unified_none = unify_refinement(None, None).unwrap();
         assert_eq!(unified_none, None);
 
         let r_bad = Refinement::new().with_prefix("post-");

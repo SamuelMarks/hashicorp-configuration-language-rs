@@ -573,6 +573,14 @@ pub fn format_str(input: &str) -> Result<String, crate::error::HclError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::cst::parser::CstParser;
 
@@ -580,7 +588,7 @@ mod tests {
     fn test_format_render_exact() {
         let input = "  foo = 123 \n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().expect("expected value");
+        let doc = parser.parse().unwrap();
 
         let rendered = Formatter::render(&doc);
         assert_eq!(rendered, input);
@@ -675,18 +683,14 @@ mod tests {
         // Test get_block_mut
         let block_mut = doc.get_block_mut("resource", &[" ", "\"aws_vpc\"", " ", "\"main\""]);
         assert!(block_mut.is_some());
-        block_mut.expect("Failed to get block_mut").type_ident.text = "data".to_string();
+        block_mut.unwrap().type_ident.text = "data".to_string();
 
         // Test blocks iterator
         assert_eq!(doc.blocks("data").count(), 1);
         assert_eq!(doc.blocks("resource").count(), 0);
 
         // Reset for remove test
-        doc.blocks
-            .first_mut()
-            .expect("Failed to get first mut block")
-            .type_ident
-            .text = "resource".to_string();
+        doc.blocks.first_mut().unwrap().type_ident.text = "resource".to_string();
 
         // Test removing existent block
         let removed_block = doc.remove_block("resource", &[" ", "\"aws_vpc\"", " ", "\"main\""]);
@@ -770,14 +774,14 @@ mod tests {
     fn test_format_document_display() {
         let input = "  foo = 123 \n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(Formatter::render(&doc), input);
     }
 
     #[test]
     fn test_format_str() {
         let input = "  foo = 123 \n";
-        let out = crate::cst::format::format_str(input).expect("formatted");
+        let out = crate::cst::format::format_str(input).unwrap();
         assert_eq!(out, input);
     }
 
@@ -785,7 +789,7 @@ mod tests {
     fn test_parse_cst_to_string_property() {
         let text = "  foo = 123 \n\n resource \"aws\" \"test\" {\n  a = 1\n}\n";
         let parser = crate::cst::parser::CstParser::new(text);
-        let doc = parser.parse().expect("parsed");
+        let doc = parser.parse().unwrap();
         assert_eq!(Formatter::render(&doc), text);
     }
 
@@ -794,7 +798,7 @@ mod tests {
         let input =
             "foo=123\n\nresource \"aws\" \"test\" {\na=1\nb=2\n}\n\nresource \"az\" \"test\" {}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().expect("parsed");
+        let mut doc = parser.parse().unwrap();
         CanonicalFormatter::format_document(&mut doc);
         let out = Formatter::render(&doc);
         assert!(out.contains("foo = 123"));
@@ -806,7 +810,7 @@ mod tests {
         // tests missing spaces and newlines
         let input = "foo=123\nresource\"aws\"{a=1}\nresource\"az\"{b=2}";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().expect("parsed");
+        let mut doc = parser.parse().unwrap();
         CanonicalFormatter::format_document(&mut doc);
     }
 
@@ -816,7 +820,7 @@ mod tests {
         // This is covered when a block has attributes before it but no leading newline token.
         let input = "foo=123\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().expect("parsed");
+        let mut doc = parser.parse().unwrap();
         // forcefully clear leading tokens to hit the exact branch
         doc.blocks[0].leading.tokens.clear();
         CanonicalFormatter::format_document(&mut doc);
@@ -826,7 +830,7 @@ mod tests {
     fn test_canonical_formatter_coverage_extra_2() {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().expect("parsed");
+        let mut doc = parser.parse().unwrap();
         // forcefully set leading tokens of block to a single newline to hit branch 188
         doc.blocks[0].leading.tokens.clear();
         doc.blocks[0]
@@ -844,7 +848,7 @@ mod tests {
     fn test_canonical_formatter_coverage_extra_3() {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().expect("parsed");
+        let mut doc = parser.parse().unwrap();
         // forcefully set leading tokens of block to a single newline to hit branch 188
         doc.blocks[0].leading.tokens.clear();
         doc.blocks[0]
@@ -870,7 +874,7 @@ mod tests {
     fn test_canonical_formatter_coverage_extra_4() {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().expect("parsed");
+        let mut doc = parser.parse().unwrap();
         // forcefully set leading tokens of block to multiple spaces to hit branch 188
         doc.blocks[0].leading.tokens.clear();
         doc.blocks[0]
@@ -896,7 +900,7 @@ mod tests {
     fn test_canonical_formatter_coverage_extra_5() {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().expect("parsed");
+        let mut doc = parser.parse().unwrap();
         // forcefully set leading tokens of block to no tokens to hit branch 188
         doc.blocks[0].leading.tokens.clear();
         CanonicalFormatter::format_document(&mut doc);
@@ -983,14 +987,14 @@ mod tests {
         );
 
         // Attribute with empty expr_tokens:
-        let mut doc_attr = CstParser::new("key = 1\n").parse().expect("expected value");
+        let mut doc_attr = CstParser::new("key = 1\n").parse().unwrap();
         doc_attr.attributes[0].expr_tokens.clear();
         CanonicalFormatter::format_document(&mut doc_attr);
 
         // Block with leading newline whose text is already "\n\n" (not "\n"):
         let mut doc_block_double_nl = CstParser::new("foo = 1\n\nresource \"aws\" {}\n")
             .parse()
-            .expect("expected value");
+            .unwrap();
         doc_block_double_nl.blocks[0].leading.tokens.clear();
         doc_block_double_nl.blocks[0]
             .leading
@@ -1003,7 +1007,7 @@ mod tests {
     fn test_render_redacted_and_redact_sensitive() {
         let input = "public_val = 123\nsecret_key = \"supersecret\"\n";
         let parser = CstParser::new(input);
-        let mut doc = parser.parse().expect("expected doc");
+        let mut doc = parser.parse().unwrap();
 
         // Test render_redacted without modifying doc
         let redacted_rendered = Formatter::render_redacted(&doc, &["secret_key"]);
@@ -1363,17 +1367,15 @@ mod tests {
 foo = "short" # First comment
 longer_attr_name = 42 # Second comment
 "#;
-        let mut doc = crate::cst::parser::CstParser::new(input)
-            .parse()
-            .expect("parsed");
+        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
         CanonicalFormatter::format_document(&mut doc);
         let rendered = Formatter::render(&doc);
 
         // Verify that the '#' comment characters appear at the exact same column offset
         let lines: Vec<&str> = rendered.lines().filter(|l| l.contains('#')).collect();
         assert_eq!(lines.len(), 2);
-        let col1 = lines[0].find('#').expect("hash 1");
-        let col2 = lines[1].find('#').expect("hash 2");
+        let col1 = lines[0].find('#').unwrap();
+        let col2 = lines[1].find('#').unwrap();
         assert_eq!(
             col1, col2,
             "Comments should be aligned at the exact same column: \n{rendered}"
@@ -1402,14 +1404,14 @@ longer_attr_name = 42 # Second comment
         let comma_idx = tokens
             .iter()
             .position(|t| t.kind == TokenKind::Comma)
-            .expect("comma exists");
+            .unwrap();
         assert_ne!(tokens[comma_idx - 1].kind, TokenKind::Whitespace);
 
         // Check that closing bracket has lower indent than elements
         let cbrack_idx = tokens
             .iter()
             .position(|t| t.kind == TokenKind::CBrack)
-            .expect("cbrack exists");
+            .unwrap();
         let cbrack_indent = &tokens[cbrack_idx - 1];
         assert_eq!(cbrack_indent.text, "  "); // base_indent 2
     }
@@ -1439,9 +1441,7 @@ resource "aws_security_group" "allow_tls" {
   }
 }
 "#;
-        let mut doc = crate::cst::parser::CstParser::new(input)
-            .parse()
-            .expect("parsed");
+        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
         CanonicalFormatter::format_document(&mut doc);
         let formatted = Formatter::render(&doc);
 
@@ -1458,9 +1458,7 @@ resource "aws_security_group" "allow_tls" {
         let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
 
         let input = "a = 1 // inline 1\nlonger_name = 2 // inline 2\n";
-        let mut doc = crate::cst::parser::CstParser::new(input)
-            .parse()
-            .expect("parsed");
+        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
 
         // Add leading tokens so calc_code_width leading_len closure is executed
         doc.attributes[0]
@@ -1538,9 +1536,7 @@ resource "aws_security_group" "allow_tls" {
     #[test]
     fn test_redact_sensitive_non_matching_attribute() {
         let input = "safe = \"clear text\"\nsecret = \"super secret\"\nblock {\n  inner = 1\n}\n";
-        let mut doc = crate::cst::parser::CstParser::new(input)
-            .parse()
-            .expect("parsed");
+        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
         CanonicalFormatter::redact_sensitive(&mut doc, &["secret"]);
         let rendered = Formatter::render(&doc);
         assert!(rendered.contains("safe = \"clear text\""));

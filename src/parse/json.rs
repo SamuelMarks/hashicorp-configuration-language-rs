@@ -718,6 +718,14 @@ fn json_string_to_expression(s: &str, span: Span) -> Expression {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     fn unwrap_body(res: Result<Body, Diagnostics>) -> Body {
@@ -842,7 +850,7 @@ mod tests {
     fn test_json_parser_trailing_chars() {
         let tokens = lex(r"{} []");
         let parser = JsonParser::new(&tokens);
-        let (_, diags) = parser.parse().expect("expected value");
+        let (_, diags) = parser.parse().unwrap();
         assert_eq!(diags.errors().len(), 1);
         assert!(
             diags.errors()[0]
@@ -856,7 +864,7 @@ mod tests {
     fn test_json_parser_eof_early() {
         let tokens = lex(r"");
         let parser = JsonParser::new(&tokens);
-        let errs = parser.parse().expect_err("expected error");
+        let errs = parser.parse().err().unwrap();
         assert_eq!(errs.errors().len(), 0); // just eof
     }
 
@@ -897,8 +905,8 @@ mod tests {
     fn test_convert_json_to_body_attributes() {
         let tokens = lex(r#"{"foo": "bar", "num": 42}"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.attributes.len(), 2);
         assert_eq!(body.blocks, [] as [crate::ast::structure::Block; 0]);
     }
@@ -913,8 +921,8 @@ mod tests {
             }
         }"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.blocks.len(), 1);
         assert_eq!(body.blocks[0].block_type, "resource");
     }
@@ -928,8 +936,8 @@ mod tests {
             ]
         }"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.blocks.len(), 2);
     }
 
@@ -937,15 +945,15 @@ mod tests {
     fn test_convert_json_to_body_invalid_array() {
         let tokens = lex(r#"{"foo": [1, 2]}"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         // Since array doesn't contain only objects, it's an attribute
         assert_eq!(body.attributes.len(), 1);
 
         let tokens = lex(r"[1, 2]"); // A body must be an object or array of objects
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let errs = convert_json_to_body(node).expect_err("expected error");
+        let (node, _) = parser.parse().unwrap();
+        let errs = convert_json_to_body(node).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -955,8 +963,8 @@ mod tests {
 
         let tokens = lex(r"1"); // Not an object/array
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let errs = convert_json_to_body(node).expect_err("expected error");
+        let (node, _) = parser.parse().unwrap();
+        let errs = convert_json_to_body(node).err().unwrap();
         assert!(
             errs.errors()[0]
                 .error
@@ -969,8 +977,8 @@ mod tests {
     fn test_convert_json_to_body_array_of_objects() {
         let tokens = lex(r#"[{ "a": 1 }, { "b": 2 }]"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.attributes.len(), 2);
     }
 
@@ -978,8 +986,8 @@ mod tests {
     fn test_json_node_to_expression_types() {
         let tokens = lex(r#"{"foo": [1, true, null, {"k": "v"}]}"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.attributes.len(), 1);
     }
 
@@ -992,7 +1000,7 @@ mod tests {
             Span::new(0, 0, 0, 0, 0, 0),
         )];
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
+        let (node, _) = parser.parse().unwrap();
         assert_eq!(
             node,
             JsonNode::String("unquoted".to_string(), Span::new(0, 0, 0, 0, 0, 0))
@@ -1108,8 +1116,8 @@ mod tests {
         // Line 429: Key // in object mapping to Body
         let tokens = lex(r#"{"//": "comment", "a": 1}"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.attributes.len(), 1); // Only 'a' should be mapped if it's treated as attribute.
         // Actually wait, if 'a' is 1, it will be mapped to attribute.
         // Let's verify 'body' attributes length.
@@ -1118,8 +1126,8 @@ mod tests {
         // Line 451: Array mapping to Blocks where array is empty
         let tokens = lex(r#"{"block": []}"#);
         let parser = JsonParser::new(&tokens);
-        let (node, _) = parser.parse().expect("expected value");
-        let body = convert_json_to_body(node).expect("expected value");
+        let (node, _) = parser.parse().unwrap();
+        let body = convert_json_to_body(node).unwrap();
         // Since it's an empty array, all_objects becomes false in line 451.
         // Then it gets treated as an attribute instead of blocks!
         assert_eq!(body.attributes.len(), 1);

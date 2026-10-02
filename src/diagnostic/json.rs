@@ -236,6 +236,14 @@ pub fn diagnostics_from_json(json_str: &str) -> Result<Diagnostics, HclError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     struct FailingSerialize;
@@ -259,8 +267,7 @@ mod tests {
         let source = "foo = bar
 baz = 123
 ";
-        let json_str = diagnostics_to_json(&Diagnostics::from(diag.clone()), Some(source))
-            .expect("serialization should succeed");
+        let json_str = diagnostics_to_json(&Diagnostics::from(diag.clone()), Some(source)).unwrap();
 
         assert!(json_str.contains("\"severity\": \"error\""));
         assert!(json_str.contains("\"summary\": \"Syntax error\""));
@@ -269,8 +276,7 @@ baz = 123
         assert!(json_str.contains("\"filename\": \"test.hcl\""));
         assert!(json_str.contains("\"code\": \"foo = bar\""));
 
-        let deserialized =
-            diagnostics_from_json(&json_str).expect("deserialization should succeed");
+        let deserialized = diagnostics_from_json(&json_str).unwrap();
         assert_eq!(deserialized.errors().len(), 1);
         let d = &deserialized.errors()[0];
         assert_eq!(d.severity, Severity::Error);
@@ -288,12 +294,11 @@ baz = 123
         diag.severity = Severity::Warning;
         diag.summary = Some("Unused var".to_string());
 
-        let json_str =
-            diagnostics_to_json(&Diagnostics::from(diag), None).expect("serialization ok");
+        let json_str = diagnostics_to_json(&Diagnostics::from(diag), None).unwrap();
         assert!(json_str.contains("\"severity\": \"warning\""));
         assert!(!json_str.contains("\"snippet\""));
 
-        let deserialized = diagnostics_from_json(&json_str).expect("deserialization ok");
+        let deserialized = diagnostics_from_json(&json_str).unwrap();
         assert_eq!(deserialized.errors().len(), 1);
         assert_eq!(deserialized.errors()[0].severity, Severity::Warning);
     }

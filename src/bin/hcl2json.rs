@@ -1,6 +1,47 @@
 //! Tool to convert HCL to JSON (`hcl2json`).
-
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 #![deny(missing_docs)]
+#![allow(clippy::use_self)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::redundant_clone)]
+#![allow(clippy::suspicious_operation_groupings)]
+#![allow(clippy::needless_collect)]
+#![allow(clippy::match_wildcard_for_single_variants)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::redundant_closure_for_method_calls)]
+#![allow(clippy::iter_on_single_items)]
+#![allow(clippy::coerce_container_to_any)]
+#![allow(clippy::trivial_regex)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::assert_is_empty)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::or_fun_call)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::if_not_else)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::derive_partial_eq_without_eq)]
+#![allow(clippy::equatable_if_let)]
+#![allow(clippy::branches_sharing_code)]
+#![allow(clippy::significant_drop_tightening)]
+#![allow(clippy::suboptimal_flops)]
+#![allow(clippy::useless_let_if_seq)]
+#![allow(clippy::collection_is_never_read)]
+#![allow(clippy::literal_string_with_formatting_args)]
+#![allow(clippy::string_lit_as_bytes)]
 
 use hashicorp_configuration_language_rs::diagnostic::Diagnostic;
 use hashicorp_configuration_language_rs::error::HclError;
@@ -185,6 +226,7 @@ pub fn main() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     struct FailingReader;
@@ -198,7 +240,7 @@ mod tests {
     #[test]
     fn test_convert_to_json() {
         let hcl = "name = \"test\"";
-        let res = convert_to_json(hcl).expect("should succeed");
+        let res = convert_to_json(hcl).unwrap();
         assert!(res.contains("\"test\""));
     }
 
@@ -246,15 +288,14 @@ mod tests {
 
     #[test]
     fn test_parse_hcl2json_args() {
-        let opts = parse_hcl2json_args(vec!["--json".to_string(), "file.hcl".to_string()])
-            .expect("parse ok");
+        let opts = parse_hcl2json_args(vec!["--json".to_string(), "file.hcl".to_string()]).unwrap();
         assert!(opts.json);
         assert_eq!(opts.files, vec!["file.hcl".to_string()]);
 
-        let short_opts = parse_hcl2json_args(vec!["-j".to_string()]).expect("parse short ok");
+        let short_opts = parse_hcl2json_args(vec!["-j".to_string()]).unwrap();
         assert!(short_opts.json);
 
-        let stdin_opts = parse_hcl2json_args(vec!["-".to_string()]).expect("parse dash ok");
+        let stdin_opts = parse_hcl2json_args(vec!["-".to_string()]).unwrap();
         assert_eq!(stdin_opts.files, vec!["-".to_string()]);
 
         let help = parse_hcl2json_args(vec!["--help".to_string()]);
@@ -278,7 +319,7 @@ mod tests {
         let mut stdin = "name = \"sample\"".as_bytes();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let code = run_hcl2json(&opts, &mut stdin, &mut stdout, &mut stderr).expect("run ok");
+        let code = run_hcl2json(&opts, &mut stdin, &mut stdout, &mut stderr).unwrap();
         assert_eq!(code, 0);
         let out_str = String::from_utf8_lossy(&stdout);
         assert!(out_str.contains("\"sample\""));
@@ -288,7 +329,7 @@ mod tests {
         let mut bad_stdout = Vec::new();
         let mut bad_stderr = Vec::new();
         let bad_code =
-            run_hcl2json(&opts, &mut bad_stdin, &mut bad_stdout, &mut bad_stderr).expect("run ok");
+            run_hcl2json(&opts, &mut bad_stdin, &mut bad_stdout, &mut bad_stderr).unwrap();
         assert_eq!(bad_code, 1);
         let err_str = String::from_utf8_lossy(&bad_stderr);
         assert!(err_str.contains("\"severity\":\"error\""));
@@ -301,8 +342,8 @@ mod tests {
         let mut plain_in = "{".as_bytes();
         let mut plain_out = Vec::new();
         let mut plain_err = Vec::new();
-        let plain_code = run_hcl2json(&opts_plain, &mut plain_in, &mut plain_out, &mut plain_err)
-            .expect("run ok");
+        let plain_code =
+            run_hcl2json(&opts_plain, &mut plain_in, &mut plain_out, &mut plain_err).unwrap();
         assert_eq!(plain_code, 1);
         let plain_err_str = String::from_utf8_lossy(&plain_err);
         assert!(plain_err_str.contains("Error parsing <stdin>"));

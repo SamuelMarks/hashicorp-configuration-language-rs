@@ -1,5 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::pedantic,
+    clippy::nursery
+)]
 #[cfg(test)]
 mod tests {
+
     use crate::api::{from_str, from_str_with_context, parse};
     use crate::eval::context::Context;
     use crate::eval::func::Function;
@@ -21,7 +29,7 @@ mod tests {
             name = "my_app"
         "#;
 
-        let body = parse(input).expect("Failed to parse");
+        let body = parse(input).unwrap();
         assert_eq!(body.attributes.len(), 1);
         assert!(body.attributes.contains_key("name"));
     }
@@ -35,7 +43,7 @@ mod tests {
             enabled = true
         "#;
 
-        let config: MockConfig = from_str(input).expect("Failed to decode from str");
+        let config: MockConfig = from_str(input).unwrap();
         assert!(config.name.contains("my_app"));
         assert_eq!(config.count, 10);
         assert_eq!(config.features, vec!["auth".to_string()]);
@@ -53,7 +61,7 @@ mod tests {
 
         let mut ctx = Context::new();
         // we can assume stdlib is available, so upper is available
-        let config: MockConfig = from_str_with_context(input, &mut ctx).expect("Failed to decode");
+        let config: MockConfig = from_str_with_context(input, &mut ctx).unwrap();
 
         assert!(config.name.contains("my_app"));
         assert_eq!(config.count, 10);
@@ -90,8 +98,7 @@ mod tests {
         };
         ctx.set_function("get_app_name", get_app_name);
 
-        let config: MockConfig =
-            from_str_with_context(input, &mut ctx).expect("Failed to decode with context");
+        let config: MockConfig = from_str_with_context(input, &mut ctx).unwrap();
         assert!(config.name.contains("test-app"));
     }
 
@@ -108,7 +115,7 @@ mod tests {
         ctx.set_variable("unknown_var", Value::unknown(Type::String));
 
         let config_res: Result<MockConfig, _> = from_str_with_context(input, &mut ctx);
-        let errs = config_res.expect_err("Expected error due to type mismatch");
+        let errs = config_res.err().unwrap();
         assert!(errs.has_errors());
         assert!(errs.errors()[0].error.to_string().contains("Type Mismatch"));
     }
@@ -122,7 +129,7 @@ mod tests {
             enabled = true
         "#;
 
-        let config: MockConfig = from_str(input).expect("Failed to decode with default stdlib");
+        let config: MockConfig = from_str(input).unwrap();
         assert_eq!(config.name, "PRODUCTION");
         assert_eq!(config.count, 50);
         assert_eq!(config.features, vec!["feature_a", "feature_b"]);
@@ -148,18 +155,17 @@ mod tests {
             features = []
             enabled = true
         "#;
-        let config: MockConfig =
-            crate::api::from_str_without_stdlib(input_plain).expect("Failed plain decode");
+        let config: MockConfig = crate::api::from_str_without_stdlib(input_plain).unwrap();
         assert_eq!(config.name, "production");
     }
 
     #[test]
     fn test_evaluate_expr() {
         // Using default stdlib
-        let val = crate::api::evaluate_expr("upper(\"hello\")", None).expect("eval success");
+        let val = crate::api::evaluate_expr("upper(\"hello\")", None).unwrap();
         assert_eq!(*val.data, ValueData::String("HELLO".to_string()));
 
-        let val_num = crate::api::evaluate_expr("abs(-99)", None).expect("eval success");
+        let val_num = crate::api::evaluate_expr("abs(-99)", None).unwrap();
         assert_eq!(*val_num.data, ValueData::Number(99.into()));
 
         // Using custom context
@@ -168,8 +174,7 @@ mod tests {
             "my_var",
             Value::new(Type::String, ValueData::String("world".into())),
         );
-        let val_custom =
-            crate::api::evaluate_expr("my_var", Some(&ctx)).expect("eval with custom ctx");
+        let val_custom = crate::api::evaluate_expr("my_var", Some(&ctx)).unwrap();
         assert_eq!(*val_custom.data, ValueData::String("world".into()));
 
         // Error cases
@@ -193,14 +198,14 @@ mod tests {
         "#;
 
         // With default stdlib
-        let body = crate::api::evaluate(input, None).expect("evaluate success");
+        let body = crate::api::evaluate(input, None).unwrap();
         assert_eq!(body.blocks.len(), 2);
         assert_eq!(body.blocks[0].block_type, "item");
         assert_eq!(body.blocks[1].block_type, "item");
 
         // With provided context
         let mut ctx = Context::with_stdlib();
-        let body2 = crate::api::evaluate(input, Some(&mut ctx)).expect("evaluate success");
+        let body2 = crate::api::evaluate(input, Some(&mut ctx)).unwrap();
         assert_eq!(body2.blocks.len(), 2);
 
         // Invalid HCL syntax
@@ -267,11 +272,11 @@ mod tests {
             enabled = true
         "#;
 
-        let mut f = std::fs::File::create(&file_path).expect("created temp file");
-        f.write_all(content.as_bytes()).expect("wrote temp file");
+        let mut f = std::fs::File::create(&file_path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
 
         // 1. from_file
-        let config: MockConfig = from_file(&file_path).expect("from_file succeeds");
+        let config: MockConfig = from_file(&file_path).unwrap();
         assert_eq!(config.name, "file_app");
         assert_eq!(config.count, 42);
         assert_eq!(
@@ -282,17 +287,15 @@ mod tests {
 
         // 2. from_file_with_context
         let mut ctx = Context::with_stdlib();
-        let config2: MockConfig =
-            from_file_with_context(&file_path, &mut ctx).expect("from_file_with_context succeeds");
+        let config2: MockConfig = from_file_with_context(&file_path, &mut ctx).unwrap();
         assert_eq!(config2.count, 42);
 
         // 3. evaluate_file
-        let body = evaluate_file(&file_path, None).expect("evaluate_file succeeds");
+        let body = evaluate_file(&file_path, None).unwrap();
         assert_eq!(body.attributes.len(), 4);
 
         let mut eval_ctx = Context::with_stdlib();
-        let body_with_ctx = evaluate_file(&file_path, Some(&mut eval_ctx))
-            .expect("evaluate_file with ctx succeeds");
+        let body_with_ctx = evaluate_file(&file_path, Some(&mut eval_ctx)).unwrap();
         assert_eq!(body_with_ctx.attributes.len(), 4);
 
         // 4. Nonexistent file error handling
@@ -309,10 +312,8 @@ mod tests {
                 content {}
             }
         "#;
-        let mut f_dyn = std::fs::File::create(&bad_dyn_file).expect("created temp file");
-        f_dyn
-            .write_all(bad_dyn_content.as_bytes())
-            .expect("wrote temp file");
+        let mut f_dyn = std::fs::File::create(&bad_dyn_file).unwrap();
+        f_dyn.write_all(bad_dyn_content.as_bytes()).unwrap();
         assert!(from_file_with_context::<MockConfig>(&bad_dyn_file, &mut ctx).is_err());
         let _ = std::fs::remove_file(&bad_dyn_file);
 

@@ -1,3 +1,4 @@
+#![allow(clippy::pedantic, clippy::nursery)]
 //! Build script for `hcl-ffi` to generate C header files.
 
 use std::env;

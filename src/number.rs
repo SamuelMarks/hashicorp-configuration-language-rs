@@ -138,12 +138,20 @@ impl From<u32> for Number {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use std::str::FromStr;
 
     #[test]
     fn test_number_new() {
-        let val = BigDecimal::from_str("123.456").expect("expected value");
+        let val = BigDecimal::from_str("123.456").unwrap();
         let num = Number::new(val.clone());
         assert_eq!(num.0, val);
     }

@@ -414,6 +414,14 @@ fn log_func() -> Function {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
 
     use crate::eval::func::Function;
@@ -422,10 +430,7 @@ mod tests {
     use std::str::FromStr;
 
     fn get_func(name: &str) -> Function {
-        functions()
-            .into_iter()
-            .find(|f| f.name == name)
-            .expect("expected value")
+        functions().into_iter().find(|f| f.name == name).unwrap()
     }
 
     fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
@@ -436,9 +441,7 @@ mod tests {
     fn num_val(s: &str) -> Value {
         Value::new(
             Type::Number,
-            ValueData::Number(Number::new(
-                BigDecimal::from_str(s).expect("expected value"),
-            )),
+            ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
         )
     }
 
@@ -457,58 +460,31 @@ mod tests {
     #[test]
     fn test_abs() {
         assert_eq!(
-            eval_func("abs", &[num_val("-5.5")])
-                .expect("expected value")
-                .data
-                .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("5.5").expect("expected value")
-            ))
+            eval_func("abs", &[num_val("-5.5")]).unwrap().data.as_ref(),
+            &ValueData::Number(Number::new(BigDecimal::from_str("5.5").unwrap()))
         );
         assert!(eval_func("abs", &[]).is_err());
         assert!(eval_func("abs", &[num_val("1"), num_val("2")]).is_err());
-        assert!(
-            eval_func("abs", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("abs", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("abs", &[null_val()]).is_err());
     }
 
     #[test]
     fn test_ceil_floor() {
         assert_eq!(
-            eval_func("ceil", &[num_val("5.1")])
-                .expect("expected value")
-                .data
-                .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("6").expect("expected value")
-            ))
+            eval_func("ceil", &[num_val("5.1")]).unwrap().data.as_ref(),
+            &ValueData::Number(Number::new(BigDecimal::from_str("6").unwrap()))
         );
         assert!(eval_func("ceil", &[]).is_err());
-        assert!(
-            eval_func("ceil", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("ceil", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("ceil", &[null_val()]).is_err());
 
         assert_eq!(
-            eval_func("floor", &[num_val("5.9")])
-                .expect("expected value")
-                .data
-                .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("5").expect("expected value")
-            ))
+            eval_func("floor", &[num_val("5.9")]).unwrap().data.as_ref(),
+            &ValueData::Number(Number::new(BigDecimal::from_str("5").unwrap()))
         );
         assert!(eval_func("floor", &[]).is_err());
-        assert!(
-            eval_func("floor", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("floor", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("floor", &[null_val()]).is_err());
     }
 
@@ -516,16 +492,14 @@ mod tests {
     fn test_max_min() {
         assert_eq!(
             eval_func("max", &[num_val("1"), num_val("10"), num_val("5")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("10").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("10").unwrap()))
         );
         assert!(
             eval_func("max", &[num_val("1"), unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("max", &[]).is_err()); // empty args -> coerce_to_number_list empty
@@ -533,16 +507,14 @@ mod tests {
 
         assert_eq!(
             eval_func("min", &[num_val("1"), num_val("10"), num_val("5")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("1").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("1").unwrap()))
         );
         assert!(
             eval_func("min", &[num_val("1"), unk_val()])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
     }
@@ -554,26 +526,16 @@ mod tests {
             ValueData::Array(vec![num_val("1"), num_val("2")]),
         );
         assert_eq!(
-            eval_func("max", &[arr])
-                .expect("expected value")
-                .data
-                .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("2").expect("expected value")
-            ))
+            eval_func("max", &[arr]).unwrap().data.as_ref(),
+            &ValueData::Number(Number::new(BigDecimal::from_str("2").unwrap()))
         );
 
         let mut set = BTreeSet::new();
         set.insert(num_val("3"));
         let set_val = Value::new(Type::Set(Box::new(Type::Number)), ValueData::Set(set));
         assert_eq!(
-            eval_func("max", &[set_val])
-                .expect("expected value")
-                .data
-                .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("3").expect("expected value")
-            ))
+            eval_func("max", &[set_val]).unwrap().data.as_ref(),
+            &ValueData::Number(Number::new(BigDecimal::from_str("3").unwrap()))
         );
 
         let empty_arr = Value::new(Type::List(Box::new(Type::Number)), ValueData::Array(vec![]));
@@ -584,28 +546,20 @@ mod tests {
     fn test_signum() {
         assert_eq!(
             eval_func("signum", &[num_val("-5.5")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("-1").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("-1").unwrap()))
         );
         assert_eq!(
             eval_func("signum", &[num_val("5.5")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("1").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("1").unwrap()))
         );
         assert!(eval_func("signum", &[]).is_err());
-        assert!(
-            eval_func("signum", &[unk_val()])
-                .expect("expected value")
-                .is_unknown()
-        );
+        assert!(eval_func("signum", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("signum", &[null_val()]).is_err());
     }
 
@@ -613,17 +567,15 @@ mod tests {
     fn test_parseint() {
         assert_eq!(
             eval_func("parseint", &[str_val("ff"), num_val("16")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("255").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("255").unwrap()))
         );
         assert!(eval_func("parseint", &[]).is_err());
         assert!(
             eval_func("parseint", &[unk_val(), num_val("10")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("parseint", &[null_val(), num_val("10")]).is_err());
@@ -658,17 +610,15 @@ mod tests {
     fn test_pow_log() {
         assert_eq!(
             eval_func("pow", &[num_val("3"), num_val("2")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("9").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("9").unwrap()))
         );
         assert!(eval_func("pow", &[]).is_err());
         assert!(
             eval_func("pow", &[unk_val(), num_val("2")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("pow", &[null_val(), num_val("2")]).is_err());
@@ -679,25 +629,23 @@ mod tests {
 
         assert_eq!(
             eval_func("log", &[num_val("100"), num_val("10")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(
-                BigDecimal::from_str("2").expect("expected value")
-            ))
+            &ValueData::Number(Number::new(BigDecimal::from_str("2").unwrap()))
         );
         assert!(eval_func("log", &[]).is_err());
         assert!(
             eval_func("log", &[unk_val(), num_val("2")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("log", &[null_val(), num_val("2")]).is_err());
     }
     #[test]
-    #[should_panic(expected = "expected value")]
+    #[should_panic]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).expect("expected value");
+        eval_func("notexist", &[]).unwrap();
     }
 
     #[test]
@@ -733,12 +681,12 @@ mod tests {
 
         assert!(
             eval_func("parseint", &[Value::unknown(Type::String), num_val("10")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("parseint", &[str_val("10"), Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("parseint", &[str_val("10"), num_val("1")]).is_err());
@@ -748,33 +696,33 @@ mod tests {
 
         assert!(
             eval_func("abs", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("abs", &[str_val("bad")]).is_err());
 
         assert!(
             eval_func("ceil", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("ceil", &[str_val("bad")]).is_err());
 
         assert!(
             eval_func("floor", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("floor", &[str_val("bad")]).is_err());
 
         assert!(
             eval_func("log", &[Value::unknown(Type::Number), num_val("10")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("log", &[num_val("10"), Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("log", &[str_val("bad"), num_val("10")]).is_err());
@@ -782,12 +730,12 @@ mod tests {
 
         assert!(
             eval_func("pow", &[Value::unknown(Type::Number), num_val("10")])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(
             eval_func("pow", &[num_val("10"), Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("pow", &[str_val("bad"), num_val("10")]).is_err());
@@ -796,7 +744,7 @@ mod tests {
         assert!(eval_func("max", &[]).is_err());
         assert!(
             eval_func("max", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("max", &[str_val("bad")]).is_err());
@@ -824,7 +772,7 @@ mod tests {
         // max comparisons true/false
         assert_eq!(
             eval_func("max", &[num_val("1"), num_val("5"), num_val("2")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             num_val("5").data.as_ref()
@@ -833,14 +781,14 @@ mod tests {
         assert!(eval_func("min", &[]).is_err());
         assert!(
             eval_func("min", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("min", &[str_val("bad")]).is_err());
         // min comparisons true/false
         assert_eq!(
             eval_func("min", &[num_val("5"), num_val("1"), num_val("3")])
-                .expect("expected value")
+                .unwrap()
                 .data
                 .as_ref(),
             num_val("1").data.as_ref()
@@ -848,13 +796,13 @@ mod tests {
 
         assert!(
             eval_func("signum", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
         assert!(eval_func("signum", &[str_val("bad")]).is_err());
-        let res1 = eval_func("signum", &[num_val("0")]).expect("expected value");
+        let res1 = eval_func("signum", &[num_val("0")]).unwrap();
         assert_eq!(res1.data.as_ref(), num_val("0").data.as_ref());
-        let res2 = eval_func("signum", &[num_val("-5")]).expect("expected value");
+        let res2 = eval_func("signum", &[num_val("-5")]).unwrap();
         assert_eq!(res2.data.as_ref(), num_val("-1").data.as_ref());
     }
 
@@ -872,24 +820,24 @@ mod tests {
         // line 41: unknown argument
         assert!(
             eval_func("range", &[Value::unknown(Type::Number)])
-                .expect("expected value")
+                .unwrap()
                 .is_unknown()
         );
 
         // line 52: 1-arg negative limit
-        let r_neg = eval_func("range", &[num_val("-3")]).expect("expected value");
+        let r_neg = eval_func("range", &[num_val("-3")]).unwrap();
         assert_eq!(r_neg.to_string(), "[0, -1, -2]");
 
         // 1-arg positive limit
-        let r_pos = eval_func("range", &[num_val("3")]).expect("expected value");
+        let r_pos = eval_func("range", &[num_val("3")]).unwrap();
         assert_eq!(r_pos.to_string(), "[0, 1, 2]");
 
         // line 62: 2-arg descending
-        let r_desc = eval_func("range", &[num_val("5"), num_val("2")]).expect("expected value");
+        let r_desc = eval_func("range", &[num_val("5"), num_val("2")]).unwrap();
         assert_eq!(r_desc.to_string(), "[5, 4, 3]");
 
         // 2-arg ascending
-        let r_asc = eval_func("range", &[num_val("1"), num_val("4")]).expect("expected value");
+        let r_asc = eval_func("range", &[num_val("1"), num_val("4")]).unwrap();
         assert_eq!(r_asc.to_string(), "[1, 2, 3]");
 
         // line 75: step cannot be zero

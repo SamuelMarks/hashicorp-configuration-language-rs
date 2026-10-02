@@ -291,6 +291,14 @@ pub fn resolve_definitions(body: &Body, ctx: &mut Context<'_>) -> Result<(), Dia
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::api::parse;
 
@@ -324,15 +332,15 @@ mod tests {
             }
         "#;
 
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let mut ctx = Context::new();
         ctx.stdlib_enabled = true;
 
-        resolve_definitions(&body, &mut ctx).expect("resolve ok");
+        resolve_definitions(&body, &mut ctx).unwrap();
 
         // Check context variables
-        let var_obj = ctx.get_variable("var").expect("var scope exists");
-        let local_obj = ctx.get_variable("local").expect("local scope exists");
+        let var_obj = ctx.get_variable("var").unwrap();
+        let local_obj = ctx.get_variable("local").unwrap();
 
         assert!(var_obj.to_string().contains("us-east-1"));
         assert!(local_obj.to_string().contains("my-cluster-us-east-1"));
@@ -352,9 +360,9 @@ mod tests {
         DagResolver::new()
             .with_var_overrides(overrides)
             .resolve(&body, &mut ctx2)
-            .expect("resolve overrides ok");
+            .unwrap();
 
-        let local_obj2 = ctx2.get_variable("local").expect("local scope exists");
+        let local_obj2 = ctx2.get_variable("local").unwrap();
         assert!(local_obj2.to_string().contains("my-cluster-eu-west-1"));
 
         // Test bad variable default evaluation error
@@ -363,7 +371,7 @@ mod tests {
                 default = 10 / 0
             }
         "#;
-        let bad_body = parse(bad_src).expect("parse ok");
+        let bad_body = parse(bad_src).unwrap();
         let mut bad_ctx = Context::new();
         assert!(resolve_definitions(&bad_body, &mut bad_ctx).is_err());
     }
@@ -377,9 +385,9 @@ mod tests {
             }
         ";
 
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).expect_err("cycle expected");
+        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
 
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
@@ -400,9 +408,9 @@ mod tests {
             }
         "#;
 
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).expect_err("validation expected to fail");
+        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
 
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
@@ -445,12 +453,12 @@ mod tests {
             }
         "#;
 
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).expect_err("errors expected");
+        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
 
         assert!(errs.has_errors());
-        let var_val = ctx.get_variable("var").expect("var scope");
+        let var_val = ctx.get_variable("var").unwrap();
         assert!(var_val.to_string().contains("no_default"));
     }
 
@@ -466,9 +474,9 @@ mod tests {
             }
         "#;
 
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).expect_err("validation fail");
+        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
         assert!(errs.has_errors());
     }
 
@@ -525,7 +533,7 @@ mod tests {
             }
         "#;
 
-        let mut body = parse(src).expect("parse ok");
+        let mut body = parse(src).unwrap();
         // Add a variable block with NO labels to hit block.labels.first() == None branch
         body.blocks.push(crate::ast::structure::Block {
             block_type: "variable".to_string(),
@@ -556,7 +564,7 @@ mod tests {
                 }
             }
         "#;
-        let cond_err_body = parse(cond_err_src).expect("parse ok");
+        let cond_err_body = parse(cond_err_src).unwrap();
         let mut cond_err_ctx = Context::new();
         let cond_err_res = resolve_definitions(&cond_err_body, &mut cond_err_ctx);
         assert!(cond_err_res.is_err());
@@ -579,7 +587,7 @@ mod tests {
                 ref_missing_local = local.missing_local_value
             }
         "#;
-        let body = parse(src).expect("parse ok");
+        let body = parse(src).unwrap();
         let mut ctx = Context::new();
         let res = resolve_definitions(&body, &mut ctx);
         assert!(res.is_err());

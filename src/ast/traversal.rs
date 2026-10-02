@@ -355,6 +355,14 @@ pub fn rel_traversal_for_expr(expr: &Expression) -> Result<RelTraversal, Diagnos
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::number::Number;
 
@@ -362,7 +370,7 @@ mod tests {
     fn test_abs_traversal_basic() {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let var_expr = Expression::Variable("foo".to_string(), span.clone());
-        let abs = abs_traversal_for_expr(&var_expr).expect("valid abs traversal");
+        let abs = abs_traversal_for_expr(&var_expr).unwrap();
         assert_eq!(abs.root(), "foo");
         assert_eq!(abs.root_span(), span);
         assert!(abs.is_empty());
@@ -404,14 +412,14 @@ mod tests {
         };
 
         let expr = Expression::Traversal(Box::new(trav.clone()), span.clone());
-        let abs = AbsTraversal::from_expr(&expr).expect("valid abs traversal");
+        let abs = AbsTraversal::from_expr(&expr).unwrap();
         assert_eq!(abs.root(), "foo");
         assert_eq!(abs.root_span(), var_span);
         assert!(!abs.is_empty());
         assert_eq!(abs.operators().len(), 7);
         assert_eq!(abs.to_string(), r#"foo.bar[0].*[*].1["key"][...]"#);
 
-        let abs_from_trav = AbsTraversal::from_traversal(&trav, span).expect("valid abs");
+        let abs_from_trav = AbsTraversal::from_traversal(&trav, span).unwrap();
         assert_eq!(abs, abs_from_trav);
 
         let expr_back = abs.to_expression();
@@ -435,7 +443,7 @@ mod tests {
         };
         let outer_expr = Expression::Traversal(Box::new(outer_trav), span);
 
-        let abs = AbsTraversal::from_expr(&outer_expr).expect("valid abs traversal");
+        let abs = AbsTraversal::from_expr(&outer_expr).unwrap();
         assert_eq!(abs.root(), "foo");
         assert_eq!(abs.operators().len(), 2);
         assert_eq!(abs.to_string(), "foo.bar.baz");
@@ -521,7 +529,7 @@ mod tests {
         let num = Number::from(10);
         let base_expr = Expression::Number(num, span.clone());
 
-        let rel1 = RelTraversal::from_expr(&base_expr).expect("valid rel");
+        let rel1 = RelTraversal::from_expr(&base_expr).unwrap();
         assert_eq!(rel1.operators().len(), 0);
         assert_eq!(rel1.expr(), &base_expr);
         assert_eq!(rel1.span(), span);
@@ -556,13 +564,13 @@ mod tests {
         };
         let trav_expr = Expression::Traversal(Box::new(trav.clone()), span.clone());
 
-        let rel2 = RelTraversal::from_traversal(&trav, span.clone()).expect("valid rel");
+        let rel2 = RelTraversal::from_traversal(&trav, span.clone()).unwrap();
         assert_eq!(rel2.operators().len(), 7);
         assert_eq!(rel2.expr(), &base_expr);
         assert_eq!(rel2.to_string(), r#"(...).attr["k"][1].*[*].2[...]"#);
         assert_eq!(rel2.to_expression(), trav_expr);
 
-        let rel3 = RelTraversal::from_expr(&trav_expr).expect("valid rel");
+        let rel3 = RelTraversal::from_expr(&trav_expr).unwrap();
         assert_eq!(rel3, rel2);
     }
 

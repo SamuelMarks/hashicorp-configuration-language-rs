@@ -71,6 +71,14 @@ impl AstNodeRef<'_> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::api::parse;
 
@@ -114,43 +122,43 @@ mod tests {
     #[test]
     fn test_spatial_query_block_type_and_labels() {
         let src = "resource \"aws_s3_bucket\" \"my_bucket\" {\n  bucket = \"prod\"\n}\n";
-        let body = parse(src).expect("parsed");
+        let body = parse(src).unwrap();
 
         // 1. Position inside block type "resource" (offset 3)
         let pos_type = Position::new(1, 4, 3);
-        let node_type = body.node_at_position(&pos_type).expect("node found");
-        let block_enc = body.enclosing_block_at(&pos_type).expect("enclosing block");
+        let node_type = body.node_at_position(&pos_type).unwrap();
+        let block_enc = body.enclosing_block_at(&pos_type).unwrap();
         assert_eq!(node_type, AstNodeRef::Block(block_enc));
         assert_eq!(block_enc.block_type, "resource");
         assert_eq!(node_type.span(), block_enc.span);
 
         // 2. Position inside block label "aws_s3_bucket" (offset 15)
         let pos_label1 = Position::new(1, 16, 15);
-        let node_label1 = body.node_at_position(&pos_label1).expect("node found");
+        let node_label1 = body.node_at_position(&pos_label1).unwrap();
         assert_eq!(node_label1, AstNodeRef::Block(block_enc));
 
         // 3. Position inside block label "my_bucket" (offset 30)
         let pos_label2 = Position::new(1, 31, 30);
-        let node_label2 = body.node_at_position(&pos_label2).expect("node found");
+        let node_label2 = body.node_at_position(&pos_label2).unwrap();
         assert_eq!(node_label2, AstNodeRef::Block(block_enc));
     }
 
     #[test]
     fn test_spatial_query_attribute_name_and_value() {
         let src = "service {\n  count = 42\n}\n";
-        let body = parse(src).expect("parsed");
+        let body = parse(src).unwrap();
 
         // 1. Position inside attribute name "count" (offset 14)
         let pos_name = Position::new(2, 4, 14);
-        let node_name = body.node_at_position(&pos_name).expect("node found");
-        let attr = body.attribute_at(&pos_name).expect("attribute found");
+        let node_name = body.node_at_position(&pos_name).unwrap();
+        let attr = body.attribute_at(&pos_name).unwrap();
         assert_eq!(node_name, AstNodeRef::Attribute(attr));
         assert_eq!(attr.name, "count");
         assert_eq!(node_name.span(), attr.span);
 
         // 2. Position inside attribute value literal "42" (offset 21)
         let pos_val = Position::new(2, 11, 21);
-        let node_val = body.node_at_position(&pos_val).expect("node found");
+        let node_val = body.node_at_position(&pos_val).unwrap();
         assert_eq!(node_val, AstNodeRef::Expression(&attr.expr));
         assert_eq!(node_val.span(), attr.expr.span());
     }
@@ -158,11 +166,11 @@ mod tests {
     #[test]
     fn test_spatial_query_nested_template_interpolations() {
         let src = "msg = \"hello ${var.target}!\"\n";
-        let body = parse(src).expect("parsed");
+        let body = parse(src).unwrap();
 
         // Offset 18 is inside "var.target"
         let pos_interp = Position::new(1, 19, 18);
-        let node = body.node_at_position(&pos_interp).expect("node found");
+        let node = body.node_at_position(&pos_interp).unwrap();
         assert!(matches!(
             node,
             AstNodeRef::Expression(expr) if matches!(
@@ -185,7 +193,7 @@ mod tests {
     #[test]
     fn test_spatial_query_whitespace_and_comments_return_none() {
         let src = "a = 1\n\n// comment line\n\nb = 2\n";
-        let body = parse(src).expect("parsed");
+        let body = parse(src).unwrap();
 
         // Offset 6 is in the empty line between a=1 and the comment
         let pos_ws = Position::new(2, 1, 6);
@@ -206,9 +214,9 @@ mod tests {
     #[test]
     fn test_spatial_query_nested_block() {
         let src = "outer {\n  inner {\n    val = 1\n  }\n}\n";
-        let body = parse(src).expect("parsed");
+        let body = parse(src).unwrap();
         let pos_inner = Position::new(3, 5, 22);
-        let enc = body.enclosing_block_at(&pos_inner).expect("inner block");
+        let enc = body.enclosing_block_at(&pos_inner).unwrap();
         assert_eq!(enc.block_type, "inner");
     }
 }

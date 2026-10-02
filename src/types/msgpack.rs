@@ -1183,6 +1183,14 @@ pub fn decode_value(bytes: &[u8], expected_type: &Type) -> Result<Value, HclErro
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::pedantic,
+        clippy::nursery
+    )]
+
     use super::*;
     use crate::number::Number;
     use crate::types::refinement::Refinement;
@@ -1194,16 +1202,16 @@ mod tests {
     fn test_msgpack_primitive_types_roundtrip() {
         let types = [Type::Number, Type::String, Type::Bool, Type::Dynamic];
         for ty in &types {
-            let encoded = ty.to_msgpack().expect("encode succeeds");
-            let decoded = Type::from_msgpack(&encoded).expect("decode succeeds");
+            let encoded = ty.to_msgpack().unwrap();
+            let decoded = Type::from_msgpack(&encoded).unwrap();
             assert_eq!(ty, &decoded);
         }
 
         // Test exact canonical wire vectors
-        assert_eq!(Type::Number.to_msgpack().expect("ok"), vec![0xa1, b'N']);
-        assert_eq!(Type::String.to_msgpack().expect("ok"), vec![0xa1, b'S']);
-        assert_eq!(Type::Bool.to_msgpack().expect("ok"), vec![0xa1, b'B']);
-        assert_eq!(Type::Dynamic.to_msgpack().expect("ok"), vec![0xa1, b'?']);
+        assert_eq!(Type::Number.to_msgpack().unwrap(), vec![0xa1, b'N']);
+        assert_eq!(Type::String.to_msgpack().unwrap(), vec![0xa1, b'S']);
+        assert_eq!(Type::Bool.to_msgpack().unwrap(), vec![0xa1, b'B']);
+        assert_eq!(Type::Dynamic.to_msgpack().unwrap(), vec![0xa1, b'?']);
     }
 
     #[test]
@@ -1222,8 +1230,8 @@ mod tests {
 
         let compound = [list_ty, set_ty, map_ty, tup_ty, obj_ty, cap_ty];
         for ty in &compound {
-            let encoded = ty.to_msgpack().expect("encode succeeds");
-            let decoded = Type::from_msgpack(&encoded).expect("decode succeeds");
+            let encoded = ty.to_msgpack().unwrap();
+            let decoded = Type::from_msgpack(&encoded).unwrap();
             assert_eq!(ty, &decoded);
         }
     }
@@ -1232,50 +1240,44 @@ mod tests {
     fn test_msgpack_primitive_values_roundtrip() {
         // Null values
         let null_str = Value::null(Type::String);
-        let null_enc = null_str.to_msgpack().expect("ok");
+        let null_enc = null_str.to_msgpack().unwrap();
         assert_eq!(null_enc, vec![0xc0]);
-        let null_dec = Value::from_msgpack(&null_enc, &Type::String).expect("ok");
+        let null_dec = Value::from_msgpack(&null_enc, &Type::String).unwrap();
         assert_eq!(null_str, null_dec);
 
         // Booleans
         let t_val = Value::new(Type::Bool, ValueData::Bool(true));
         let f_val = Value::new(Type::Bool, ValueData::Bool(false));
-        assert_eq!(t_val.to_msgpack().expect("ok"), vec![0xc3]);
-        assert_eq!(f_val.to_msgpack().expect("ok"), vec![0xc2]);
-        assert_eq!(
-            Value::from_msgpack(&[0xc3], &Type::Bool).expect("ok"),
-            t_val
-        );
-        assert_eq!(
-            Value::from_msgpack(&[0xc2], &Type::Bool).expect("ok"),
-            f_val
-        );
+        assert_eq!(t_val.to_msgpack().unwrap(), vec![0xc3]);
+        assert_eq!(f_val.to_msgpack().unwrap(), vec![0xc2]);
+        assert_eq!(Value::from_msgpack(&[0xc3], &Type::Bool).unwrap(), t_val);
+        assert_eq!(Value::from_msgpack(&[0xc2], &Type::Bool).unwrap(), f_val);
 
         // Strings (short, medium, bin)
         let str_val = Value::new(Type::String, ValueData::String("hello world".to_string()));
-        let str_enc = str_val.to_msgpack().expect("ok");
-        let str_dec = Value::from_msgpack(&str_enc, &Type::String).expect("ok");
+        let str_enc = str_val.to_msgpack().unwrap();
+        let str_dec = Value::from_msgpack(&str_enc, &Type::String).unwrap();
         assert_eq!(str_val, str_dec);
 
         // Numbers (integers, floats, big decimal)
         let num_int = Value::new(Type::Number, ValueData::Number(Number::from(42)));
-        let num_enc = num_int.to_msgpack().expect("ok");
-        let num_dec = Value::from_msgpack(&num_enc, &Type::Number).expect("ok");
+        let num_enc = num_int.to_msgpack().unwrap();
+        let num_dec = Value::from_msgpack(&num_enc, &Type::Number).unwrap();
         assert_eq!(num_int, num_dec);
 
         let num_neg = Value::new(Type::Number, ValueData::Number(Number::from(-100)));
-        let neg_enc = num_neg.to_msgpack().expect("ok");
-        let neg_dec = Value::from_msgpack(&neg_enc, &Type::Number).expect("ok");
+        let neg_enc = num_neg.to_msgpack().unwrap();
+        let neg_dec = Value::from_msgpack(&neg_enc, &Type::Number).unwrap();
         assert_eq!(num_neg, neg_dec);
 
         let num_big = Value::new(
             Type::Number,
             ValueData::Number(
-                Number::from_str("123456789012345678901234567890.123456789").expect("ok"),
+                Number::from_str("123456789012345678901234567890.123456789").unwrap(),
             ),
         );
-        let big_enc = num_big.to_msgpack().expect("ok");
-        let big_dec = Value::from_msgpack(&big_enc, &Type::Number).expect("ok");
+        let big_enc = num_big.to_msgpack().unwrap();
+        let big_dec = Value::from_msgpack(&big_enc, &Type::Number).unwrap();
         assert_eq!(num_big, big_dec);
     }
 
@@ -1289,8 +1291,8 @@ mod tests {
                 Value::new(Type::String, ValueData::String("b".to_string())),
             ]),
         );
-        let list_enc = list_val.to_msgpack().expect("ok");
-        let list_dec = Value::from_msgpack(&list_enc, list_val.ty()).expect("ok");
+        let list_enc = list_val.to_msgpack().unwrap();
+        let list_dec = Value::from_msgpack(&list_enc, list_val.ty()).unwrap();
         assert_eq!(list_val, list_dec);
 
         // Set
@@ -1298,8 +1300,8 @@ mod tests {
         set.insert(Value::new(Type::Number, ValueData::Number(Number::from(1))));
         set.insert(Value::new(Type::Number, ValueData::Number(Number::from(2))));
         let set_val = Value::new(Type::Set(Box::new(Type::Number)), ValueData::Set(set));
-        let set_enc = set_val.to_msgpack().expect("ok");
-        let set_dec = Value::from_msgpack(&set_enc, set_val.ty()).expect("ok");
+        let set_enc = set_val.to_msgpack().unwrap();
+        let set_dec = Value::from_msgpack(&set_enc, set_val.ty()).unwrap();
         assert_eq!(set_val, set_dec);
 
         // Tuple
@@ -1310,8 +1312,8 @@ mod tests {
                 Value::new(Type::Number, ValueData::Number(Number::from(99))),
             ]),
         );
-        let tup_enc = tup_val.to_msgpack().expect("ok");
-        let tup_dec = Value::from_msgpack(&tup_enc, tup_val.ty()).expect("ok");
+        let tup_enc = tup_val.to_msgpack().unwrap();
+        let tup_dec = Value::from_msgpack(&tup_enc, tup_val.ty()).unwrap();
         assert_eq!(tup_val, tup_dec);
 
         // Object
@@ -1331,8 +1333,8 @@ mod tests {
             ])),
             ValueData::Object(obj),
         );
-        let obj_enc = obj_val.to_msgpack().expect("ok");
-        let obj_dec = Value::from_msgpack(&obj_enc, obj_val.ty()).expect("ok");
+        let obj_enc = obj_val.to_msgpack().unwrap();
+        let obj_dec = Value::from_msgpack(&obj_enc, obj_val.ty()).unwrap();
         assert_eq!(obj_val, obj_dec);
     }
 
@@ -1340,10 +1342,10 @@ mod tests {
     fn test_msgpack_unknown_and_refinements_roundtrip() {
         // Unrefined unknown
         let unk_val = Value::unknown(Type::String);
-        let unk_enc = unk_val.to_msgpack().expect("ok");
+        let unk_enc = unk_val.to_msgpack().unwrap();
         // Extension 0 check
         assert_eq!(unk_enc, vec![0xd4, 0x00, 0x00]);
-        let unk_dec = Value::from_msgpack(&unk_enc, &Type::String).expect("ok");
+        let unk_dec = Value::from_msgpack(&unk_enc, &Type::String).unwrap();
         assert!(unk_dec.is_unknown());
         assert_eq!(unk_dec.refinement(), None);
 
@@ -1352,17 +1354,17 @@ mod tests {
             .with_prefix("server-")
             .with_suffix(".internal")
             .with_string_length(10, 40)
-            .expect("ok")
+            .unwrap()
             .with_collection_length(1, 100)
-            .expect("ok")
+            .unwrap()
             .with_number_range(Number::from(1), Number::from(100))
-            .expect("ok")
+            .unwrap()
             .with_object_attr("ip", Refinement::not_null().with_prefix("10."));
         let ref_val = Value::unknown_refined(Type::String, r.clone());
-        let ref_enc = ref_val.to_msgpack().expect("ok");
-        let ref_dec = Value::from_msgpack(&ref_enc, &Type::String).expect("ok");
+        let ref_enc = ref_val.to_msgpack().unwrap();
+        let ref_dec = Value::from_msgpack(&ref_enc, &Type::String).unwrap();
         assert!(ref_dec.is_unknown());
-        let decoded_ref = ref_dec.refinement().expect("refinement exists");
+        let decoded_ref = ref_dec.refinement().unwrap();
         assert!(decoded_ref.not_null);
         assert_eq!(decoded_ref.string_prefix.as_deref(), Some("server-"));
         assert_eq!(decoded_ref.string_suffix.as_deref(), Some(".internal"));
@@ -1377,7 +1379,7 @@ mod tests {
         // Test empty ext 0 payload
         let mut w_empty = MsgPackWriter::new();
         w_empty.write_ext(0, &[]);
-        let empty_unk = Value::from_msgpack(&w_empty.into_bytes(), &Type::String).expect("ok");
+        let empty_unk = Value::from_msgpack(&w_empty.into_bytes(), &Type::String).unwrap();
         assert!(empty_unk.is_unknown());
 
         // Test negative int values for length fields in refinement
@@ -1396,9 +1398,9 @@ mod tests {
 
         let mut w_ref = MsgPackWriter::new();
         w_ref.write_ext(0, &ref_payload.into_bytes());
-        let dec_ref = Value::from_msgpack(&w_ref.into_bytes(), &Type::String).expect("ok");
+        let dec_ref = Value::from_msgpack(&w_ref.into_bytes(), &Type::String).unwrap();
         assert!(dec_ref.is_unknown());
-        let r = dec_ref.refinement().expect("ref exists");
+        let r = dec_ref.refinement().unwrap();
         assert_eq!(r.string_length_min, None);
         assert_eq!(r.string_length_max, None);
         assert_eq!(r.collection_length_min, None);
@@ -1412,8 +1414,8 @@ mod tests {
         val.marks.insert(ValueMark::custom("encrypted"));
         val.marks.insert(ValueMark::typed(42u32));
 
-        let enc = val.to_msgpack().expect("ok");
-        let dec = Value::from_msgpack(&enc, &Type::String).expect("ok");
+        let enc = val.to_msgpack().unwrap();
+        let dec = Value::from_msgpack(&enc, &Type::String).unwrap();
         assert!(dec.has_mark(&ValueMark::Sensitive));
         assert!(dec.has_mark(&ValueMark::custom("encrypted")));
         assert!(dec.has_mark(&ValueMark::custom("42")));
@@ -1423,8 +1425,8 @@ mod tests {
     fn test_msgpack_capsule_roundtrip() {
         let cap_ty = Type::capsule::<()>("my_resource");
         let cap_val = Value::capsule("my_resource", ());
-        let enc = cap_val.to_msgpack().expect("ok");
-        let dec = Value::from_msgpack(&enc, &cap_ty).expect("ok");
+        let enc = cap_val.to_msgpack().unwrap();
+        let dec = Value::from_msgpack(&enc, &cap_ty).unwrap();
         assert_eq!(dec.ty().capsule_name(), Some("my_resource"));
     }
 
