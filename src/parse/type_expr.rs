@@ -1,24 +1,20 @@
 //! Parsing for HCL Type Expressions.
 //!
 //! Provides the ability to parse strings and token streams into `TypeExpr` AST nodes.
-
 use crate::ast::expr::Expression;
 use crate::ast::type_expr::{CollectionType, ObjectAttrType, TypeExpr};
-
 use crate::error::HclError;
 use crate::lex::lexer::Lexer;
 use crate::lex::token::{Token, TokenKind};
 use crate::span::Span;
 use crate::types::ty::Type;
 use std::collections::HashMap;
-
 /// Parser specifically for type expressions.
 pub struct TypeExprParser<'a> {
     lexer: Lexer<'a>,
     current: Option<Token>,
     next_tok: Option<Token>,
 }
-
 impl<'a> TypeExprParser<'a> {
     /// Create a new `TypeExprParser` for the given input string.
     #[must_use]
@@ -33,7 +29,6 @@ impl<'a> TypeExprParser<'a> {
         parser.advance();
         parser
     }
-
     fn advance(&mut self) {
         self.current = self.next_tok.take();
         loop {
@@ -49,46 +44,37 @@ impl<'a> TypeExprParser<'a> {
                         || tok.kind == TokenKind::InlineComment
                         || tok.kind == TokenKind::Newline
                     {
-                        // continue
                     } else {
                         self.next_tok = Some(tok);
                         break;
                     }
                 }
-                Some(Err(_err)) => {
-                    // Ignore lexer errors for now
-                }
+                Some(Err(_err)) => {}
             }
         }
     }
-
     /// Parse a type expression from the input.
     ///
     /// # Errors
     /// Returns an `HclError::Parse` if the input is not a valid type expression.
     pub fn parse(&mut self) -> Result<TypeExpr, HclError> {
         let expr = self.parse_type_expr()?;
-
         if self.current.is_some() {
             return Err(HclError::Parse(
                 "Unexpected tokens after type expression".to_string(),
             ));
         }
-
         Ok(expr)
     }
-
     fn parse_type_expr(&mut self) -> Result<TypeExpr, HclError> {
         let tok = self
             .current
             .as_ref()
             .ok_or_else(|| HclError::Parse("Unexpected EOF".to_string()))?;
         let span = tok.span.clone();
-
         if tok.kind == TokenKind::Ident {
             let text = tok.text.clone();
             self.advance();
-
             match text.as_str() {
                 "string" => Ok(TypeExpr::Primitive(Type::String, span)),
                 "number" => Ok(TypeExpr::Primitive(Type::Number, span)),
@@ -108,7 +94,6 @@ impl<'a> TypeExprParser<'a> {
             Err(HclError::Parse("Expected type identifier".to_string()))
         }
     }
-
     fn parse_collection(
         &mut self,
         coll_type: CollectionType,
@@ -122,26 +107,19 @@ impl<'a> TypeExprParser<'a> {
         span.end_byte = close_span.end_byte;
         Ok(TypeExpr::Collection(coll_type, Box::new(inner), span))
     }
-
     fn parse_object(&mut self, mut span: Span) -> Result<TypeExpr, HclError> {
         self.expect(&TokenKind::OParen)?;
         self.expect(&TokenKind::OBrace)?;
-
         let mut attrs = HashMap::new();
-
         while let Some(tok) = &self.current {
             if tok.kind == TokenKind::CBrace {
                 break;
             }
-
             if tok.kind != TokenKind::Ident {
                 return Err(HclError::Parse("Expected attribute name".to_string()));
             }
-
             let name = tok.text.clone();
             self.advance();
-
-            // Attribute separator can be '=' or ':'
             let next_tok = self.current.as_ref().ok_or_else(|| {
                 HclError::Parse("Expected '=' or ':' after attribute name".to_string())
             })?;
@@ -151,10 +129,8 @@ impl<'a> TypeExprParser<'a> {
                 ));
             }
             self.advance();
-
             let attr_type = self.parse_object_attr_type()?;
             attrs.insert(name, attr_type);
-
             if let Some(next) = &self.current {
                 match next.kind {
                     TokenKind::Comma => {
@@ -165,7 +141,6 @@ impl<'a> TypeExprParser<'a> {
                 }
             }
         }
-
         self.expect(&TokenKind::CBrace)?;
         let close_span = self.expect(&TokenKind::CParen)?;
         span.end_line = close_span.end_line;
@@ -173,40 +148,35 @@ impl<'a> TypeExprParser<'a> {
         span.end_byte = close_span.end_byte;
         Ok(TypeExpr::Object(attrs, span))
     }
-
     fn parse_object_attr_type(&mut self) -> Result<ObjectAttrType, HclError> {
-        if let Some(tok) = &self.current
-            && tok.kind == TokenKind::Ident
-            && tok.text == "optional"
-        {
-            self.advance();
-            self.expect(&TokenKind::OParen)?;
-            let inner_ty = self.parse_type_expr()?;
-
-            let default_val = if let Some(t) = &self.current
-                && t.kind == TokenKind::Comma
-            {
+        if let Some(tok) = &self.current {
+            if tok.kind == TokenKind::Ident && tok.text == "optional" {
                 self.advance();
-                Some(self.parse_default_expr()?)
-            } else {
-                None
-            };
-
-            self.expect(&TokenKind::CParen)?;
-            return Ok(ObjectAttrType::optional(inner_ty, default_val));
+                self.expect(&TokenKind::OParen)?;
+                let inner_ty = self.parse_type_expr()?;
+                let default_val = if let Some(t) = &self.current {
+                    if t.kind == TokenKind::Comma {
+                        self.advance();
+                        Some(self.parse_default_expr()?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                self.expect(&TokenKind::CParen)?;
+                return Ok(ObjectAttrType::optional(inner_ty, default_val));
+            }
         }
-
         let ty = self.parse_type_expr()?;
         Ok(ObjectAttrType::required(ty))
     }
-
     fn parse_default_expr(&mut self) -> Result<Expression, HclError> {
         let tok = self
             .current
             .as_ref()
             .ok_or_else(|| HclError::Parse("Unexpected EOF in default expression".to_string()))?;
         let span = tok.span.clone();
-
         match tok.kind {
             TokenKind::Number => {
                 let n = tok
@@ -219,8 +189,16 @@ impl<'a> TypeExprParser<'a> {
             TokenKind::String => {
                 let s = tok.text.clone();
                 self.advance();
-                let clean = if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-                    s[1..s.len() - 1].to_string()
+                let clean = if s.starts_with('"') {
+                    if s.ends_with('"') {
+                        if s.len() >= 2 {
+                            s[1..s.len() - 1].to_string()
+                        } else {
+                            s
+                        }
+                    } else {
+                        s
+                    }
                 } else {
                     s
                 };
@@ -337,21 +315,16 @@ impl<'a> TypeExprParser<'a> {
             ))),
         }
     }
-
     fn parse_tuple(&mut self, mut span: Span) -> Result<TypeExpr, HclError> {
         self.expect(&TokenKind::OParen)?;
         self.expect(&TokenKind::OBrack)?;
-
         let mut elems = Vec::new();
-
         while let Some(tok) = &self.current {
             if tok.kind == TokenKind::CBrack {
                 break;
             }
-
             let elem_type = self.parse_type_expr()?;
             elems.push(elem_type);
-
             if let Some(next) = &self.current {
                 match next.kind {
                     TokenKind::Comma => {
@@ -362,7 +335,6 @@ impl<'a> TypeExprParser<'a> {
                 }
             }
         }
-
         self.expect(&TokenKind::CBrack)?;
         let close_span = self.expect(&TokenKind::CParen)?;
         span.end_line = close_span.end_line;
@@ -370,7 +342,6 @@ impl<'a> TypeExprParser<'a> {
         span.end_byte = close_span.end_byte;
         Ok(TypeExpr::Tuple(elems, span))
     }
-
     fn expect(&mut self, kind: &TokenKind) -> Result<Span, HclError> {
         if let Some(tok) = &self.current {
             if tok.kind == *kind {
@@ -388,7 +359,6 @@ impl<'a> TypeExprParser<'a> {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -398,9 +368,7 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     #[test]
     fn test_parse_primitive() {
         let mut parser = TypeExprParser::new("string");
@@ -412,7 +380,6 @@ mod tests {
             expr,
             TypeExpr::Primitive(Type::String, Span::new(0, 6, 1, 1, 1, 7))
         );
-
         let mut parser = TypeExprParser::new("number");
         let expr = parser.parse().unwrap_or(TypeExpr::Primitive(
             Type::Dynamic,
@@ -422,7 +389,6 @@ mod tests {
             expr,
             TypeExpr::Primitive(Type::Number, Span::new(0, 6, 1, 1, 1, 7))
         );
-
         let mut parser = TypeExprParser::new("bool");
         let expr = parser.parse().unwrap_or(TypeExpr::Primitive(
             Type::Dynamic,
@@ -432,7 +398,6 @@ mod tests {
             expr,
             TypeExpr::Primitive(Type::Bool, Span::new(0, 4, 1, 1, 1, 5))
         );
-
         let mut parser = TypeExprParser::new("any");
         let expr = parser.parse().unwrap_or(TypeExpr::Primitive(
             Type::String,
@@ -443,7 +408,6 @@ mod tests {
             TypeExpr::Primitive(Type::Dynamic, Span::new(0, 3, 1, 1, 1, 4))
         );
     }
-
     #[test]
     fn test_parse_collection() {
         let mut parser = TypeExprParser::new("list(string)");
@@ -459,7 +423,6 @@ mod tests {
                 Span::new(0, 12, 1, 1, 1, 13),
             )
         );
-
         let mut parser = TypeExprParser::new("set(number)");
         let expr = parser.parse().unwrap();
         assert_eq!(
@@ -473,7 +436,6 @@ mod tests {
                 Span::new(0, 11, 1, 1, 1, 12),
             )
         );
-
         let mut parser = TypeExprParser::new("map(bool)");
         let expr = parser.parse().unwrap();
         assert_eq!(
@@ -485,7 +447,6 @@ mod tests {
             )
         );
     }
-
     #[test]
     fn test_parse_object() {
         let mut parser = TypeExprParser::new("object({ foo : string, bar = number })");
@@ -509,8 +470,6 @@ mod tests {
             expr,
             TypeExpr::Object(expected_attrs, Span::new(0, 38, 1, 1, 1, 39))
         );
-
-        // Trailing comma
         let mut parser = TypeExprParser::new("object({ foo : string, })");
         let expr = parser.parse().unwrap();
         let mut expected_attrs2 = HashMap::new();
@@ -526,7 +485,6 @@ mod tests {
             TypeExpr::Object(expected_attrs2, Span::new(0, 25, 1, 1, 1, 26))
         );
     }
-
     #[test]
     fn test_parse_object_optional() {
         let check_obj = |e: &TypeExpr| -> usize {
@@ -536,7 +494,6 @@ mod tests {
                 0
             }
         };
-
         fn get_attr_info(expr: &TypeExpr, name: &str) -> (bool, Option<Expression>) {
             match expr {
                 TypeExpr::Object(attrs, _) => match attrs.get(name) {
@@ -546,8 +503,6 @@ mod tests {
                 _ => (false, None),
             }
         }
-
-        // optional with default
         let mut parser =
             TypeExprParser::new("object({ name = string, port = optional(number, 8080) })");
         let expr = parser.parse().unwrap_or(TypeExpr::Primitive(
@@ -574,8 +529,6 @@ mod tests {
             (false, None)
         );
         assert_eq!(check_obj(&expr), 2);
-
-        // optional without default
         let mut parser2 = TypeExprParser::new("object({ desc = optional(string) })");
         let expr2 = parser2.parse().unwrap_or(TypeExpr::Primitive(
             Type::Dynamic,
@@ -590,8 +543,6 @@ mod tests {
             )),
             0
         );
-
-        // More complex defaults: string, bool, null, negative number, tuple, object
         let complex_src = "object({
             s = optional(string, \"default\"),
             b = optional(bool, true),
@@ -602,8 +553,6 @@ mod tests {
         })";
         let mut p_complex = TypeExprParser::new(complex_src);
         assert!(p_complex.parse().is_ok());
-
-        // Reject optional outside object
         assert!(TypeExprParser::new("optional(string)").parse().is_err());
         assert!(
             TypeExprParser::new("list(optional(string))")
@@ -617,7 +566,6 @@ mod tests {
         );
         assert!(TypeExprParser::new("map(optional(bool))").parse().is_err());
     }
-
     #[test]
     fn test_parse_tuple() {
         let mut parser = TypeExprParser::new("tuple([string, number, bool])");
@@ -631,8 +579,6 @@ mod tests {
             expr,
             TypeExpr::Tuple(expected_elems, Span::new(0, 29, 1, 1, 1, 30))
         );
-
-        // Trailing comma
         let mut parser = TypeExprParser::new("tuple([string, ])");
         let expr = parser.parse().unwrap();
         let expected_elems2 = vec![TypeExpr::Primitive(
@@ -644,11 +590,10 @@ mod tests {
             TypeExpr::Tuple(expected_elems2, Span::new(0, 17, 1, 1, 1, 18))
         );
     }
-
     #[test]
     fn test_parse_errors() {
-        assert!(TypeExprParser::new("@").parse().is_err()); // lexer error test, will fall back to EOF or identifier fail
-        assert!(TypeExprParser::new("{").parse().is_err()); // expected type identifier
+        assert!(TypeExprParser::new("@").parse().is_err());
+        assert!(TypeExprParser::new("{").parse().is_err());
         assert!(TypeExprParser::new("invalid_type").parse().is_err());
         assert!(TypeExprParser::new("list(string").parse().is_err());
         assert!(TypeExprParser::new("object(foo: string)").parse().is_err());
@@ -662,57 +607,51 @@ mod tests {
             TypeExprParser::new("object({foo % string})")
                 .parse()
                 .is_err()
-        ); // expecting = or :
+        );
         assert!(
             TypeExprParser::new("object({foo: string bar: string})")
                 .parse()
                 .is_err()
-        ); // expecting , or }
+        );
         assert!(
             TypeExprParser::new("tuple([string number])")
                 .parse()
                 .is_err()
-        ); // expecting , or ]
+        );
         assert!(TypeExprParser::new("tuple([string)").parse().is_err());
-        assert!(TypeExprParser::new("string string").parse().is_err()); // unexpected token after
-        assert!(TypeExprParser::new("").parse().is_err()); // EOF
-        assert!(TypeExprParser::new("list(").parse().is_err()); // EOF inside collection
-        assert!(TypeExprParser::new("object({").parse().is_err()); // EOF inside object
+        assert!(TypeExprParser::new("string string").parse().is_err());
+        assert!(TypeExprParser::new("").parse().is_err());
+        assert!(TypeExprParser::new("list(").parse().is_err());
+        assert!(TypeExprParser::new("object({").parse().is_err());
         assert!(
             TypeExprParser::new("object({ 123 = string })")
                 .parse()
                 .is_err()
-        ); // non-ident key
-        assert!(TypeExprParser::new("object({ a = string ").parse().is_err()); // Missing brace
-        assert!(TypeExprParser::new("object({ a : string").parse().is_err()); // EOF inside object after type
+        );
+        assert!(TypeExprParser::new("object({ a = string ").parse().is_err());
+        assert!(TypeExprParser::new("object({ a : string").parse().is_err());
         assert!(
             TypeExprParser::new("object({ a = string, 123 = bool })")
                 .parse()
                 .is_err()
-        ); // Bad token after comma
-        assert!(TypeExprParser::new("tuple([").parse().is_err()); // Missing brack
-        assert!(TypeExprParser::new("tuple([string").parse().is_err()); // Missing brack
+        );
+        assert!(TypeExprParser::new("tuple([").parse().is_err());
+        assert!(TypeExprParser::new("tuple([string").parse().is_err());
         assert!(
             TypeExprParser::new("list(\n /* block */\n # inline\n string\n)")
                 .parse()
                 .is_ok()
         );
     }
-
     #[test]
     fn test_type_expr_coverage_gaps_exhaustive() {
-        // 1. Missing '(' for collections, objects, tuples
         assert!(TypeExprParser::new("list string").parse().is_err());
         assert!(TypeExprParser::new("object string").parse().is_err());
         assert!(TypeExprParser::new("tuple string").parse().is_err());
         assert!(TypeExprParser::new("tuple(string)").parse().is_err());
         assert!(TypeExprParser::new("tuple([bad_type])").parse().is_err());
         assert!(TypeExprParser::new("tuple([string]").parse().is_err());
-
-        // 2. Object type missing '=' or ':' after attribute name (EOF right after key)
         assert!(TypeExprParser::new("object({ a").parse().is_err());
-
-        // 3. Optional type variations
         assert!(
             TypeExprParser::new("object({ a = optional string })")
                 .parse()
@@ -733,30 +672,21 @@ mod tests {
                 .parse()
                 .is_err()
         );
-
-        // 4. Default expressions
-        // 4a. bool false
         assert!(
             TypeExprParser::new("object({ a = optional(bool, false) })")
                 .parse()
                 .is_ok()
         );
-
-        // 4b. expected number after '-' in default expression
         assert!(
             TypeExprParser::new("object({ a = optional(number, - \"abc\") })")
                 .parse()
                 .is_err()
         );
-
-        // 4c. tuple default missing comma
         assert!(
             TypeExprParser::new("object({ a = optional(tuple([number, number]), [1 2]) })")
                 .parse()
                 .is_err()
         );
-
-        // 4d. object default missing '=' or ':'
         assert!(
             TypeExprParser::new("object({ a = optional(object({ x = number }), { x 1 }) })")
                 .parse()
@@ -767,8 +697,6 @@ mod tests {
                 .parse()
                 .is_err()
         );
-
-        // 4e. object default missing comma or closing brace
         assert!(
             TypeExprParser::new(
                 "object({ a = optional(object({ x = number, y = number }), { x = 1 y = 2 }) })"
@@ -776,8 +704,6 @@ mod tests {
             .parse()
             .is_err()
         );
-
-        // 4f. unsupported default expression token and EOF in default
         assert!(
             TypeExprParser::new("object({ a = optional(string, ?) })")
                 .parse()
@@ -819,16 +745,12 @@ mod tests {
                 .is_err()
         );
         assert!(TypeExprParser::new("object({ a = ? })").parse().is_err());
-        // EOF right after '=' in object attribute (self.current is None in parse_object_attr_type)
         assert!(TypeExprParser::new("object({ a =").parse().is_err());
-        // EOF right after type in optional (self.current is None in parse_object_attr_type default check)
         assert!(
             TypeExprParser::new("object({ a = optional(string")
                 .parse()
                 .is_err()
         );
-
-        // 4g. number parse error fallback in default expr
         let mut p_bad_num = TypeExprParser::new("");
         p_bad_num.current = Some(Token::new(
             TokenKind::Number,
@@ -836,9 +758,6 @@ mod tests {
             Span::new(0, 0, 1, 1, 1, 1),
         ));
         assert!(p_bad_num.parse_default_expr().is_ok());
-
-        // 4h. default string edge cases:
-        // - raw string without quotes
         let mut p1 = TypeExprParser::new("");
         p1.current = Some(Token::new(
             TokenKind::String,
@@ -852,8 +771,6 @@ mod tests {
                 Span::new(0, 0, 1, 1, 1, 1)
             ))
         );
-
-        // - string starting with quote but not ending with quote
         let mut p2 = TypeExprParser::new("");
         p2.current = Some(Token::new(
             TokenKind::String,
@@ -867,8 +784,6 @@ mod tests {
                 Span::new(0, 0, 1, 1, 1, 1)
             ))
         );
-
-        // - string of length 1 (starts and ends with quote, but len < 2)
         let mut p3 = TypeExprParser::new("");
         p3.current = Some(Token::new(
             TokenKind::String,

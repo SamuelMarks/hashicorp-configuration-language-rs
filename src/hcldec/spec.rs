@@ -2,24 +2,20 @@
 //!
 //! Provides the `Spec` enum to describe the expected shape of HCL blocks
 //! and attributes, similar to the `hcldec` package in Go.
-
 use crate::error::HclError;
 use crate::types::ty::Type;
 use crate::types::val::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-
 /// Details for a nested block specification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockSpec {
     /// The block type identifier (e.g., `"resource"` or `"variable"`).
     pub type_name: String,
-
     /// The specification detailing the expected structure of the block's body.
     pub body: Box<Spec>,
 }
-
 /// Details for a repeated block list specification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockListSpec {
@@ -32,7 +28,6 @@ pub struct BlockListSpec {
     /// Optional maximum number of items allowed.
     pub max_items: Option<usize>,
 }
-
 impl BlockListSpec {
     /// Creates a new `BlockListSpec`.
     ///
@@ -48,7 +43,6 @@ impl BlockListSpec {
             max_items: None,
         }
     }
-
     /// Sets the minimum item count constraint.
     ///
     /// # Arguments
@@ -58,7 +52,6 @@ impl BlockListSpec {
         self.min_items = Some(min);
         self
     }
-
     /// Sets the maximum item count constraint.
     ///
     /// # Arguments
@@ -69,7 +62,6 @@ impl BlockListSpec {
         self
     }
 }
-
 /// Details for a repeated block set specification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockSetSpec {
@@ -78,7 +70,6 @@ pub struct BlockSetSpec {
     /// The specification for decoding each block into a unique set element.
     pub nested: Box<Spec>,
 }
-
 impl BlockSetSpec {
     /// Creates a new `BlockSetSpec`.
     ///
@@ -93,7 +84,6 @@ impl BlockSetSpec {
         }
     }
 }
-
 /// Details for a block map specification indexed by block labels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockMapSpec {
@@ -104,7 +94,6 @@ pub struct BlockMapSpec {
     /// The specification for decoding each block's body.
     pub nested: Box<Spec>,
 }
-
 impl BlockMapSpec {
     /// Creates a new `BlockMapSpec`.
     ///
@@ -121,7 +110,6 @@ impl BlockMapSpec {
         }
     }
 }
-
 /// Details for consuming all attributes of a block into an arbitrary key-value map.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockAttrsSpec {
@@ -130,7 +118,6 @@ pub struct BlockAttrsSpec {
     /// Optional expected type for the attribute values.
     pub expected_type: Option<Type>,
 }
-
 impl BlockAttrsSpec {
     /// Creates a new `BlockAttrsSpec`.
     ///
@@ -143,7 +130,6 @@ impl BlockAttrsSpec {
             expected_type: None,
         }
     }
-
     /// Sets the expected value type for the attributes.
     ///
     /// # Arguments
@@ -154,14 +140,12 @@ impl BlockAttrsSpec {
         self
     }
 }
-
 /// Details for injecting a literal constant value into decoded output.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiteralSpec {
     /// The constant value to emit.
     pub value: Value,
 }
-
 impl LiteralSpec {
     /// Creates a new `LiteralSpec`.
     ///
@@ -172,10 +156,8 @@ impl LiteralSpec {
         Self { value }
     }
 }
-
 /// Type alias for transformation closures.
 pub type TransformFn = Arc<dyn Fn(Value) -> Result<Value, HclError> + Send + Sync>;
-
 /// Details for applying a transformation function to decoded sub-values.
 #[derive(Clone)]
 pub struct TransformSpec {
@@ -184,7 +166,6 @@ pub struct TransformSpec {
     /// The transformation closure.
     pub func: TransformFn,
 }
-
 impl fmt::Debug for TransformSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransformSpec")
@@ -192,13 +173,11 @@ impl fmt::Debug for TransformSpec {
             .finish_non_exhaustive()
     }
 }
-
 impl PartialEq for TransformSpec {
     fn eq(&self, other: &Self) -> bool {
         self.spec == other.spec && Arc::ptr_eq(&self.func, &other.func)
     }
 }
-
 impl TransformSpec {
     /// Creates a new `TransformSpec`.
     ///
@@ -216,14 +195,12 @@ impl TransformSpec {
         }
     }
 }
-
 /// Details for decoding an ordered heterogeneous tuple.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TupleSpec {
     /// Element specifications in order.
     pub elements: Vec<Spec>,
 }
-
 impl TupleSpec {
     /// Creates a new `TupleSpec`.
     ///
@@ -234,14 +211,12 @@ impl TupleSpec {
         Self { elements }
     }
 }
-
 /// Details for an arbitrary expression specification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExprSpec {
     /// The expression AST node.
     pub expr: crate::ast::expr::Expression,
 }
-
 impl ExprSpec {
     /// Creates a new `ExprSpec`.
     ///
@@ -252,32 +227,24 @@ impl ExprSpec {
         Self { expr }
     }
 }
-
 /// Type alias for custom attribute validation closures.
 pub type AttrValidatorFn = Arc<dyn Fn(&Value) -> Result<(), String> + Send + Sync>;
-
 /// Details for an attribute specification.
 #[derive(Clone)]
 pub struct AttrSpec {
     /// The name of the attribute.
     pub name: String,
-
     /// The expected type of the attribute's evaluated value.
     pub expected_type: Type,
-
     /// Optional regex pattern that string attribute values must match.
     pub regex_pattern: Option<regex::Regex>,
-
     /// Optional minimum numeric value constraint.
     pub min_value: Option<crate::number::Number>,
-
     /// Optional maximum numeric value constraint.
     pub max_value: Option<crate::number::Number>,
-
     /// Optional custom validation closure.
     pub custom_validator: Option<AttrValidatorFn>,
 }
-
 impl fmt::Debug for AttrSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AttrSpec")
@@ -292,7 +259,6 @@ impl fmt::Debug for AttrSpec {
             .finish_non_exhaustive()
     }
 }
-
 impl PartialEq for AttrSpec {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
@@ -308,7 +274,6 @@ impl PartialEq for AttrSpec {
             }
     }
 }
-
 impl AttrSpec {
     /// Creates a new `AttrSpec`.
     ///
@@ -326,7 +291,6 @@ impl AttrSpec {
             custom_validator: None,
         }
     }
-
     /// Sets a regex pattern validation constraint for string attribute values.
     ///
     /// # Arguments
@@ -336,7 +300,6 @@ impl AttrSpec {
         self.regex_pattern = Some(regex);
         self
     }
-
     /// Sets a minimum numeric value constraint.
     ///
     /// # Arguments
@@ -346,7 +309,6 @@ impl AttrSpec {
         self.min_value = Some(min);
         self
     }
-
     /// Sets a maximum numeric value constraint.
     ///
     /// # Arguments
@@ -356,7 +318,6 @@ impl AttrSpec {
         self.max_value = Some(max);
         self
     }
-
     /// Sets a custom validation function.
     ///
     /// # Arguments
@@ -369,7 +330,6 @@ impl AttrSpec {
         self.custom_validator = Some(Arc::new(validator));
         self
     }
-
     /// Validates an evaluated value against the declarative rules on this attribute specification.
     ///
     /// # Arguments
@@ -379,61 +339,57 @@ impl AttrSpec {
     /// # Errors
     /// Returns [`HclError::Validation`] if regex, min/max, or custom validator fails.
     pub fn validate_value(&self, val: &Value, _span: crate::span::Span) -> Result<(), HclError> {
-        if let Some(ref regex) = self.regex_pattern
-            && let crate::types::val::ValueData::String(ref s) = *val.data
-            && !regex.is_match(s)
-        {
-            return Err(HclError::Validation(format!(
-                "Attribute '{}' with value {:?} does not match required regex pattern '{}'",
-                self.name,
-                s,
-                regex.as_str()
-            )));
+        if let Some(ref regex) = self.regex_pattern {
+            if let crate::types::val::ValueData::String(ref s) = *val.data {
+                if !regex.is_match(s) {
+                    return Err(HclError::Validation(format!(
+                        "Attribute '{}' with value {:?} does not match required regex pattern '{}'",
+                        self.name,
+                        s,
+                        regex.as_str()
+                    )));
+                }
+            }
         }
-
-        if let Some(ref min) = self.min_value
-            && let crate::types::val::ValueData::Number(ref num) = *val.data
-            && num < min
-        {
-            return Err(HclError::Validation(format!(
-                "Attribute '{}' with value {} is less than minimum allowed value {}",
-                self.name, num, min
-            )));
+        if let Some(ref min) = self.min_value {
+            if let crate::types::val::ValueData::Number(ref num) = *val.data {
+                if num < min {
+                    return Err(HclError::Validation(format!(
+                        "Attribute '{}' with value {} is less than minimum allowed value {}",
+                        self.name, num, min
+                    )));
+                }
+            }
         }
-
-        if let Some(ref max) = self.max_value
-            && let crate::types::val::ValueData::Number(ref num) = *val.data
-            && num > max
-        {
-            return Err(HclError::Validation(format!(
-                "Attribute '{}' with value {} is greater than maximum allowed value {}",
-                self.name, num, max
-            )));
+        if let Some(ref max) = self.max_value {
+            if let crate::types::val::ValueData::Number(ref num) = *val.data {
+                if num > max {
+                    return Err(HclError::Validation(format!(
+                        "Attribute '{}' with value {} is greater than maximum allowed value {}",
+                        self.name, num, max
+                    )));
+                }
+            }
         }
-
-        if let Some(ref validator) = self.custom_validator
-            && let Err(msg) = validator(val)
-        {
-            return Err(HclError::Validation(format!(
-                "Validation failed for attribute '{}': {}",
-                self.name, msg
-            )));
+        if let Some(ref validator) = self.custom_validator {
+            if let Err(msg) = validator(val) {
+                return Err(HclError::Validation(format!(
+                    "Validation failed for attribute '{}': {}",
+                    self.name, msg
+                )));
+            }
         }
-
         Ok(())
     }
 }
-
 /// Details for a default fallback specification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DefaultSpec {
     /// The primary specification to evaluate.
     pub primary: Box<Spec>,
-
     /// The fallback value to use if the primary specification is unsatisfied.
     pub default_value: Value,
 }
-
 /// A specification for an HCL attribute or block structure.
 ///
 /// This enum is used to dynamically define the expected structural layout
@@ -445,56 +401,41 @@ pub enum Spec {
     /// conform to the inner specifications. Corresponds to an HCL object value
     /// or a collection of mapped attributes.
     Object(HashMap<String, Spec>),
-
     /// Describes an array of elements that conform to the inner specification.
     /// Corresponds to an HCL tuple or list value, or repeated blocks.
     Array(Box<Spec>),
-
     /// Describes a nested block with the given type name, requiring its body
     /// to match the inner specification. Corresponds to an HCL nested block.
     Block(BlockSpec),
-
     /// Describes a list of repeated nested blocks decoded as a list.
     BlockList(BlockListSpec),
-
     /// Describes a set of repeated nested blocks decoded into a unique set.
     BlockSet(BlockSetSpec),
-
     /// Describes repeated blocks indexed into a map by their label values.
     BlockMap(BlockMapSpec),
-
     /// Consumes all attributes of a block into an arbitrary key-value map.
     BlockAttrs(BlockAttrsSpec),
-
     /// Injects a constant literal value into decoded output.
     Literal(LiteralSpec),
-
     /// Applies a custom transformation function to decoded sub-values.
     Transform(TransformSpec),
-
     /// Describes an ordered heterogeneous tuple.
     Tuple(TupleSpec),
-
     /// Describes an expected attribute of a certain primitive or composed type.
     /// Corresponds to an HCL attribute assignment (`name = value`).
     Attr(AttrSpec),
-
     /// Wraps another specification and provides a fallback value to use
     /// if the structure is missing from the configuration.
     Default(DefaultSpec),
-
     /// Asserts that the inner specification must be present in the configuration.
     /// Used to mark required attributes or blocks.
     Required(Box<Spec>),
-
     /// States that the inner specification is optional, and can be omitted.
     /// If omitted, the resulting value will typically be null.
     Optional(Box<Spec>),
-
     /// Evaluates an arbitrary HCL expression directly in the evaluation context.
     Expr(ExprSpec),
 }
-
 impl Spec {
     /// Returns the implied HCL [`Type`] produced by decoding with this specification.
     ///
@@ -503,7 +444,6 @@ impl Spec {
     pub fn implied_type(&self) -> Result<Type, HclError> {
         Ok(self.compute_implied_type())
     }
-
     fn compute_implied_type(&self) -> Type {
         match self {
             Self::Attr(a) => a.expected_type.clone(),
@@ -546,7 +486,6 @@ impl Spec {
             Self::Expr(_) => Type::Dynamic,
         }
     }
-
     /// Extracts all variable traversal references from expressions contained within this specification.
     #[must_use]
     pub fn variables(&self) -> Vec<crate::ast::traversal::AbsTraversal> {
@@ -554,7 +493,6 @@ impl Spec {
         self.collect_variables(&mut vars);
         vars
     }
-
     fn collect_variables(&self, vars: &mut Vec<crate::ast::traversal::AbsTraversal>) {
         match self {
             Self::Expr(e) => {
@@ -596,7 +534,6 @@ impl Spec {
             Self::BlockAttrs(_) | Self::Literal(_) | Self::Attr(_) => {}
         }
     }
-
     /// Recursively traverses this specification node and all child specifications using a visitor function.
     ///
     /// # Arguments
@@ -608,7 +545,6 @@ impl Spec {
     {
         self.walk_inner(&mut f);
     }
-
     fn walk_inner<F>(&self, f: &mut F)
     where
         F: FnMut(&Spec) -> bool,
@@ -616,7 +552,6 @@ impl Spec {
         if !f(self) {
             return;
         }
-
         match self {
             Self::Object(map) => {
                 for inner in map.values() {
@@ -653,7 +588,6 @@ impl Spec {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -663,12 +597,10 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::number::Number;
     use crate::types::val::ValueData;
     use std::str::FromStr;
-
     #[test]
     fn test_spec_builders_and_equality() {
         let bl = BlockListSpec::new(
@@ -683,7 +615,6 @@ mod tests {
         assert_eq!(bl.type_name, "tag");
         assert_eq!(bl.min_items, Some(1));
         assert_eq!(bl.max_items, Some(5));
-
         let bs = BlockSetSpec::new(
             "item",
             Spec::Literal(LiteralSpec::new(Value::new(
@@ -692,7 +623,6 @@ mod tests {
             ))),
         );
         assert_eq!(bs.type_name, "item");
-
         let bm = BlockMapSpec::new(
             "server",
             vec!["name".to_string()],
@@ -703,11 +633,9 @@ mod tests {
         );
         assert_eq!(bm.type_name, "server");
         assert_eq!(bm.labels, vec!["name"]);
-
         let ba = BlockAttrsSpec::new("extra").with_type(Type::String);
         assert_eq!(ba.type_name, "extra");
         assert_eq!(ba.expected_type, Some(Type::String));
-
         let lit = LiteralSpec::new(Value::new(
             Type::String,
             ValueData::String("constant".to_string()),
@@ -716,7 +644,6 @@ mod tests {
             lit.value,
             Value::new(Type::String, ValueData::String("constant".to_string()))
         );
-
         let tr = TransformSpec::new(
             Spec::Literal(LiteralSpec::new(Value::new(
                 Type::String,
@@ -742,23 +669,18 @@ mod tests {
         );
         assert_ne!(tr, tr3);
         assert!(format!("{tr:?}").contains("TransformSpec"));
-
         let tup = TupleSpec::new(vec![Spec::Literal(LiteralSpec::new(Value::new(
             Type::Number,
             ValueData::Number(Number::from_str("1").unwrap()),
         )))]);
         assert_eq!(tup.elements.len(), 1);
     }
-
     #[test]
     fn test_spec_implied_type_and_variables() {
         use crate::ast::expr::Expression;
         use crate::encode::EncodeValue;
         use crate::span::Span;
-
         let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
-
-        // 1. Test implied_type on nested specs
         let mut obj_specs = HashMap::new();
         obj_specs.insert(
             "name".to_string(),
@@ -771,7 +693,6 @@ mod tests {
         let obj_spec = Spec::Object(obj_specs);
         let implied = obj_spec.implied_type().unwrap();
         assert!(matches!(implied, Type::Object { .. }));
-
         let block_list_spec = Spec::BlockList(BlockListSpec::new(
             "items",
             Spec::Attr(AttrSpec::new("val", Type::Bool)),
@@ -780,7 +701,6 @@ mod tests {
             block_list_spec.implied_type().unwrap(),
             Type::List(Box::new(Type::Bool))
         );
-
         let block_set_spec = Spec::BlockSet(BlockSetSpec::new(
             "tags",
             Spec::Literal(LiteralSpec::new("tag1".encode_value())),
@@ -789,7 +709,6 @@ mod tests {
             block_set_spec.implied_type().unwrap(),
             Type::Set(Box::new(Type::String))
         );
-
         let block_map_spec = Spec::BlockMap(BlockMapSpec::new(
             "env",
             vec!["name".to_string()],
@@ -799,13 +718,11 @@ mod tests {
             block_map_spec.implied_type().unwrap(),
             Type::Map(Box::new(Type::String))
         );
-
         let block_attrs_spec = Spec::BlockAttrs(BlockAttrsSpec::new("extra"));
         assert_eq!(
             block_attrs_spec.implied_type().unwrap(),
             Type::Map(Box::new(Type::Dynamic))
         );
-
         let tuple_spec = Spec::Tuple(TupleSpec::new(vec![
             Spec::Literal(LiteralSpec::new(10_i64.encode_value())),
             Spec::Literal(LiteralSpec::new("ok".encode_value())),
@@ -814,26 +731,21 @@ mod tests {
             tuple_spec.implied_type().unwrap(),
             Type::Tuple(vec![Type::Number, Type::String])
         );
-
         let default_spec = Spec::Default(DefaultSpec {
             primary: Box::new(Spec::Attr(AttrSpec::new("foo", Type::String))),
             default_value: "bar".encode_value(),
         });
         assert_eq!(default_spec.implied_type().unwrap(), Type::String);
-
         let transform_spec = Spec::Transform(TransformSpec::new(
             Spec::Attr(AttrSpec::new("baz", Type::Bool)),
             Ok,
         ));
         assert_eq!(transform_spec.implied_type().unwrap(), Type::Bool);
-
         let expr_spec = Spec::Expr(ExprSpec::new(Expression::Variable(
             "var.sample".to_string(),
             dummy_span.clone(),
         )));
         assert_eq!(expr_spec.implied_type().unwrap(), Type::Dynamic);
-
-        // 2. Test variables extraction
         let mut complex_obj = HashMap::new();
         complex_obj.insert(
             "computed".to_string(),
@@ -858,104 +770,78 @@ mod tests {
         assert!(var_names.iter().any(|s| s.contains("var.foo")));
         assert!(var_names.iter().any(|s| s.contains("local.bar")));
     }
-
     #[test]
     fn test_spec_implied_type_and_variables_exhaustive() {
         use crate::ast::expr::Expression;
         use crate::encode::EncodeValue;
         use crate::span::Span;
-
         let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
-
-        // Test implied_type for Block, Array, Required, Optional, and BlockAttrs with type
         let block_spec = Spec::Block(BlockSpec {
             type_name: "service".to_string(),
             body: Box::new(Spec::Attr(AttrSpec::new("port", Type::Number))),
         });
         assert_eq!(block_spec.implied_type().unwrap(), Type::Number);
-
         let array_spec = Spec::Array(Box::new(Spec::Attr(AttrSpec::new("elem", Type::String))));
         assert_eq!(
             array_spec.implied_type().unwrap(),
             Type::List(Box::new(Type::String))
         );
-
         let req_spec = Spec::Required(Box::new(Spec::Attr(AttrSpec::new("req", Type::Bool))));
         assert_eq!(req_spec.implied_type().unwrap(), Type::Bool);
-
         let opt_spec = Spec::Optional(Box::new(Spec::Attr(AttrSpec::new("opt", Type::Number))));
         assert_eq!(opt_spec.implied_type().unwrap(), Type::Number);
-
         let ba_typed = Spec::BlockAttrs(BlockAttrsSpec::new("tags").with_type(Type::String));
         assert_eq!(
             ba_typed.implied_type().unwrap(),
             Type::Map(Box::new(Type::String))
         );
-
-        // Test variables extraction for all remaining variants
         let make_var_expr = |name: &str| {
             Spec::Expr(ExprSpec::new(Expression::Variable(
                 name.to_string(),
                 dummy_span.clone(),
             )))
         };
-
         let array_var = Spec::Array(Box::new(make_var_expr("var.arr")));
         assert_eq!(array_var.variables().len(), 1);
-
         let req_var = Spec::Required(Box::new(make_var_expr("var.req")));
         assert_eq!(req_var.variables().len(), 1);
-
         let opt_var = Spec::Optional(Box::new(make_var_expr("var.opt")));
         assert_eq!(opt_var.variables().len(), 1);
-
         let block_list_var = Spec::BlockList(BlockListSpec::new("bl", make_var_expr("var.bl")));
         assert_eq!(block_list_var.variables().len(), 1);
-
         let block_set_var = Spec::BlockSet(BlockSetSpec::new("bs", make_var_expr("var.bs")));
         assert_eq!(block_set_var.variables().len(), 1);
-
         let block_map_var = Spec::BlockMap(BlockMapSpec::new(
             "bm",
             vec!["label".to_string()],
             make_var_expr("var.bm"),
         ));
         assert_eq!(block_map_var.variables().len(), 1);
-
         let tr_var = Spec::Transform(TransformSpec::new(make_var_expr("var.tr"), Ok));
         assert_eq!(tr_var.variables().len(), 1);
-
         let def_var = Spec::Default(DefaultSpec {
             primary: Box::new(make_var_expr("var.def")),
             default_value: "fallback".encode_value(),
         });
         assert_eq!(def_var.variables().len(), 1);
-
         let tup_var = Spec::Tuple(TupleSpec::new(vec![
             make_var_expr("var.tup1"),
             make_var_expr("var.tup2"),
         ]));
         assert_eq!(tup_var.variables().len(), 2);
-
-        // Terminal branches without expressions
         let ba_leaf = Spec::BlockAttrs(BlockAttrsSpec::new("empty"));
         assert_eq!(ba_leaf.variables().len(), 0);
-
         let lit_leaf = Spec::Literal(LiteralSpec::new(1.encode_value()));
         assert_eq!(lit_leaf.variables().len(), 0);
-
         let attr_leaf = Spec::Attr(AttrSpec::new("leaf", Type::Bool));
         assert_eq!(attr_leaf.variables().len(), 0);
     }
-
     #[test]
     fn test_spec_walk_all_variants_and_pruning() {
         use crate::ast::expr::Expression;
         use crate::encode::EncodeValue;
         use crate::span::Span;
-
         let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
-
         let inner_tuple = Spec::Tuple(TupleSpec::new(vec![
             Spec::BlockList(BlockListSpec::new(
                 "bl",
@@ -975,7 +861,6 @@ mod tests {
                 dummy_span,
             ))),
         ]));
-
         let transform = Spec::Transform(TransformSpec::new(inner_tuple, Ok));
         let default_spec = Spec::Default(DefaultSpec {
             primary: Box::new(transform),
@@ -988,20 +873,15 @@ mod tests {
             body: Box::new(req_spec),
         });
         let array_spec = Spec::Array(Box::new(block_spec.clone()));
-
         let mut m = HashMap::new();
         m.insert("arr".to_string(), array_spec);
         let full_tree = Spec::Object(m);
-
-        // 1. Visit count with early return pruning on last element
         let mut count = 0;
         full_tree.walk(|_s| {
             count += 1;
             count < 15
         });
         assert_eq!(count, 15);
-
-        // 2. Prune at Array
         let mut visited_types = Vec::new();
         full_tree.walk(|s| {
             visited_types.push(std::mem::discriminant(s));
@@ -1009,16 +889,13 @@ mod tests {
         });
         assert!(!visited_types.contains(&std::mem::discriminant(&block_spec)));
     }
-
     #[test]
     fn test_attr_spec_declarative_validation_and_equality() {
         use crate::span::Span;
         let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
-
         let regex = regex::Regex::new(r"^prod-[0-9]+$").unwrap();
         let min_num = crate::number::Number::from(10);
         let max_num = crate::number::Number::from(100);
-
         let spec = AttrSpec::new("cluster_id", Type::String)
             .with_regex(regex.clone())
             .with_min_value(min_num.clone())
@@ -1030,73 +907,50 @@ mod tests {
                     Ok(())
                 }
             });
-
-        // Debug and PartialEq
         let dbg_str = format!("{spec:?}");
         assert!(dbg_str.contains("cluster_id"));
         assert!(dbg_str.contains("prod-[0-9]+"));
-
         let spec_clone = spec.clone();
         assert_eq!(spec, spec_clone);
-
         let spec_diff_name = AttrSpec::new("diff", Type::String);
         assert_ne!(spec, spec_diff_name);
-
         let spec_diff_type = AttrSpec::new("cluster_id", Type::Number);
         assert_ne!(spec, spec_diff_type);
-
         let spec_no_validator = AttrSpec::new("cluster_id", Type::String);
         assert_ne!(spec, spec_no_validator);
-
-        // Test AttrSpec equality with regex mismatch
         let a_regex1 =
             AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^a$").unwrap());
         let a_regex2 =
             AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^b$").unwrap());
         assert_ne!(a_regex1, a_regex2);
-
-        // Test AttrSpec equality with min/max mismatch
         let a_min1 = AttrSpec::new("test", Type::Number).with_min_value(min_num.clone());
         let a_min2 = AttrSpec::new("test", Type::Number).with_min_value(max_num.clone());
         assert_ne!(a_min1, a_min2);
-
         let a_max1 = AttrSpec::new("test", Type::Number).with_max_value(min_num.clone());
         let a_max2 = AttrSpec::new("test", Type::Number).with_max_value(max_num.clone());
         assert_ne!(a_max1, a_max2);
-
-        // Test AttrSpec equality with custom_validator branches
         let a_none1 = AttrSpec::new("test", Type::String);
         let a_none2 = AttrSpec::new("test", Type::String);
         assert_eq!(a_none1, a_none2);
-
         let val_fn1: AttrValidatorFn = std::sync::Arc::new(|_| Ok(()));
         let val_fn2: AttrValidatorFn = std::sync::Arc::new(|_| Ok(()));
-
         let mut a_some1 = AttrSpec::new("test", Type::String);
         a_some1.custom_validator = Some(val_fn1.clone());
         let mut a_some2 = AttrSpec::new("test", Type::String);
         a_some2.custom_validator = Some(val_fn2.clone());
-
         assert_ne!(a_none1, a_some1);
         assert_ne!(a_some1, a_none1);
-        assert_ne!(a_some1, a_some2); // Different Arcs
-
+        assert_ne!(a_some1, a_some2);
         let mut a_shared2 = AttrSpec::new("test", Type::String);
         a_shared2.custom_validator = Some(val_fn1.clone());
         assert_eq!(a_some1, a_shared2);
-
-        // Validation - Success string
         let valid_str = Value::new(
             Type::String,
             crate::types::val::ValueData::String("prod-42".to_string()),
         );
         assert!(spec.validate_value(&valid_str, dummy_span.clone()).is_ok());
-
-        // Execute validator closures
         let _ = (val_fn1)(&valid_str);
         let _ = (val_fn2)(&valid_str);
-
-        // Validation - Failure regex
         let invalid_str = Value::new(
             Type::String,
             crate::types::val::ValueData::String("dev-42".to_string()),
@@ -1108,12 +962,9 @@ mod tests {
                 regex.as_str()
             )))
         );
-
-        // Validation - Numeric min/max
         let num_spec = AttrSpec::new("scale", Type::Number)
             .with_min_value(min_num)
             .with_max_value(max_num);
-
         let valid_num = Value::new(
             Type::Number,
             crate::types::val::ValueData::Number(crate::number::Number::from(50)),
@@ -1123,15 +974,12 @@ mod tests {
                 .validate_value(&valid_num, dummy_span.clone())
                 .is_ok()
         );
-
-        // Validate value with type mismatch against specs (non-string against regex, non-number against min/max)
         assert!(spec.validate_value(&valid_num, dummy_span.clone()).is_ok());
         assert!(
             num_spec
                 .validate_value(&valid_str, dummy_span.clone())
                 .is_ok()
         );
-
         let too_small = Value::new(
             Type::Number,
             crate::types::val::ValueData::Number(crate::number::Number::from(5)),
@@ -1142,7 +990,6 @@ mod tests {
                 "Attribute 'scale' with value 5 is less than minimum allowed value 10".to_string()
             ))
         );
-
         let too_big = Value::new(
             Type::Number,
             crate::types::val::ValueData::Number(crate::number::Number::from(150)),
@@ -1154,8 +1001,6 @@ mod tests {
                     .to_string()
             ))
         );
-
-        // Validation - Custom validator
         let forbidden_val = Value::new(
             Type::String,
             crate::types::val::ValueData::String("prod-999".to_string()),
@@ -1166,8 +1011,6 @@ mod tests {
                 "Validation failed for attribute 'cluster_id': cluster 999 is reserved".to_string()
             ))
         );
-
-        // Validation - Plain spec with None for regex, min_value, max_value, and custom_validator
         let plain_spec = AttrSpec::new("name", Type::String);
         assert!(plain_spec.validate_value(&valid_str, dummy_span).is_ok());
     }

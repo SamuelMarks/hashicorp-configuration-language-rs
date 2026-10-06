@@ -2,12 +2,10 @@
 //!
 //! Generates hierarchical symbols for blocks, labels, attributes, and functions
 //! according to Language Server Protocol 3.17 (`textDocument/documentSymbol`).
-
 use crate::cache::VirtualDocument;
 use crate::protocol::{DocumentSymbol, Position, Range, SymbolKind};
 use hashicorp_configuration_language_rs::ast::structure::{Block, Body};
 use hashicorp_configuration_language_rs::span::Span;
-
 /// Generates hierarchical document symbols for the outline view of a document.
 ///
 /// # Arguments
@@ -20,14 +18,10 @@ pub fn document_symbols(doc: &VirtualDocument) -> Vec<DocumentSymbol> {
     let Some(ref body) = doc.parsed_body else {
         return Vec::new();
     };
-
     body_to_symbols(body)
 }
-
 fn body_to_symbols(body: &Body) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
-
-    // 1. Attributes
     for (name, attr) in &body.attributes {
         let range = span_to_range(&attr.name_span);
         symbols.push(DocumentSymbol {
@@ -39,13 +33,9 @@ fn body_to_symbols(body: &Body) -> Vec<DocumentSymbol> {
             children: None,
         });
     }
-
-    // 2. Regular Blocks
     for block in &body.blocks {
         symbols.push(block_to_symbol(block));
     }
-
-    // 3. User Functions
     for func_block in &body.functions {
         let range = span_to_range(&func_block.span);
         symbols.push(DocumentSymbol {
@@ -57,23 +47,17 @@ fn body_to_symbols(body: &Body) -> Vec<DocumentSymbol> {
             children: None,
         });
     }
-
     symbols
 }
-
 fn block_to_symbol(block: &Block) -> DocumentSymbol {
     let range = span_to_range(&block.span);
     let sel_range = span_to_range(&block.type_span);
-
     let display_name = if block.labels.is_empty() {
         block.block_type.clone()
     } else {
         format!("{} \"{}\"", block.block_type, block.labels.join("\" \""))
     };
-
     let mut children = Vec::new();
-
-    // Add labels as children
     for (idx, label) in block.labels.iter().enumerate() {
         let label_span = block
             .label_spans
@@ -90,11 +74,8 @@ fn block_to_symbol(block: &Block) -> DocumentSymbol {
             children: None,
         });
     }
-
-    // Add nested body symbols
     let inner_symbols = body_to_symbols(&block.body);
     children.extend(inner_symbols);
-
     DocumentSymbol {
         name: display_name,
         detail: Some(block.block_type.clone()),
@@ -108,7 +89,6 @@ fn block_to_symbol(block: &Block) -> DocumentSymbol {
         },
     }
 }
-
 /// Converts an internal [`Span`] to an LSP zero-indexed [`Range`].
 ///
 /// # Arguments
@@ -127,7 +107,6 @@ pub fn span_to_range(span: &Span) -> Range {
         Position::new(end_line, end_col),
     )
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -137,10 +116,8 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::protocol::TextDocumentItem;
-
     #[test]
     fn test_document_symbols_hierarchy() {
         let hcl = r#"
@@ -155,40 +132,31 @@ mod tests {
                 }
             }
         "#;
-
         let item = TextDocumentItem {
             uri: "file:///main.tf".to_string(),
             language_id: "terraform".to_string(),
             version: 1,
             text: hcl.to_string(),
         };
-
         let doc = VirtualDocument::new(item);
         let symbols = document_symbols(&doc);
-
-        assert_eq!(symbols.len(), 2); // 1 attribute + 1 block
+        assert_eq!(symbols.len(), 2);
         let attr_sym = symbols.iter().find(|s| s.name == "region").unwrap();
         assert_eq!(attr_sym.kind, SymbolKind::PROPERTY);
-
         let block_sym = symbols
             .iter()
             .find(|s| s.name.contains("aws_instance"))
             .unwrap();
         assert_eq!(block_sym.kind, SymbolKind::NAMESPACE);
         let children = block_sym.children.as_ref().unwrap();
-
-        // Has 2 labels ("aws_instance", "web") + 2 attributes + 1 sub-block
         let label_sym = children.iter().find(|c| c.name == "aws_instance").unwrap();
         assert_eq!(label_sym.kind, SymbolKind::STRING);
         assert!(children.iter().any(|c| c.name == "ami"));
         assert!(children.iter().any(|c| c.name == "network_interface"));
     }
-
     #[test]
     fn test_document_symbols_edge_cases() {
         use hashicorp_configuration_language_rs::ast::structure::Block;
-
-        // 1. None parsed body
         let item_empty = TextDocumentItem {
             uri: "file:///empty.hcl".to_string(),
             language_id: "hcl".to_string(),
@@ -198,8 +166,6 @@ mod tests {
         let mut empty_doc = VirtualDocument::new(item_empty);
         empty_doc.parsed_body = None;
         assert_eq!(document_symbols(&empty_doc), []);
-
-        // 2. Block without labels and empty block (children is None)
         let hcl = r"
             locals {
             }
@@ -215,8 +181,6 @@ mod tests {
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "locals");
         assert!(symbols[0].children.is_none());
-
-        // 3. User function blocks and block with missing label_spans fallback
         let func_hcl = r#"
             function "calculate" {
                 params = []
@@ -240,7 +204,6 @@ mod tests {
         block_no_label_spans.label_spans.clear();
         let b = doc_func.parsed_body.as_mut().unwrap();
         b.blocks.push(block_no_label_spans);
-
         let syms = document_symbols(&doc_func);
         let calc = syms.iter().find(|s| s.name == "calculate").unwrap();
         assert_eq!(calc.kind, SymbolKind::FUNCTION);

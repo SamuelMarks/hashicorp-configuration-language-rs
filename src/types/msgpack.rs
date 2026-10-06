@@ -2,7 +2,6 @@
 //!
 //! Provides canonical binary serialization for `cty` types and values, including
 //! arbitrary-precision numbers, unknown values with refinements, nulls, and marks.
-
 use crate::error::HclError;
 use crate::number::Number;
 use crate::types::refinement::Refinement;
@@ -11,31 +10,26 @@ use crate::types::val::{Value, ValueData, ValueMark};
 use bigdecimal::BigDecimal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
-
 /// Low-level `MessagePack` binary writer.
 #[derive(Default, Debug)]
 pub struct MsgPackWriter {
     buf: Vec<u8>,
 }
-
 impl MsgPackWriter {
     /// Creates a new empty [`MsgPackWriter`].
     #[must_use]
     pub fn new() -> Self {
         Self { buf: Vec::new() }
     }
-
     /// Consumes the writer and returns the accumulated byte buffer.
     #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
         self.buf
     }
-
     /// Writes a `nil` token (`0xc0`).
     pub fn write_nil(&mut self) {
         self.buf.push(0xc0);
     }
-
     /// Writes a boolean token (`0xc2` for false, `0xc3` for true).
     ///
     /// # Arguments
@@ -47,7 +41,6 @@ impl MsgPackWriter {
             self.buf.push(0xc2);
         }
     }
-
     /// Writes a signed 64-bit integer.
     ///
     /// # Arguments
@@ -103,7 +96,6 @@ impl MsgPackWriter {
             self.buf.extend_from_slice(&n.to_be_bytes());
         }
     }
-
     /// Writes an unsigned 64-bit integer.
     ///
     /// # Arguments
@@ -135,7 +127,6 @@ impl MsgPackWriter {
             self.buf.extend_from_slice(&n.to_be_bytes());
         }
     }
-
     /// Writes a 64-bit IEEE floating-point number.
     ///
     /// # Arguments
@@ -144,7 +135,6 @@ impl MsgPackWriter {
         self.buf.push(0xcb);
         self.buf.extend_from_slice(&f.to_be_bytes());
     }
-
     /// Writes a UTF-8 string.
     ///
     /// # Arguments
@@ -175,7 +165,6 @@ impl MsgPackWriter {
         }
         self.buf.extend_from_slice(s.as_bytes());
     }
-
     /// Writes a binary payload.
     ///
     /// # Arguments
@@ -203,7 +192,6 @@ impl MsgPackWriter {
         }
         self.buf.extend_from_slice(bytes);
     }
-
     /// Writes an array header with the specified number of elements.
     ///
     /// # Arguments
@@ -226,7 +214,6 @@ impl MsgPackWriter {
             }
         }
     }
-
     /// Writes a map header with the specified number of key-value pairs.
     ///
     /// # Arguments
@@ -249,7 +236,6 @@ impl MsgPackWriter {
             }
         }
     }
-
     /// Writes a `MessagePack` extension value.
     ///
     /// # Arguments
@@ -281,34 +267,24 @@ impl MsgPackWriter {
                 self.buf.push(type_byte);
             }
             0..=255 => {
-                #[allow(clippy::cast_possible_truncation)]
-                {
-                    self.buf.push(0xc7);
-                    self.buf.push(len as u8);
-                    self.buf.push(type_byte);
-                }
+                self.buf.push(0xc7);
+                self.buf.push(len as u8);
+                self.buf.push(type_byte);
             }
             256..=65535 => {
-                #[allow(clippy::cast_possible_truncation)]
-                {
-                    self.buf.push(0xc8);
-                    self.buf.extend_from_slice(&(len as u16).to_be_bytes());
-                    self.buf.push(type_byte);
-                }
+                self.buf.push(0xc8);
+                self.buf.extend_from_slice(&(len as u16).to_be_bytes());
+                self.buf.push(type_byte);
             }
             _ => {
-                #[allow(clippy::cast_possible_truncation)]
-                {
-                    self.buf.push(0xc9);
-                    self.buf.extend_from_slice(&(len as u32).to_be_bytes());
-                    self.buf.push(type_byte);
-                }
+                self.buf.push(0xc9);
+                self.buf.extend_from_slice(&(len as u32).to_be_bytes());
+                self.buf.push(type_byte);
             }
         }
         self.buf.extend_from_slice(data);
     }
 }
-
 /// A parsed low-level `MessagePack` token.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MsgPackToken<'a> {
@@ -333,14 +309,12 @@ pub enum MsgPackToken<'a> {
     /// An extension token with type code and payload slice.
     Ext(i8, &'a [u8]),
 }
-
 /// Low-level `MessagePack` zero-copy byte decoder.
 #[derive(Debug)]
 pub struct MsgPackReader<'a> {
     bytes: &'a [u8],
     pos: usize,
 }
-
 impl<'a> MsgPackReader<'a> {
     /// Creates a new [`MsgPackReader`] over the given slice.
     ///
@@ -350,13 +324,11 @@ impl<'a> MsgPackReader<'a> {
     pub fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, pos: 0 }
     }
-
     /// Returns the number of unconsumed bytes remaining.
     #[must_use]
     pub fn remaining(&self) -> usize {
         self.bytes.len().saturating_sub(self.pos)
     }
-
     fn read_u8(&mut self) -> Result<u8, HclError> {
         if self.pos >= self.bytes.len() {
             return Err(HclError::MsgPackDecode(
@@ -367,7 +339,6 @@ impl<'a> MsgPackReader<'a> {
         self.pos += 1;
         Ok(b)
     }
-
     fn peek_u8(&self) -> Result<u8, HclError> {
         if self.pos >= self.bytes.len() {
             return Err(HclError::MsgPackDecode(
@@ -376,7 +347,6 @@ impl<'a> MsgPackReader<'a> {
         }
         Ok(self.bytes[self.pos])
     }
-
     fn read_exact(&mut self, n: usize) -> Result<&'a [u8], HclError> {
         if self.pos + n > self.bytes.len() {
             return Err(HclError::MsgPackDecode(
@@ -387,28 +357,24 @@ impl<'a> MsgPackReader<'a> {
         self.pos += n;
         Ok(slice)
     }
-
     fn read_2_bytes(&mut self) -> Result<[u8; 2], HclError> {
         let slice = self.read_exact(2)?;
         let mut arr = [0u8; 2];
         arr.copy_from_slice(slice);
         Ok(arr)
     }
-
     fn read_4_bytes(&mut self) -> Result<[u8; 4], HclError> {
         let slice = self.read_exact(4)?;
         let mut arr = [0u8; 4];
         arr.copy_from_slice(slice);
         Ok(arr)
     }
-
     fn read_8_bytes(&mut self) -> Result<[u8; 8], HclError> {
         let slice = self.read_exact(8)?;
         let mut arr = [0u8; 8];
         arr.copy_from_slice(slice);
         Ok(arr)
     }
-
     /// Reads and decodes the next [`MsgPackToken`].
     ///
     /// # Errors
@@ -416,13 +382,9 @@ impl<'a> MsgPackReader<'a> {
     pub fn read_token(&mut self) -> Result<MsgPackToken<'a>, HclError> {
         let b = self.read_u8()?;
         match b {
-            // positive fixint
             0x00..=0x7f => Ok(MsgPackToken::Uint(u64::from(b))),
-            // fixmap
             0x80..=0x8f => Ok(MsgPackToken::MapHeader(usize::from(b & 0x0f))),
-            // fixarray
             0x90..=0x9f => Ok(MsgPackToken::ArrayHeader(usize::from(b & 0x0f))),
-            // fixstr
             0xa0..=0xbf => {
                 let len = usize::from(b & 0x1f);
                 let slice = self.read_exact(len)?;
@@ -571,7 +533,6 @@ impl<'a> MsgPackReader<'a> {
                 let len = u32::from_be_bytes(self.read_4_bytes()?) as usize;
                 Ok(MsgPackToken::MapHeader(len))
             }
-            // negative fixint
             0xe0..=0xff => {
                 #[allow(clippy::cast_possible_wrap)]
                 let val = b as i8;
@@ -583,11 +544,6 @@ impl<'a> MsgPackReader<'a> {
         }
     }
 }
-
-// -----------------------------------------------------------------------------
-// Type Serialization
-// -----------------------------------------------------------------------------
-
 fn encode_type_internal(w: &mut MsgPackWriter, ty: &Type) {
     match ty {
         Type::Number => w.write_str("N"),
@@ -633,7 +589,6 @@ fn encode_type_internal(w: &mut MsgPackWriter, ty: &Type) {
         }
     }
 }
-
 fn decode_type_internal(reader: &mut MsgPackReader<'_>) -> Result<Type, HclError> {
     let token = reader.read_token()?;
     match token {
@@ -711,7 +666,6 @@ fn decode_type_internal(reader: &mut MsgPackReader<'_>) -> Result<Type, HclError
         ))),
     }
 }
-
 /// Serializes a [`Type`] into canonical `MessagePack` binary format.
 ///
 /// # Arguments
@@ -724,7 +678,6 @@ pub fn encode_type(ty: &Type) -> Result<Vec<u8>, HclError> {
     encode_type_internal(&mut writer, ty);
     Ok(writer.into_bytes())
 }
-
 /// Deserializes a [`Type`] from canonical `MessagePack` binary format.
 ///
 /// # Arguments
@@ -742,11 +695,6 @@ pub fn decode_type(bytes: &[u8]) -> Result<Type, HclError> {
     }
     Ok(ty)
 }
-
-// -----------------------------------------------------------------------------
-// Value Serialization
-// -----------------------------------------------------------------------------
-
 fn encode_refinement(w: &mut MsgPackWriter, r: &Refinement) {
     w.write_array_header(10);
     w.write_bool(r.not_null);
@@ -800,7 +748,6 @@ fn encode_refinement(w: &mut MsgPackWriter, r: &Refinement) {
         encode_refinement(w, attr_ref);
     }
 }
-
 fn decode_refinement(reader: &mut MsgPackReader<'_>) -> Result<Refinement, HclError> {
     let tok = reader.read_token()?;
     let MsgPackToken::ArrayHeader(count) = tok else {
@@ -813,60 +760,50 @@ fn decode_refinement(reader: &mut MsgPackReader<'_>) -> Result<Refinement, HclEr
             "refinement array must have at least 10 fields".to_string(),
         ));
     }
-
     let not_null = match reader.read_token()? {
         MsgPackToken::Bool(b) => b,
         _ => false,
     };
-
     let string_length_min = match reader.read_token()? {
         MsgPackToken::Uint(u) => usize::try_from(u).ok(),
         MsgPackToken::Int(i) if i >= 0 => usize::try_from(i).ok(),
         _ => None,
     };
-
     let string_length_max = match reader.read_token()? {
         MsgPackToken::Uint(u) => usize::try_from(u).ok(),
         MsgPackToken::Int(i) if i >= 0 => usize::try_from(i).ok(),
         _ => None,
     };
-
     let string_prefix = match reader.read_token()? {
         MsgPackToken::Str(s) => Some(s.to_string()),
         _ => None,
     };
-
     let string_suffix = match reader.read_token()? {
         MsgPackToken::Str(s) => Some(s.to_string()),
         _ => None,
     };
-
     let collection_length_min = match reader.read_token()? {
         MsgPackToken::Uint(u) => usize::try_from(u).ok(),
         MsgPackToken::Int(i) if i >= 0 => usize::try_from(i).ok(),
         _ => None,
     };
-
     let collection_length_max = match reader.read_token()? {
         MsgPackToken::Uint(u) => usize::try_from(u).ok(),
         MsgPackToken::Int(i) if i >= 0 => usize::try_from(i).ok(),
         _ => None,
     };
-
     let number_min = match reader.read_token()? {
         MsgPackToken::Str(s) => Number::from_str(s).ok(),
         MsgPackToken::Int(i) => Some(Number::from(i)),
         MsgPackToken::Uint(u) => Some(Number::from(u)),
         _ => None,
     };
-
     let number_max = match reader.read_token()? {
         MsgPackToken::Str(s) => Number::from_str(s).ok(),
         MsgPackToken::Int(i) => Some(Number::from(i)),
         MsgPackToken::Uint(u) => Some(Number::from(u)),
         _ => None,
     };
-
     let map_tok = reader.read_token()?;
     let attr_count = match map_tok {
         MsgPackToken::MapHeader(n) => n,
@@ -881,7 +818,6 @@ fn decode_refinement(reader: &mut MsgPackReader<'_>) -> Result<Refinement, HclEr
         let attr_r = decode_refinement(reader)?;
         object_attrs.insert(k, attr_r);
     }
-
     Ok(Refinement {
         not_null,
         string_length_min,
@@ -895,7 +831,6 @@ fn decode_refinement(reader: &mut MsgPackReader<'_>) -> Result<Refinement, HclEr
         object_attrs,
     })
 }
-
 fn encode_value_data(w: &mut MsgPackWriter, val: &Value) {
     match &*val.data {
         ValueData::Null => w.write_nil(),
@@ -949,12 +884,10 @@ fn encode_value_data(w: &mut MsgPackWriter, val: &Value) {
         }
     }
 }
-
 fn encode_value_internal(w: &mut MsgPackWriter, val: &Value) {
     if val.marks.is_empty() {
         encode_value_data(w, val);
     } else {
-        // Marked value envelope: [0x01, value, [marks...]]
         w.write_array_header(3);
         w.write_uint(1);
         encode_value_data(w, val);
@@ -968,12 +901,10 @@ fn encode_value_internal(w: &mut MsgPackWriter, val: &Value) {
         }
     }
 }
-
 fn decode_value_internal(
     reader: &mut MsgPackReader<'_>,
     expected_type: &Type,
 ) -> Result<Value, HclError> {
-    // Check for marked wrapper: 3-element array starting with uint(1)
     let peek_b = reader.peek_u8()?;
     if peek_b == 0x93 {
         let mut lookahead = MsgPackReader::new(&reader.bytes[reader.pos..]);
@@ -985,7 +916,6 @@ fn decode_value_internal(
             )
         );
         if is_marked_envelope {
-            // Consume array header and tag
             let _ = reader.read_token();
             let _ = reader.read_token();
             let mut inner_val = decode_value_data(reader, expected_type)?;
@@ -1006,10 +936,8 @@ fn decode_value_internal(
             return Ok(inner_val);
         }
     }
-
     decode_value_data(reader, expected_type)
 }
-
 fn decode_value_data(
     reader: &mut MsgPackReader<'_>,
     expected_type: &Type,
@@ -1027,7 +955,6 @@ fn decode_value_data(
             }
         }
         MsgPackToken::Ext(2, _payload) => {
-            // Reconstruct capsule value
             let name = expected_type.capsule_name().unwrap_or("capsule");
             Ok(Value::capsule(name, ()))
         }
@@ -1053,43 +980,40 @@ fn decode_value_data(
                 .map_err(|e| HclError::MsgPackDecode(format!("invalid utf8 binary data: {e}")))?;
             Ok(Value::new(Type::String, ValueData::String(s.to_string())))
         }
-        MsgPackToken::ArrayHeader(count) => {
-            match expected_type {
-                Type::List(elem_ty) => {
-                    let mut items = Vec::with_capacity(count);
-                    for _ in 0..count {
-                        items.push(decode_value_internal(reader, elem_ty)?);
-                    }
-                    Ok(Value::new(expected_type.clone(), ValueData::Array(items)))
+        MsgPackToken::ArrayHeader(count) => match expected_type {
+            Type::List(elem_ty) => {
+                let mut items = Vec::with_capacity(count);
+                for _ in 0..count {
+                    items.push(decode_value_internal(reader, elem_ty)?);
                 }
-                Type::Set(elem_ty) => {
-                    let mut items = BTreeSet::new();
-                    for _ in 0..count {
-                        items.insert(decode_value_internal(reader, elem_ty)?);
-                    }
-                    Ok(Value::new(expected_type.clone(), ValueData::Set(items)))
-                }
-                Type::Tuple(elem_tys) => {
-                    let mut items = Vec::with_capacity(count);
-                    for i in 0..count {
-                        let elem_ty = elem_tys.get(i).unwrap_or(&Type::Dynamic);
-                        items.push(decode_value_internal(reader, elem_ty)?);
-                    }
-                    Ok(Value::new(expected_type.clone(), ValueData::Array(items)))
-                }
-                _ => {
-                    // Dynamic fallback: decode items as dynamic values
-                    let mut items = Vec::with_capacity(count);
-                    for _ in 0..count {
-                        items.push(decode_value_internal(reader, &Type::Dynamic)?);
-                    }
-                    Ok(Value::new(
-                        Type::Tuple(vec![Type::Dynamic; count]),
-                        ValueData::Array(items),
-                    ))
-                }
+                Ok(Value::new(expected_type.clone(), ValueData::Array(items)))
             }
-        }
+            Type::Set(elem_ty) => {
+                let mut items = BTreeSet::new();
+                for _ in 0..count {
+                    items.insert(decode_value_internal(reader, elem_ty)?);
+                }
+                Ok(Value::new(expected_type.clone(), ValueData::Set(items)))
+            }
+            Type::Tuple(elem_tys) => {
+                let mut items = Vec::with_capacity(count);
+                for i in 0..count {
+                    let elem_ty = elem_tys.get(i).unwrap_or(&Type::Dynamic);
+                    items.push(decode_value_internal(reader, elem_ty)?);
+                }
+                Ok(Value::new(expected_type.clone(), ValueData::Array(items)))
+            }
+            _ => {
+                let mut items = Vec::with_capacity(count);
+                for _ in 0..count {
+                    items.push(decode_value_internal(reader, &Type::Dynamic)?);
+                }
+                Ok(Value::new(
+                    Type::Tuple(vec![Type::Dynamic; count]),
+                    ValueData::Array(items),
+                ))
+            }
+        },
         MsgPackToken::MapHeader(count) => match expected_type {
             Type::Map(elem_ty) => {
                 let mut map = BTreeMap::new();
@@ -1148,7 +1072,6 @@ fn decode_value_data(
         ))),
     }
 }
-
 /// Serializes a [`Value`] into canonical `MessagePack` binary format.
 ///
 /// # Arguments
@@ -1161,7 +1084,6 @@ pub fn encode_value(val: &Value) -> Result<Vec<u8>, HclError> {
     encode_value_internal(&mut writer, val);
     Ok(writer.into_bytes())
 }
-
 /// Deserializes a [`Value`] from canonical `MessagePack` binary format given an expected [`Type`].
 ///
 /// # Arguments
@@ -1180,7 +1102,6 @@ pub fn decode_value(bytes: &[u8], expected_type: &Type) -> Result<Value, HclErro
     }
     Ok(val)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -1190,14 +1111,12 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::number::Number;
     use crate::types::refinement::Refinement;
     use crate::types::ty::Type;
     use crate::types::val::{Value, ValueData, ValueMark};
     use std::collections::{BTreeMap, BTreeSet};
-
     #[test]
     fn test_msgpack_primitive_types_roundtrip() {
         let types = [Type::Number, Type::String, Type::Bool, Type::Dynamic];
@@ -1206,28 +1125,22 @@ mod tests {
             let decoded = Type::from_msgpack(&encoded).unwrap();
             assert_eq!(ty, &decoded);
         }
-
-        // Test exact canonical wire vectors
         assert_eq!(Type::Number.to_msgpack().unwrap(), vec![0xa1, b'N']);
         assert_eq!(Type::String.to_msgpack().unwrap(), vec![0xa1, b'S']);
         assert_eq!(Type::Bool.to_msgpack().unwrap(), vec![0xa1, b'B']);
         assert_eq!(Type::Dynamic.to_msgpack().unwrap(), vec![0xa1, b'?']);
     }
-
     #[test]
     fn test_msgpack_compound_types_roundtrip() {
         let list_ty = Type::List(Box::new(Type::String));
         let set_ty = Type::Set(Box::new(Type::Number));
         let map_ty = Type::Map(Box::new(Type::Bool));
         let tup_ty = Type::Tuple(vec![Type::String, Type::Number, Type::Bool]);
-
         let mut obj_attrs = BTreeMap::new();
         obj_attrs.insert("host".to_string(), Type::String);
         obj_attrs.insert("port".to_string(), Type::Number);
         let obj_ty = Type::object(obj_attrs);
-
         let cap_ty = Type::capsule::<()>("my_custom_capsule");
-
         let compound = [list_ty, set_ty, map_ty, tup_ty, obj_ty, cap_ty];
         for ty in &compound {
             let encoded = ty.to_msgpack().unwrap();
@@ -1235,41 +1148,31 @@ mod tests {
             assert_eq!(ty, &decoded);
         }
     }
-
     #[test]
     fn test_msgpack_primitive_values_roundtrip() {
-        // Null values
         let null_str = Value::null(Type::String);
         let null_enc = null_str.to_msgpack().unwrap();
         assert_eq!(null_enc, vec![0xc0]);
         let null_dec = Value::from_msgpack(&null_enc, &Type::String).unwrap();
         assert_eq!(null_str, null_dec);
-
-        // Booleans
         let t_val = Value::new(Type::Bool, ValueData::Bool(true));
         let f_val = Value::new(Type::Bool, ValueData::Bool(false));
         assert_eq!(t_val.to_msgpack().unwrap(), vec![0xc3]);
         assert_eq!(f_val.to_msgpack().unwrap(), vec![0xc2]);
         assert_eq!(Value::from_msgpack(&[0xc3], &Type::Bool).unwrap(), t_val);
         assert_eq!(Value::from_msgpack(&[0xc2], &Type::Bool).unwrap(), f_val);
-
-        // Strings (short, medium, bin)
         let str_val = Value::new(Type::String, ValueData::String("hello world".to_string()));
         let str_enc = str_val.to_msgpack().unwrap();
         let str_dec = Value::from_msgpack(&str_enc, &Type::String).unwrap();
         assert_eq!(str_val, str_dec);
-
-        // Numbers (integers, floats, big decimal)
         let num_int = Value::new(Type::Number, ValueData::Number(Number::from(42)));
         let num_enc = num_int.to_msgpack().unwrap();
         let num_dec = Value::from_msgpack(&num_enc, &Type::Number).unwrap();
         assert_eq!(num_int, num_dec);
-
         let num_neg = Value::new(Type::Number, ValueData::Number(Number::from(-100)));
         let neg_enc = num_neg.to_msgpack().unwrap();
         let neg_dec = Value::from_msgpack(&neg_enc, &Type::Number).unwrap();
         assert_eq!(num_neg, neg_dec);
-
         let num_big = Value::new(
             Type::Number,
             ValueData::Number(
@@ -1280,10 +1183,8 @@ mod tests {
         let big_dec = Value::from_msgpack(&big_enc, &Type::Number).unwrap();
         assert_eq!(num_big, big_dec);
     }
-
     #[test]
     fn test_msgpack_collections_roundtrip() {
-        // List
         let list_val = Value::new(
             Type::List(Box::new(Type::String)),
             ValueData::Array(vec![
@@ -1294,8 +1195,6 @@ mod tests {
         let list_enc = list_val.to_msgpack().unwrap();
         let list_dec = Value::from_msgpack(&list_enc, list_val.ty()).unwrap();
         assert_eq!(list_val, list_dec);
-
-        // Set
         let mut set = BTreeSet::new();
         set.insert(Value::new(Type::Number, ValueData::Number(Number::from(1))));
         set.insert(Value::new(Type::Number, ValueData::Number(Number::from(2))));
@@ -1303,8 +1202,6 @@ mod tests {
         let set_enc = set_val.to_msgpack().unwrap();
         let set_dec = Value::from_msgpack(&set_enc, set_val.ty()).unwrap();
         assert_eq!(set_val, set_dec);
-
-        // Tuple
         let tup_val = Value::new(
             Type::Tuple(vec![Type::String, Type::Number]),
             ValueData::Array(vec![
@@ -1315,8 +1212,6 @@ mod tests {
         let tup_enc = tup_val.to_msgpack().unwrap();
         let tup_dec = Value::from_msgpack(&tup_enc, tup_val.ty()).unwrap();
         assert_eq!(tup_val, tup_dec);
-
-        // Object
         let mut obj = BTreeMap::new();
         obj.insert(
             "name".to_string(),
@@ -1337,19 +1232,14 @@ mod tests {
         let obj_dec = Value::from_msgpack(&obj_enc, obj_val.ty()).unwrap();
         assert_eq!(obj_val, obj_dec);
     }
-
     #[test]
     fn test_msgpack_unknown_and_refinements_roundtrip() {
-        // Unrefined unknown
         let unk_val = Value::unknown(Type::String);
         let unk_enc = unk_val.to_msgpack().unwrap();
-        // Extension 0 check
         assert_eq!(unk_enc, vec![0xd4, 0x00, 0x00]);
         let unk_dec = Value::from_msgpack(&unk_enc, &Type::String).unwrap();
         assert!(unk_dec.is_unknown());
         assert_eq!(unk_dec.refinement(), None);
-
-        // Refined unknown
         let r = Refinement::not_null()
             .with_prefix("server-")
             .with_suffix(".internal")
@@ -1375,14 +1265,10 @@ mod tests {
         assert_eq!(decoded_ref.number_min, Some(Number::from(1)));
         assert_eq!(decoded_ref.number_max, Some(Number::from(100)));
         assert!(decoded_ref.object_attrs.contains_key("ip"));
-
-        // Test empty ext 0 payload
         let mut w_empty = MsgPackWriter::new();
         w_empty.write_ext(0, &[]);
         let empty_unk = Value::from_msgpack(&w_empty.into_bytes(), &Type::String).unwrap();
         assert!(empty_unk.is_unknown());
-
-        // Test negative int values for length fields in refinement
         let mut ref_payload = MsgPackWriter::new();
         ref_payload.write_array_header(10);
         ref_payload.write_bool(false);
@@ -1395,7 +1281,6 @@ mod tests {
         ref_payload.write_nil();
         ref_payload.write_nil();
         ref_payload.write_map_header(0);
-
         let mut w_ref = MsgPackWriter::new();
         w_ref.write_ext(0, &ref_payload.into_bytes());
         let dec_ref = Value::from_msgpack(&w_ref.into_bytes(), &Type::String).unwrap();
@@ -1406,21 +1291,18 @@ mod tests {
         assert_eq!(r.collection_length_min, None);
         assert_eq!(r.collection_length_max, None);
     }
-
     #[test]
     fn test_msgpack_marked_values_roundtrip() {
         let mut val = Value::new(Type::String, ValueData::String("secret".to_string()));
         val.marks.insert(ValueMark::Sensitive);
         val.marks.insert(ValueMark::custom("encrypted"));
         val.marks.insert(ValueMark::typed(42u32));
-
         let enc = val.to_msgpack().unwrap();
         let dec = Value::from_msgpack(&enc, &Type::String).unwrap();
         assert!(dec.has_mark(&ValueMark::Sensitive));
         assert!(dec.has_mark(&ValueMark::custom("encrypted")));
         assert!(dec.has_mark(&ValueMark::custom("42")));
     }
-
     #[test]
     fn test_msgpack_capsule_roundtrip() {
         let cap_ty = Type::capsule::<()>("my_resource");
@@ -1429,26 +1311,17 @@ mod tests {
         let dec = Value::from_msgpack(&enc, &cap_ty).unwrap();
         assert_eq!(dec.ty().capsule_name(), Some("my_resource"));
     }
-
     #[test]
     fn test_msgpack_error_handling() {
-        // Buffer truncation
         assert!(Type::from_msgpack(&[]).is_err());
         assert!(Value::from_msgpack(&[], &Type::String).is_err());
         assert!(Type::from_msgpack(&[0x92, 0xa1]).is_err());
-
-        // Trailing unread bytes
         assert!(Type::from_msgpack(&[0xa1, b'S', 0x00]).is_err());
         assert!(Value::from_msgpack(&[0xc3, 0x00], &Type::Bool).is_err());
-
-        // Invalid type tags
         assert!(Type::from_msgpack(&[0xa1, b'X']).is_err());
         assert!(Type::from_msgpack(&[0x92, 0xa1, b'X']).is_err());
-
-        // Decode invalid token
         assert!(Value::from_msgpack(&[0xc1], &Type::Dynamic).is_err());
     }
-
     /// Tests all integer encoding and decoding representations in `MsgPack`.
     #[test]
     fn test_msgpack_writer_reader_all_int_sizes() {
@@ -1458,34 +1331,25 @@ mod tests {
             -1,
             0,
             1,
-            127,             // fixint
-            200,             // uint8
-            1000,            // uint16
-            100_000,         // uint32
-            10_000_000_000,  // uint64
-            -50,             // int8
-            -1000,           // int16
-            -100_000,        // int32
-            -10_000_000_000, // int64
+            127,
+            200,
+            1000,
+            100_000,
+            10_000_000_000,
+            -50,
+            -1000,
+            -100_000,
+            -10_000_000_000,
         ];
         for &n in &sample_signed {
             w.write_int(n);
         }
-
-        let sample_unsigned = [
-            50_u64,             // fixint
-            200_u64,            // uint8
-            1000_u64,           // uint16
-            100_000_u64,        // uint32
-            10_000_000_000_u64, // uint64
-        ];
+        let sample_unsigned = [50_u64, 200_u64, 1000_u64, 100_000_u64, 10_000_000_000_u64];
         for &u in &sample_unsigned {
             w.write_uint(u);
         }
-
         let bytes = w.into_bytes();
         let mut r = MsgPackReader::new(&bytes);
-
         for &n in &sample_signed {
             let tok = r.read_token();
             if n >= 0 {
@@ -1495,14 +1359,11 @@ mod tests {
                 assert_eq!(tok.ok(), Some(MsgPackToken::Int(n)));
             }
         }
-
         for &expected_u in &sample_unsigned {
             assert_eq!(r.read_token().ok(), Some(MsgPackToken::Uint(expected_u)));
         }
-
         assert_eq!(r.remaining(), 0);
     }
-
     /// Tests string and binary encodings across all supported sizes.
     #[test]
     fn test_msgpack_writer_reader_all_string_bin_sizes() {
@@ -1511,77 +1372,57 @@ mod tests {
         let s_8 = "a".repeat(100);
         let s_16 = "b".repeat(500);
         let s_32 = "c".repeat(70_000);
-
         w.write_str(s_fix);
         w.write_str(&s_8);
         w.write_str(&s_16);
         w.write_str(&s_32);
-
         let bin_8 = vec![1_u8; 50];
         let bin_16 = vec![2_u8; 500];
         let bin_32 = vec![3_u8; 70_000];
-
         w.write_bin(&bin_8);
         w.write_bin(&bin_16);
         w.write_bin(&bin_32);
-
         let bytes = w.into_bytes();
         let mut r = MsgPackReader::new(&bytes);
-
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Str(s_fix)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Str(&s_8)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Str(&s_16)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Str(&s_32)));
-
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Bin(&bin_8)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Bin(&bin_16)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Bin(&bin_32)));
         assert_eq!(r.remaining(), 0);
     }
-
     /// Tests array headers, map headers, and extension tokens across all supported sizes.
     #[test]
     fn test_msgpack_writer_reader_headers_and_ext() {
         let mut w = MsgPackWriter::new();
-
-        // Array headers: fixarray, array16, array32
         w.write_array_header(5);
         w.write_array_header(50);
         w.write_array_header(70_000);
-
-        // Map headers: fixmap, map16, map32
         w.write_map_header(5);
         w.write_map_header(50);
         w.write_map_header(70_000);
-
-        // Ext sizes: fixext 1, 2, 4, 8, 16, ext8, ext16, ext32
         w.write_ext(1, &[0xaa]);
         w.write_ext(2, &[0xbb, 0xcc]);
         w.write_ext(4, &[1, 2, 3, 4]);
         w.write_ext(8, &[1, 2, 3, 4, 5, 6, 7, 8]);
         let ext16 = vec![9_u8; 16];
         w.write_ext(16, &ext16);
-
         let ext8_data = vec![5_u8; 20];
         w.write_ext(5, &ext8_data);
-
         let ext16_data = vec![6_u8; 300];
         w.write_ext(6, &ext16_data);
-
         let ext32_data = vec![7_u8; 70_000];
         w.write_ext(7, &ext32_data);
-
         let bytes = w.into_bytes();
         let mut r = MsgPackReader::new(&bytes);
-
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::ArrayHeader(5)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::ArrayHeader(50)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::ArrayHeader(70_000)));
-
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::MapHeader(5)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::MapHeader(50)));
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::MapHeader(70_000)));
-
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Ext(1, &[0xaa])));
         assert_eq!(
             r.read_token().ok(),
@@ -1601,7 +1442,6 @@ mod tests {
         assert_eq!(r.read_token().ok(), Some(MsgPackToken::Ext(7, &ext32_data)));
         assert_eq!(r.remaining(), 0);
     }
-
     /// Tests float encoding and decoding and reader truncation/error conditions.
     #[test]
     fn test_msgpack_writer_reader_floats_and_errors() {
@@ -1610,75 +1450,66 @@ mod tests {
         let bytes = w.into_bytes();
         let mut r = MsgPackReader::new(&bytes);
         assert_eq!(r.read_token(), Ok(MsgPackToken::Float(1234.5678)));
-
-        // Float 32 token 0xca
         let f32_bytes = [0xca, 0x40, 0x49, 0x0f, 0xdb];
         let mut r_f32 = MsgPackReader::new(&f32_bytes);
         let expected_f32 = f64::from(f32::from_be_bytes([0x40, 0x49, 0x0f, 0xdb]));
         assert_eq!(r_f32.read_token(), Ok(MsgPackToken::Float(expected_f32)));
-
-        // Empty reader operations
         let mut empty_r = MsgPackReader::new(&[]);
         assert_eq!(empty_r.remaining(), 0);
         assert!(empty_r.peek_u8().is_err());
         assert!(empty_r.read_u8().is_err());
         assert!(empty_r.read_exact(1).is_err());
-
-        // Truncated tokens for every length prefix
         let truncated_cases: &[&[u8]] = &[
-            &[0xcc],                               // uint8 missing byte
-            &[0xcd, 0x01],                         // uint16 missing byte
-            &[0xce, 0x01, 0x02],                   // uint32 missing bytes
-            &[0xcf, 0x01, 0x02, 0x03],             // uint64 missing bytes
-            &[0xd0],                               // int8 missing byte
-            &[0xd1, 0x01],                         // int16 missing byte
-            &[0xd2, 0x01, 0x02],                   // int32 missing bytes
-            &[0xd3, 0x01, 0x02, 0x03],             // int64 missing bytes
-            &[0xca, 0x01, 0x02],                   // float32 missing bytes
-            &[0xcb, 0x01, 0x02],                   // float64 missing bytes
-            &[0xc4],                               // bin8 missing len
-            &[0xc4, 0x05, 0x01],                   // bin8 truncated payload
-            &[0xc5, 0x01],                         // bin16 missing len
-            &[0xc5, 0x00, 0x05, 0x01],             // bin16 truncated payload
-            &[0xc6, 0x00, 0x01],                   // bin32 missing len
-            &[0xc6, 0x00, 0x00, 0x00, 0x05, 0x01], // bin32 truncated payload
-            &[0xc7],                               // ext8 missing len
-            &[0xc7, 0x05],                         // ext8 missing code
-            &[0xc7, 0x02, 0x01, 0xaa],             // ext8 truncated payload
-            &[0xc8, 0x01],                         // ext16 missing len
-            &[0xc8, 0x00, 0x05],                   // ext16 missing code
-            &[0xc8, 0x00, 0x05, 0x01],             // ext16 truncated payload
-            &[0xc9, 0x00, 0x01],                   // ext32 missing len
-            &[0xc9, 0x00, 0x00, 0x00, 0x05],       // ext32 missing code
-            &[0xc9, 0x00, 0x00, 0x00, 0x05, 0x01], // ext32 truncated payload
-            &[0xd4],                               // fixext1 missing type/payload
-            &[0xd4, 0x01],                         // fixext1 missing payload
-            &[0xd5],                               // fixext2 missing code
-            &[0xd5, 0x01],                         // fixext2 missing payload
-            &[0xd6],                               // fixext4 missing code
-            &[0xd6, 0x01],                         // fixext4 missing payload
-            &[0xd7],                               // fixext8 missing code
-            &[0xd7, 0x01],                         // fixext8 missing payload
-            &[0xd8],                               // fixext16 missing code
-            &[0xd8, 0x01],                         // fixext16 missing payload
-            &[0xd9],                               // str8 missing len
-            &[0xd9, 0x05, 0x61],                   // str8 truncated payload
-            &[0xda, 0x01],                         // str16 missing len
-            &[0xda, 0x00, 0x05, 0x61],             // str16 truncated payload
-            &[0xdb, 0x00, 0x01],                   // str32 missing len
-            &[0xdb, 0x00, 0x00, 0x00, 0x05, 0x61], // str32 truncated payload
-            &[0xdc, 0x01],                         // array16 missing len
-            &[0xdd, 0x00, 0x01],                   // array32 missing len
-            &[0xde, 0x01],                         // map16 missing len
-            &[0xdf, 0x00, 0x01],                   // map32 missing len
+            &[0xcc],
+            &[0xcd, 0x01],
+            &[0xce, 0x01, 0x02],
+            &[0xcf, 0x01, 0x02, 0x03],
+            &[0xd0],
+            &[0xd1, 0x01],
+            &[0xd2, 0x01, 0x02],
+            &[0xd3, 0x01, 0x02, 0x03],
+            &[0xca, 0x01, 0x02],
+            &[0xcb, 0x01, 0x02],
+            &[0xc4],
+            &[0xc4, 0x05, 0x01],
+            &[0xc5, 0x01],
+            &[0xc5, 0x00, 0x05, 0x01],
+            &[0xc6, 0x00, 0x01],
+            &[0xc6, 0x00, 0x00, 0x00, 0x05, 0x01],
+            &[0xc7],
+            &[0xc7, 0x05],
+            &[0xc7, 0x02, 0x01, 0xaa],
+            &[0xc8, 0x01],
+            &[0xc8, 0x00, 0x05],
+            &[0xc8, 0x00, 0x05, 0x01],
+            &[0xc9, 0x00, 0x01],
+            &[0xc9, 0x00, 0x00, 0x00, 0x05],
+            &[0xc9, 0x00, 0x00, 0x00, 0x05, 0x01],
+            &[0xd4],
+            &[0xd4, 0x01],
+            &[0xd5],
+            &[0xd5, 0x01],
+            &[0xd6],
+            &[0xd6, 0x01],
+            &[0xd7],
+            &[0xd7, 0x01],
+            &[0xd8],
+            &[0xd8, 0x01],
+            &[0xd9],
+            &[0xd9, 0x05, 0x61],
+            &[0xda, 0x01],
+            &[0xda, 0x00, 0x05, 0x61],
+            &[0xdb, 0x00, 0x01],
+            &[0xdb, 0x00, 0x00, 0x00, 0x05, 0x61],
+            &[0xdc, 0x01],
+            &[0xdd, 0x00, 0x01],
+            &[0xde, 0x01],
+            &[0xdf, 0x00, 0x01],
         ];
-
         for &case in truncated_cases {
             let mut r = MsgPackReader::new(case);
             assert!(r.read_token().is_err(), "case {case:?} should fail");
         }
-
-        // Invalid UTF-8 in str tokens
         let invalid_utf8_str = [0xa2, 0xff, 0xff];
         assert!(MsgPackReader::new(&invalid_utf8_str).read_token().is_err());
         let invalid_utf8_str8 = [0xd9, 0x02, 0xff, 0xff];
@@ -1696,31 +1527,19 @@ mod tests {
                 .is_err()
         );
     }
-
     /// Tests error paths during compound type decoding.
     #[test]
     fn test_msgpack_type_decoding_error_paths() {
-        // Tuple without array header
         let bad_tuple = [0x92, 0xa1, b'T', 0xc0];
         assert!(decode_type(&bad_tuple).is_err());
-
-        // Object without map header
         let bad_object = [0x92, 0xa1, b'O', 0xc0];
         assert!(decode_type(&bad_object).is_err());
-
-        // Object with non-string attribute name
         let bad_obj_key = [0x92, 0xa1, b'O', 0x81, 0x01, 0xa1, b'S'];
         assert!(decode_type(&bad_obj_key).is_err());
-
-        // Capsule with non-string name
         let bad_capsule = [0x92, 0xa1, b'C', 0x01];
         assert!(decode_type(&bad_capsule).is_err());
-
-        // Unknown compound type tag
         let unknown_tag = [0x92, 0xa1, b'X'];
         assert!(decode_type(&unknown_tag).is_err());
-
-        // Truncated compound type members
         assert!(decode_type(&[0x92, 0xa1, b'L']).is_err());
         assert!(decode_type(&[0x92, 0xa1, b'Z']).is_err());
         assert!(decode_type(&[0x92, 0xa1, b'M']).is_err());
@@ -1730,31 +1549,23 @@ mod tests {
         assert!(decode_type(&[0x92, 0xa1, b'O', 0x81]).is_err());
         assert!(decode_type(&[0x92, 0xa1, b'O', 0x81, 0xa1, b'a']).is_err());
         assert!(decode_type(&[0x92, 0xa1, b'C']).is_err());
-
-        // Unexpected top-level token
         assert!(decode_type(&[0xc0]).is_err());
     }
-
     /// Tests value decoding edge cases, dynamic fallbacks, numbers, and errors.
     #[test]
     fn test_msgpack_value_decoding_comprehensive() {
-        // 1. Dynamic array fallback: decode array with Type::Dynamic
         let dynamic_arr_bytes = [0x92, 0xa5, b'h', b'e', b'l', b'l', b'o', 0x0a];
         let val_arr = decode_value(&dynamic_arr_bytes, &Type::Dynamic).ok();
         assert!(matches!(
             val_arr.as_ref().map(Value::ty),
             Some(Type::Tuple(_))
         ));
-
-        // 2. Dynamic map fallback: decode map with Type::Dynamic
         let dynamic_map_bytes = [0x81, 0xa3, b'f', b'o', b'o', 0x05];
         let val_map = decode_value(&dynamic_map_bytes, &Type::Dynamic).ok();
         assert!(matches!(
             val_map.as_ref().map(Value::ty),
             Some(Type::Object { .. })
         ));
-
-        // 3. Map with non-string key errors
         let non_str_key_map = [0x81, 0x01, 0x02];
         assert!(decode_value(&non_str_key_map, &Type::Map(Box::new(Type::Number))).is_err());
         assert!(
@@ -1765,64 +1576,44 @@ mod tests {
             .is_err()
         );
         assert!(decode_value(&non_str_key_map, &Type::Dynamic).is_err());
-
-        // 4. Float token into Number value
         let float_token_bytes = [0xcb, 0x40, 0x09, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18];
         let val_float = decode_value(&float_token_bytes, &Type::Number).ok();
         assert_eq!(val_float.as_ref().map(Value::ty), Some(&Type::Number));
-
-        // 5. Binary token into String value
         let bin_str_bytes = [0xc4, 0x04, b't', b'e', b'x', b't'];
         let val_bin_str = decode_value(&bin_str_bytes, &Type::String).ok();
         assert_eq!(
             val_bin_str.as_ref().map(|v| v.data.as_ref()),
             Some(&ValueData::String("text".to_string()))
         );
-
-        // Binary token with invalid UTF-8 into String value error
         let bin_invalid_utf8 = [0xc4, 0x01, 0xff];
         assert!(decode_value(&bin_invalid_utf8, &Type::String).is_err());
-
-        // 6. Number parsed from string when expected_type is Number
         let valid_num_str = [0xa3, b'1', b'.', b'5'];
         let val_num = decode_value(&valid_num_str, &Type::Number).ok();
         assert_eq!(val_num.as_ref().map(Value::ty), Some(&Type::Number));
-
         let invalid_num_str = [0xa3, b'b', b'a', b'd'];
         assert!(decode_value(&invalid_num_str, &Type::Number).is_err());
-
-        // 7. Unexpected extension code for cty.Value
         let unexpected_ext = [0xd4, 99, 0x00];
         assert!(decode_value(&unexpected_ext, &Type::Dynamic).is_err());
-
-        // 8. Large number variations in encode_value
         let u64_max_num = Value::new(Type::Number, ValueData::Number(Number::from(u64::MAX)));
         let enc_u64 = encode_value(&u64_max_num).unwrap_or_default();
         assert_eq!(
             decode_value(&enc_u64, &Type::Number).ok(),
             Some(u64_max_num)
         );
-
         let huge_n =
             Number(bigdecimal::BigDecimal::from(u64::MAX) + bigdecimal::BigDecimal::from(100));
         let huge_num = Value::new(Type::Number, ValueData::Number(huge_n));
         let enc_huge = encode_value(&huge_num).unwrap_or_default();
         assert_eq!(decode_value(&enc_huge, &Type::Number).ok(), Some(huge_num));
-
         let dec_n =
             Number(bigdecimal::BigDecimal::from(314_159) / bigdecimal::BigDecimal::from(100_000));
         let dec_num = Value::new(Type::Number, ValueData::Number(dec_n));
         let enc_dec = encode_value(&dec_num).unwrap_or_default();
         assert_eq!(decode_value(&enc_dec, &Type::Number).ok(), Some(dec_num));
-
-        // 9. Refinement decoding error paths
-        let bad_ref_hdr = [0xd4, 0x00, 0xc0]; // ext 0 with nil instead of array
+        let bad_ref_hdr = [0xd4, 0x00, 0xc0];
         assert!(decode_value(&bad_ref_hdr, &Type::String).is_err());
-
-        let short_ref_array = [0xd4, 0x00, 0x95]; // array of 5 instead of 10
+        let short_ref_array = [0xd4, 0x00, 0x95];
         assert!(decode_value(&short_ref_array, &Type::String).is_err());
-
-        // 10. Map value roundtrip
         let mut map_data = BTreeMap::new();
         map_data.insert(
             "key".to_string(),
@@ -1834,8 +1625,6 @@ mod tests {
         );
         let map_enc = encode_value(&map_val).unwrap_or_default();
         assert_eq!(decode_value(&map_enc, map_val.ty()).ok(), Some(map_val));
-
-        // 11. Refinement with all None fields
         let empty_ref = Refinement {
             not_null: false,
             string_length_min: None,
@@ -1858,21 +1647,9 @@ mod tests {
         assert!(!r.not_null);
         assert_eq!(r.string_length_min, None);
         assert_eq!(r.string_prefix, None);
-
-        // 12. Refinement decoding with explicit Int (0xd0) tokens
-        // Payload: [fixarray(10), nil, int8(5), int8(20), nil, nil, int8(1), int8(10), int8(100), int8(120), nil]
         let raw_signed_ref = [
-            0x9a, // array 10
-            0xc0, // not_null: nil
-            0xd0, 5, // string_length_min: Int 5
-            0xd0, 20,   // string_length_max: Int 20
-            0xc0, // prefix: nil
-            0xc0, // suffix: nil
-            0xd0, 1, // coll_min: Int 1
-            0xd0, 10, // coll_max: Int 10
-            0xd0, 100, // num_min: Int 100
-            0xd0, 120,  // num_max: Int 120
-            0xc0, // attrs: nil
+            0x9a, 0xc0, 0xd0, 5, 0xd0, 20, 0xc0, 0xc0, 0xd0, 1, 0xd0, 10, 0xd0, 100, 0xd0, 120,
+            0xc0,
         ];
         let mut enc_signed_ref = MsgPackWriter::new();
         enc_signed_ref.write_ext(0, &raw_signed_ref);
@@ -1885,20 +1662,8 @@ mod tests {
         assert_eq!(res_signed_ref.collection_length_max, Some(10));
         assert_eq!(res_signed_ref.number_min, Some(Number::from(100)));
         assert_eq!(res_signed_ref.number_max, Some(Number::from(120)));
-
-        // 12b. Refinement decoding with explicit Uint (0xcc) tokens
         let raw_unsigned_ref = [
-            0x9a, // array 10
-            0xc3, // not_null: true
-            0xcc, 6, // string_length_min: Uint 6
-            0xcc, 22,   // string_length_max: Uint 22
-            0xc0, // prefix: nil
-            0xc0, // suffix: nil
-            0xcc, 2, // coll_min: Uint 2
-            0xcc, 12, // coll_max: Uint 12
-            0xcc, 50, // num_min: Uint 50
-            0xcc, 90,   // num_max: Uint 90
-            0xc0, // attrs: nil
+            0x9a, 0xc3, 0xcc, 6, 0xcc, 22, 0xc0, 0xc0, 0xcc, 2, 0xcc, 12, 0xcc, 50, 0xcc, 90, 0xc0,
         ];
         let mut enc_unsigned_ref = MsgPackWriter::new();
         enc_unsigned_ref.write_ext(0, &raw_unsigned_ref);
@@ -1912,8 +1677,6 @@ mod tests {
         assert_eq!(res_unsigned_ref.collection_length_max, Some(12));
         assert_eq!(res_unsigned_ref.number_min, Some(Number::from(50)));
         assert_eq!(res_unsigned_ref.number_max, Some(Number::from(90)));
-
-        // 13. Refinement with non-string key in map attributes (continue branch)
         let mut ref_w_bad_key = MsgPackWriter::new();
         ref_w_bad_key.write_array_header(10);
         ref_w_bad_key.write_bool(true);
@@ -1926,14 +1689,12 @@ mod tests {
         ref_w_bad_key.write_nil();
         ref_w_bad_key.write_nil();
         ref_w_bad_key.write_map_header(1);
-        ref_w_bad_key.write_int(999); // non-string key
+        ref_w_bad_key.write_int(999);
         let mut ext_w_bad = MsgPackWriter::new();
         ext_w_bad.write_ext(0, &ref_w_bad_key.into_bytes());
         let dec_bad_attr_val = decode_value(&ext_w_bad.into_bytes(), &Type::String)
             .unwrap_or(Value::null(Type::Dynamic));
         assert!(dec_bad_attr_val.is_unknown());
-
-        // 14. 3-element tuple starting with 0x93 where element 1 is not Uint(1)
         let tuple_3 = Value::new(
             Type::Tuple(vec![Type::String, Type::String, Type::String]),
             ValueData::Array(vec![
@@ -1944,8 +1705,6 @@ mod tests {
         );
         let enc_tup3 = encode_value(&tuple_3).unwrap_or_default();
         assert_eq!(decode_value(&enc_tup3, tuple_3.ty()).ok(), Some(tuple_3));
-
-        // 15. Marked envelope where marks header is not array header or mark is non-string
         let mut marked_bad_hdr = MsgPackWriter::new();
         marked_bad_hdr.write_array_header(3);
         marked_bad_hdr.write_uint(1);
@@ -1954,7 +1713,6 @@ mod tests {
         let dec_bad_hdr = decode_value(&marked_bad_hdr.into_bytes(), &Type::String)
             .unwrap_or(Value::null(Type::Dynamic));
         assert!(dec_bad_hdr.marks.is_empty());
-
         let mut marked_bad_mark = MsgPackWriter::new();
         marked_bad_mark.write_array_header(3);
         marked_bad_mark.write_uint(1);
@@ -1964,8 +1722,6 @@ mod tests {
         let dec_bad_mark = decode_value(&marked_bad_mark.into_bytes(), &Type::String)
             .unwrap_or(Value::null(Type::Dynamic));
         assert!(dec_bad_mark.marks.is_empty());
-
-        // 16. Refinement error paths during decoding
         let bad_ref_payloads: &[&[u8]] = &[
             &[0xc1],
             &[0x9a],
@@ -1995,8 +1751,6 @@ mod tests {
                 "payload {bad_payload:?} unexpectedly succeeded: {res:?}"
             );
         }
-
-        // 17. Marked envelope truncated error paths
         assert!(decode_value(&[0x93, 0x01], &Type::String).is_err());
         assert!(
             decode_value(
@@ -2005,13 +1759,10 @@ mod tests {
             )
             .is_err()
         );
-
-        // 18. Collection and map element decoding error paths
         assert!(decode_value(&[0x91], &Type::List(Box::new(Type::String))).is_err());
         assert!(decode_value(&[0x91], &Type::Set(Box::new(Type::String))).is_err());
         assert!(decode_value(&[0x91], &Type::Tuple(vec![Type::String])).is_err());
         assert!(decode_value(&[0x91], &Type::Dynamic).is_err());
-
         assert!(decode_value(&[0x81], &Type::Map(Box::new(Type::String))).is_err());
         assert!(decode_value(&[0x81, 0xa1, b'k'], &Type::Map(Box::new(Type::String))).is_err());
         assert!(

@@ -1,9 +1,7 @@
 //! Serde Serializer implementation for HCL.
-use std::fmt::Write;
-
 use serde::ser::Serialize;
 use serde_json::Value as JsonValue;
-
+use std::fmt::Write;
 /// Serialize an instance of type `T` to a cleanly formatted HCL string.
 ///
 /// # Errors
@@ -11,13 +9,10 @@ use serde_json::Value as JsonValue;
 /// Returns an error if the value cannot be serialized.
 pub fn to_string<T: Serialize>(value: &T) -> Result<String, String> {
     let json_val = serde_json::to_value(value).map_err(|e| format!("Serialize error: {e}"))?;
-
-    // Convert json to formatted HCL string.
     let mut out = String::new();
     format_hcl(&json_val, &mut out, 0);
     Ok(out)
 }
-
 fn format_hcl(val: &JsonValue, out: &mut String, indent: usize) {
     let ind = "  ".repeat(indent);
     match val {
@@ -25,7 +20,6 @@ fn format_hcl(val: &JsonValue, out: &mut String, indent: usize) {
         JsonValue::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         JsonValue::Number(n) => out.push_str(&n.to_string()),
         JsonValue::String(s) => {
-            // Simplified string encoding
             out.push('"');
             out.push_str(&s.replace('"', "\\\""));
             out.push('"');
@@ -63,7 +57,6 @@ fn format_hcl(val: &JsonValue, out: &mut String, indent: usize) {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -73,9 +66,7 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     struct CustomFail;
     impl serde::Serialize for CustomFail {
         fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
@@ -85,7 +76,6 @@ mod tests {
             Err(serde::ser::Error::custom("forced failure"))
         }
     }
-
     struct ToggleFail(bool);
     impl serde::Serialize for ToggleFail {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -99,22 +89,13 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn test_ser_all_json_primitives() {
-        let val = serde_json::json!({
-            "null_field": null,
-            "bool_t": true,
-            "bool_f": false,
-            "num": 42,
-            "str": "quotes \"and\" backslashes \\",
-            "empty_list": [],
-            "items": [1, 2],
-            "empty_map": {},
-            "nested": {
-                "key": "val"
-            }
-        });
+        let val = serde_json::json!(
+            { "null_field" : null, "bool_t" : true, "bool_f" : false, "num" : 42, "str" :
+            "quotes \"and\" backslashes \\", "empty_list" : [], "items" : [1, 2],
+            "empty_map" : {}, "nested" : { "key" : "val" } }
+        );
         let res = to_string(&val).unwrap();
         assert!(res.contains("null_field = null"));
         assert!(res.contains("bool_t = true"));
@@ -123,7 +104,6 @@ mod tests {
         assert!(res.contains("empty_list = []"));
         assert!(res.contains("empty_map = {}"));
         assert!(res.contains("key = \"val\""));
-
         assert!(to_string(&CustomFail).is_err());
         assert!(to_string(&ToggleFail(false)).is_ok());
         assert!(to_string(&ToggleFail(true)).is_err());

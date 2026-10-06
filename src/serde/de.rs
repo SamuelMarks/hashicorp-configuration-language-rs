@@ -1,10 +1,8 @@
 //! Serde Deserializer implementation for HCL.
-
 use crate::ast::structure::Body;
 use crate::parse::parser::Parser;
 use serde::de::DeserializeOwned;
 use serde_json::{Map as JsonMap, Value as JsonValue};
-
 /// Deserialize an instance of type `T` from a string of HCL text.
 ///
 /// # Errors
@@ -13,25 +11,17 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 pub fn from_str<T: DeserializeOwned>(s: &str) -> Result<T, String> {
     let mut parser = Parser::new(s);
     let body = parser.parse_body();
-
     if parser.errors().has_errors() {
         return Err(format!("Parse error: {:?}", parser.errors().errors()));
     }
-
-    // Evaluate or convert body to JSON.
-    // For a simple Serde interface, we treat HCL attributes as keys, blocks as nested maps.
     let json_val = body_to_json(&body);
-
     serde_json::from_value(json_val).map_err(|e| format!("Deserialize error: {e}"))
 }
-
 fn body_to_json(body: &Body) -> JsonValue {
     let mut map = JsonMap::new();
-
     for (name, attr) in &body.attributes {
         map.insert(name.clone(), expr_to_json(&attr.expr));
     }
-
     for block in &body.blocks {
         let block_json = body_to_json(&block.body);
         if block.labels.is_empty() {
@@ -50,14 +40,11 @@ fn body_to_json(body: &Body) -> JsonValue {
             }
         }
     }
-
     JsonValue::Object(map)
 }
-
 pub(crate) fn expr_to_json(expr: &crate::ast::expr::Expression) -> JsonValue {
     use crate::ast::expr::Expression;
     use crate::ast::expr::TemplatePart;
-
     match expr {
         Expression::String(s, _) => JsonValue::String(s.clone()),
         Expression::Number(n, _) => {

@@ -1,14 +1,12 @@
 //! Declarative validation and assertion evaluation engine.
 //!
 //! Evaluates `validation`, `precondition`, and `postcondition` blocks against an evaluation context.
-
 use crate::ast::structure::{Body, PostconditionBlock, PreconditionBlock, ValidationBlock};
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::error::HclError;
 use crate::eval::context::Context;
 use crate::eval::evaluator::Evaluator;
 use crate::types::{Type, ValueData};
-
 /// Evaluates a single [`ValidationBlock`] against the provided context.
 ///
 /// # Behavior
@@ -27,7 +25,6 @@ use crate::types::{Type, ValueData};
 pub fn evaluate_validation(val: &ValidationBlock, ctx: &mut Context) -> Result<(), Diagnostics> {
     evaluate_validation_internal(val, ctx, "Validation rule failed", None)
 }
-
 /// Evaluates a lifecycle [`PreconditionBlock`] against the provided context.
 ///
 /// # Arguments
@@ -48,7 +45,6 @@ pub fn evaluate_precondition(
         Some("Precondition failed: "),
     )
 }
-
 /// Evaluates a lifecycle [`PostconditionBlock`] against the provided context.
 ///
 /// # Arguments
@@ -69,7 +65,6 @@ pub fn evaluate_postcondition(
         Some("Postcondition failed: "),
     )
 }
-
 /// Evaluates all validations, preconditions, and postconditions in a [`Body`] recursively.
 ///
 /// # Arguments
@@ -80,38 +75,32 @@ pub fn evaluate_postcondition(
 /// Returns aggregated [`Diagnostics`] if any validation rule or assertion fails.
 pub fn evaluate_all_validations(body: &Body, ctx: &mut Context) -> Result<(), Diagnostics> {
     let mut diags = Diagnostics::new();
-
     for val in &body.validations {
         if let Err(errs) = evaluate_validation(val, ctx) {
             diags.extend(errs);
         }
     }
-
     for pre in &body.preconditions {
         if let Err(errs) = evaluate_precondition(pre, ctx) {
             diags.extend(errs);
         }
     }
-
     for post in &body.postconditions {
         if let Err(errs) = evaluate_postcondition(post, ctx) {
             diags.extend(errs);
         }
     }
-
     for block in &body.blocks {
         if let Err(errs) = evaluate_all_validations(&block.body, ctx) {
             diags.extend(errs);
         }
     }
-
     if diags.has_errors() {
         Err(diags)
     } else {
         Ok(())
     }
 }
-
 fn evaluate_validation_internal(
     val: &ValidationBlock,
     ctx: &mut Context,
@@ -120,13 +109,9 @@ fn evaluate_validation_internal(
 ) -> Result<(), Diagnostics> {
     let evaluator = Evaluator::new(ctx);
     let (cond_val, _) = evaluator.evaluate(&val.condition)?;
-
-    // Unknown propagation: postpone failure until apply phase.
     if cond_val.is_unknown() {
         return Ok(());
     }
-
-    // Condition must not be null
     if cond_val.is_null() {
         let mut diags = Diagnostics::new();
         diags.push(
@@ -139,8 +124,6 @@ fn evaluate_validation_internal(
         );
         return Err(diags);
     }
-
-    // Condition must evaluate strictly to Type::Bool
     if cond_val.ty() != &Type::Bool {
         let mut diags = Diagnostics::new();
         diags.push(
@@ -159,7 +142,6 @@ fn evaluate_validation_internal(
         );
         return Err(diags);
     }
-
     match cond_val.data.as_ref() {
         ValueData::Bool(true) => Ok(()),
         ValueData::Bool(false) => {
@@ -175,13 +157,11 @@ fn evaluate_validation_internal(
                     return Err(errs);
                 }
             };
-
             let err_string = if let Some(pfx) = err_prefix {
                 format!("{pfx}{message}")
             } else {
                 message.clone()
             };
-
             let mut diags = Diagnostics::new();
             diags.push(
                 Diagnostic::error(summary_title, message, val.span.clone())
@@ -205,7 +185,6 @@ fn evaluate_validation_internal(
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -215,18 +194,15 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::api::parse;
     use crate::ast::expr::Expression;
     use crate::span::Span;
     use crate::types::Value;
     use std::collections::BTreeMap;
-
     fn empty_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
-
     fn setup_var_context(pairs: &[(&str, Value)]) -> Context<'static> {
         let mut ctx = Context::with_stdlib();
         let mut map = BTreeMap::new();
@@ -242,14 +218,12 @@ mod tests {
         );
         ctx
     }
-
     #[test]
     fn test_evaluate_validation_success() {
         let mut ctx = setup_var_context(&[(
             "port",
             Value::new(Type::Number, ValueData::Number(8080.into())),
         )]);
-
         let input = r#"
             validation {
                 condition = var.port == 8080
@@ -258,18 +232,15 @@ mod tests {
         "#;
         let body = parse(input).unwrap();
         assert_eq!(body.validations.len(), 1);
-
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_ok());
     }
-
     #[test]
     fn test_evaluate_validation_failure() {
         let mut ctx = setup_var_context(&[(
             "port",
             Value::new(Type::Number, ValueData::Number(80.into())),
         )]);
-
         let input = r#"
             validation {
                 condition = var.port == 8080
@@ -278,7 +249,6 @@ mod tests {
         "#;
         let body = parse(input).unwrap();
         assert_eq!(body.validations.len(), 1);
-
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_err());
         let errs = res.unwrap_err();
@@ -290,11 +260,9 @@ mod tests {
                 .contains("Port 80 is invalid, must be 8080.")
         );
     }
-
     #[test]
     fn test_evaluate_validation_unknown_condition_passes() {
         let mut ctx = setup_var_context(&[("status", Value::unknown(Type::Bool))]);
-
         let input = r#"
             validation {
                 condition = var.status
@@ -305,11 +273,9 @@ mod tests {
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_ok());
     }
-
     #[test]
     fn test_evaluate_validation_null_condition_errors() {
         let mut ctx = setup_var_context(&[("flag", Value::null(Type::Bool))]);
-
         let input = r#"
             validation {
                 condition = var.flag
@@ -326,14 +292,12 @@ mod tests {
                 .contains("condition evaluated to null")
         );
     }
-
     #[test]
     fn test_evaluate_validation_type_mismatch() {
         let mut ctx = setup_var_context(&[(
             "name",
             Value::new(Type::String, ValueData::String("prod".into())),
         )]);
-
         let input = r#"
             validation {
                 condition = var.name
@@ -350,14 +314,12 @@ mod tests {
                 .contains("condition must evaluate to bool")
         );
     }
-
     #[test]
     fn test_evaluate_precondition_and_postcondition() {
         let mut ctx = setup_var_context(&[
             ("ready", Value::new(Type::Bool, ValueData::Bool(true))),
             ("health", Value::new(Type::Bool, ValueData::Bool(false))),
         ]);
-
         let input = r#"
             lifecycle {
                 precondition {
@@ -374,12 +336,8 @@ mod tests {
         let lifecycle_block = &body.blocks[0];
         assert_eq!(lifecycle_block.body.preconditions.len(), 1);
         assert_eq!(lifecycle_block.body.postconditions.len(), 1);
-
-        // Precondition passes
         let pre_res = evaluate_precondition(&lifecycle_block.body.preconditions[0], &mut ctx);
         assert!(pre_res.is_ok());
-
-        // Postcondition fails
         let post_res = evaluate_postcondition(&lifecycle_block.body.postconditions[0], &mut ctx);
         assert!(post_res.is_err());
         let post_errs = post_res.unwrap_err();
@@ -390,7 +348,6 @@ mod tests {
                 .contains("Unhealthy status")
         );
     }
-
     #[test]
     fn test_evaluate_all_validations_recursive() {
         let mut ctx = setup_var_context(&[
@@ -399,7 +356,6 @@ mod tests {
             ("pre_fail", Value::new(Type::Bool, ValueData::Bool(false))),
             ("post_fail", Value::new(Type::Bool, ValueData::Bool(false))),
         ]);
-
         let input = r#"
             validation {
                 condition = var.val1
@@ -422,7 +378,6 @@ mod tests {
                 }
             }
         "#;
-
         let body = parse(input).unwrap();
         let all_res = evaluate_all_validations(&body, &mut ctx);
         assert!(all_res.is_err());
@@ -444,7 +399,6 @@ mod tests {
                 .any(|e| e.to_string().contains("Postcondition failed"))
         );
     }
-
     #[test]
     fn test_evaluate_validation_error_in_error_message_expr() {
         let mut ctx = Context::new();
@@ -453,18 +407,14 @@ mod tests {
             Expression::Variable("undefined_variable_in_msg".to_string(), empty_span()),
             empty_span(),
         );
-
         let res = evaluate_validation(&val_block, &mut ctx);
         assert!(res.is_err());
         let errs = res.unwrap_err();
         assert!(errs.errors()[0].to_string().contains("Unknown variable"));
     }
-
     #[test]
     fn test_evaluate_validation_non_string_error_messages() {
         let mut ctx = Context::new();
-
-        // Bool error message
         let val_block_bool = ValidationBlock::new(
             Expression::Bool(false, empty_span()),
             Expression::Bool(false, empty_span()),
@@ -474,8 +424,6 @@ mod tests {
         assert!(res.is_err());
         let errs = res.unwrap_err();
         assert!(errs.errors()[0].to_string().contains("false"));
-
-        // Tuple error message
         let val_block_tuple = ValidationBlock::new(
             Expression::Bool(false, empty_span()),
             Expression::Tuple(vec![Expression::Bool(true, empty_span())], empty_span()),
@@ -483,8 +431,6 @@ mod tests {
         );
         let res = evaluate_validation(&val_block_tuple, &mut ctx);
         assert!(res.is_err());
-
-        // Number error message
         let val_block_num = ValidationBlock::new(
             Expression::Bool(false, empty_span()),
             Expression::Number(404.into(), empty_span()),
@@ -495,7 +441,6 @@ mod tests {
         let errs = res.unwrap_err();
         assert!(errs.errors()[0].to_string().contains("404"));
     }
-
     #[test]
     fn test_evaluate_validation_condition_corrupted_data() {
         let mut ctx = Context::new();
@@ -503,19 +448,16 @@ mod tests {
             "bad_bool",
             Value::new(Type::Bool, ValueData::Number(123.into())),
         );
-
         let val_block = ValidationBlock::new(
             Expression::Variable("bad_bool".to_string(), empty_span()),
             Expression::String("error".to_string(), empty_span()),
             empty_span(),
         );
-
         let res = evaluate_validation(&val_block, &mut ctx);
         assert!(res.is_err());
         let errs = res.unwrap_err();
         assert_eq!(errs.errors()[0].summary_str(), "Invalid condition value");
     }
-
     #[test]
     fn test_evaluate_precondition_postcondition_type_error() {
         let mut ctx = Context::new();
@@ -523,7 +465,6 @@ mod tests {
             "bad_cond",
             Value::new(Type::String, ValueData::String("str".into())),
         );
-
         let pre = PreconditionBlock::new(
             Expression::Variable("bad_cond".to_string(), empty_span()),
             Expression::String("error".to_string(), empty_span()),
@@ -535,7 +476,6 @@ mod tests {
             res_pre.unwrap_err().errors()[0].summary_str(),
             "Invalid condition type"
         );
-
         let post = PostconditionBlock::new(
             Expression::Variable("bad_cond".to_string(), empty_span()),
             Expression::String("error".to_string(), empty_span()),
@@ -548,7 +488,6 @@ mod tests {
             "Invalid condition type"
         );
     }
-
     #[test]
     fn test_evaluate_validation_condition_eval_failure() {
         let mut ctx = Context::new();
@@ -557,11 +496,9 @@ mod tests {
             Expression::String("msg".to_string(), empty_span()),
             empty_span(),
         );
-
         let res = evaluate_validation(&val_block, &mut ctx);
         assert!(res.is_err());
     }
-
     #[test]
     fn test_evaluate_all_validations_all_pass() {
         let mut ctx = Context::new();

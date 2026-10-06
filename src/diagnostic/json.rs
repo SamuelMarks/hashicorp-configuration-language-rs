@@ -12,12 +12,10 @@
 //!   "snippet": { "context": "...", "code": "...", "start_line": 1 }
 //! }
 //! ```
-
 use crate::diagnostic::{Diagnostic, Diagnostics, Severity};
 use crate::error::HclError;
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
-
 /// Position within a source file for JSON diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticPosJson {
@@ -28,7 +26,6 @@ pub struct DiagnosticPosJson {
     /// 0-indexed byte offset.
     pub byte: usize,
 }
-
 /// Source range within a file for JSON diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticRangeJson {
@@ -39,7 +36,6 @@ pub struct DiagnosticRangeJson {
     /// Ending position.
     pub end: DiagnosticPosJson,
 }
-
 /// Code snippet excerpt for JSON diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticSnippetJson {
@@ -51,7 +47,6 @@ pub struct DiagnosticSnippetJson {
     /// 1-indexed starting line number of the code excerpt.
     pub start_line: usize,
 }
-
 /// HashiCorp-compatible JSON representation of a diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticJson {
@@ -72,7 +67,6 @@ pub struct DiagnosticJson {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snippet: Option<DiagnosticSnippetJson>,
 }
-
 impl DiagnosticJson {
     /// Constructs a `DiagnosticJson` from a [`Diagnostic`] and optional source text.
     ///
@@ -88,18 +82,15 @@ impl DiagnosticJson {
             Severity::Error => "error".to_string(),
             Severity::Warning => "warning".to_string(),
         };
-
         let summary = diag
             .summary
             .clone()
             .unwrap_or_else(|| diag.error.to_string());
-
         let filename = diag
             .subject
             .file
             .as_deref()
             .map_or_else(String::new, ToString::to_string);
-
         let range = if diag.subject.start_line > 0 || diag.subject.end_byte > 0 {
             Some(DiagnosticRangeJson {
                 filename,
@@ -117,9 +108,7 @@ impl DiagnosticJson {
         } else {
             None
         };
-
         let snippet = source.and_then(|s| extract_snippet(&diag.subject, s));
-
         Self {
             severity,
             summary,
@@ -129,7 +118,6 @@ impl DiagnosticJson {
             snippet,
         }
     }
-
     /// Converts this `DiagnosticJson` back into a strongly-typed [`Diagnostic`].
     ///
     /// # Returns
@@ -141,7 +129,6 @@ impl DiagnosticJson {
         } else {
             Severity::Error
         };
-
         let subject = if let Some(ref r) = self.range {
             let file = if r.filename.is_empty() {
                 None
@@ -160,7 +147,6 @@ impl DiagnosticJson {
         } else {
             Span::default()
         };
-
         let error = HclError::Parse(self.summary.clone());
         let mut diag = Diagnostic::new(error, subject);
         diag.severity = severity;
@@ -170,7 +156,6 @@ impl DiagnosticJson {
         diag
     }
 }
-
 fn extract_snippet(span: &Span, source: &str) -> Option<DiagnosticSnippetJson> {
     if source.is_empty() || span.start_line == 0 {
         return None;
@@ -192,7 +177,6 @@ fn extract_snippet(span: &Span, source: &str) -> Option<DiagnosticSnippetJson> {
         start_line: span.start_line,
     })
 }
-
 /// Serializes a collection of diagnostics to a JSON string.
 ///
 /// # Arguments
@@ -208,15 +192,12 @@ pub fn diagnostics_to_json(diags: &Diagnostics, source: Option<&str>) -> Result<
         .collect();
     diagnostics_list_to_json(&list)
 }
-
 fn diagnostics_list_to_json<T: serde::Serialize>(val: &T) -> Result<String, HclError> {
     serde_json::to_string_pretty(val).map_err(|e| HclError::CtyJson(e.to_string()))
 }
-
 pub(crate) fn diagnostic_to_json<T: serde::Serialize>(val: &T) -> Result<String, HclError> {
     serde_json::to_string(val).map_err(|e| HclError::CtyJson(e.to_string()))
 }
-
 /// Deserializes a collection of diagnostics from a JSON string.
 ///
 /// # Arguments
@@ -233,7 +214,6 @@ pub fn diagnostics_from_json(json_str: &str) -> Result<Diagnostics, HclError> {
     }
     Ok(diags)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -243,9 +223,7 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     struct FailingSerialize;
     impl serde::Serialize for FailingSerialize {
         fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
@@ -255,7 +233,6 @@ mod tests {
             Err(serde::ser::Error::custom("forced failure"))
         }
     }
-
     #[test]
     fn test_diagnostic_json_roundtrip() {
         let span = Span::new_with_file(0, 10, 1, 1, 1, 11, Some(std::sync::Arc::from("test.hcl")));
@@ -263,19 +240,16 @@ mod tests {
         diag.summary = Some("Syntax error".to_string());
         diag.detail = Some("Unexpected token found".to_string());
         diag.address = Some("resource.aws_instance.foo".to_string());
-
         let source = "foo = bar
 baz = 123
 ";
         let json_str = diagnostics_to_json(&Diagnostics::from(diag.clone()), Some(source)).unwrap();
-
         assert!(json_str.contains("\"severity\": \"error\""));
         assert!(json_str.contains("\"summary\": \"Syntax error\""));
         assert!(json_str.contains("\"detail\": \"Unexpected token found\""));
         assert!(json_str.contains("\"address\": \"resource.aws_instance.foo\""));
         assert!(json_str.contains("\"filename\": \"test.hcl\""));
         assert!(json_str.contains("\"code\": \"foo = bar\""));
-
         let deserialized = diagnostics_from_json(&json_str).unwrap();
         assert_eq!(deserialized.errors().len(), 1);
         let d = &deserialized.errors()[0];
@@ -286,23 +260,19 @@ baz = 123
         assert_eq!(d.subject.start_line, 1);
         assert_eq!(d.subject.start_col, 1);
     }
-
     #[test]
     fn test_diagnostic_json_warning_and_no_source() {
         let span = Span::default();
         let mut diag = Diagnostic::new(HclError::Lint("Unused var".to_string()), span);
         diag.severity = Severity::Warning;
         diag.summary = Some("Unused var".to_string());
-
         let json_str = diagnostics_to_json(&Diagnostics::from(diag), None).unwrap();
         assert!(json_str.contains("\"severity\": \"warning\""));
         assert!(!json_str.contains("\"snippet\""));
-
         let deserialized = diagnostics_from_json(&json_str).unwrap();
         assert_eq!(deserialized.errors().len(), 1);
         assert_eq!(deserialized.errors()[0].severity, Severity::Warning);
     }
-
     #[test]
     fn test_extract_snippet_empty_or_out_of_bounds() {
         let span = Span::new(0, 5, 10, 1, 10, 6);
@@ -313,37 +283,26 @@ line 2
 ",
         );
         assert!(snippet.is_none());
-
         let empty_span = Span::default();
         let snippet_empty = extract_snippet(&empty_span, "content");
         assert!(snippet_empty.is_none());
     }
-
     /// Tests fallback when summary is None, range with byte offsets, and serialization/deserialization errors.
     #[test]
     fn test_diagnostic_json_fallback_and_branches() {
         let span = Span::new(0, 5, 0, 0, 0, 5);
         let mut diag = Diagnostic::new(HclError::Parse("No summary error".to_string()), span);
         diag.summary = None;
-
         let json = DiagnosticJson::from_diagnostic(&diag, None);
         assert_eq!(json.summary, "Parse error: No summary error");
         assert!(json.range.is_some());
-
-        // Range without filename converts to diagnostic with default file
         let reconstructed = json.to_diagnostic();
         assert_eq!(reconstructed.subject.file, None);
-
-        // Serialization error test
         let err = diagnostics_list_to_json(&FailingSerialize);
         assert!(err.is_err());
         assert!(diagnostic_to_json(&FailingSerialize).is_err());
-
-        // Deserialization error test
         let parse_err = diagnostics_from_json("not valid json");
         assert!(parse_err.is_err());
-
-        // Snippet extraction with empty source
         let empty_source_snippet = extract_snippet(&Span::new(0, 5, 1, 1, 1, 6), "");
         assert!(empty_source_snippet.is_none());
     }

@@ -3,7 +3,6 @@
 //! Detects dead code, unused local variables, unreferenced block attributes,
 //! tautological conditional expressions, unreachable template branches,
 //! and redundant type conversions.
-
 use crate::analysis::type_check::TypeChecker;
 use crate::ast::deps::extract_static_references_from_body;
 use crate::ast::expr::{BinaryOp, Directive, Expression, TemplatePart, TraversalOperator};
@@ -12,7 +11,6 @@ use crate::diagnostic::{Diagnostic, Diagnostics, Severity};
 use crate::error::HclError;
 use crate::types::Type;
 use std::collections::HashSet;
-
 /// Determines whether two AST expressions are syntactically equivalent literals or variables.
 ///
 /// # Arguments
@@ -31,14 +29,12 @@ fn are_expressions_equivalent(a: &Expression, b: &Expression) -> bool {
         _ => false,
     }
 }
-
 /// Static linter checking for dead code, tautologies, and stylistic defects.
 #[derive(Debug, Clone, Default)]
 pub struct Linter {
     /// Optional type checker used for inferring types in redundant conversion checks.
     pub type_checker: Option<TypeChecker>,
 }
-
 impl Linter {
     /// Creates a new `Linter` with default configuration.
     ///
@@ -48,7 +44,6 @@ impl Linter {
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Configures the `Linter` with an active [`TypeChecker`] to enhance type-aware rules.
     ///
     /// # Arguments
@@ -61,7 +56,6 @@ impl Linter {
         self.type_checker = Some(type_checker);
         self
     }
-
     /// Lints an entire AST [`Body`], collecting all diagnostic warnings and errors.
     ///
     /// # Arguments
@@ -76,7 +70,6 @@ impl Linter {
         self.lint_body_expressions(body, &mut diags);
         diags
     }
-
     /// Lints a single isolated [`Expression`].
     ///
     /// # Arguments
@@ -90,7 +83,6 @@ impl Linter {
         self.lint_expr_recursive(expr, &mut diags);
         diags
     }
-
     /// Checks for declared local variables and input variables that are never referenced.
     ///
     /// # Arguments
@@ -98,23 +90,19 @@ impl Linter {
     /// * `diags` - The diagnostics list to append warnings to.
     pub fn lint_unused_definitions(&self, body: &Body, diags: &mut Diagnostics) {
         let references = extract_static_references_from_body(body).unwrap_or_default();
-
         let mut referenced_locals = HashSet::new();
         let mut referenced_vars = HashSet::new();
-
         for trav in &references {
             if trav.root == "local" {
                 if let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first() {
                     referenced_locals.insert(name.clone());
                 }
-            } else if trav.root == "var"
-                && let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first()
-            {
-                referenced_vars.insert(name.clone());
+            } else if trav.root == "var" {
+                if let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first() {
+                    referenced_vars.insert(name.clone());
+                }
             }
         }
-
-        // Check locals blocks
         for block in &body.blocks {
             if block.block_type == "locals" {
                 for (name, attr) in &block.body.attributes {
@@ -134,32 +122,32 @@ impl Linter {
                         diags.push(diag);
                     }
                 }
-            } else if block.block_type == "variable"
-                && let Some(var_name) = block.labels.first()
-                && !referenced_vars.contains(var_name)
-            {
-                let span = block
-                    .label_spans
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| block.type_span.clone());
-                let mut diag = Diagnostic::new(
-                    HclError::Lint(format!("Unused input variable: {var_name:?}")),
-                    span,
-                );
-                diag.severity = Severity::Warning;
-                diag.summary = Some(format!(
-                    "Variable {var_name:?} is declared but never referenced"
-                ));
-                diag.detail = Some(
-                    "Consider removing this variable or referencing it as `var.<name>`."
-                        .to_string(),
-                );
-                diags.push(diag);
+            } else if block.block_type == "variable" {
+                if let Some(var_name) = block.labels.first() {
+                    if !referenced_vars.contains(var_name) {
+                        let span = block
+                            .label_spans
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| block.type_span.clone());
+                        let mut diag = Diagnostic::new(
+                            HclError::Lint(format!("Unused input variable: {var_name:?}")),
+                            span,
+                        );
+                        diag.severity = Severity::Warning;
+                        diag.summary = Some(format!(
+                            "Variable {var_name:?} is declared but never referenced"
+                        ));
+                        diag.detail = Some(
+                            "Consider removing this variable or referencing it as `var.<name>`."
+                                .to_string(),
+                        );
+                        diags.push(diag);
+                    }
+                }
             }
         }
     }
-
     /// Checks an expression for tautological conditional branches (e.g. `true ? a : b`).
     ///
     /// # Arguments
@@ -178,7 +166,10 @@ impl Linter {
                     );
                     diag.severity = Severity::Warning;
                     diag.summary = Some("Condition is constant true".to_string());
-                    diag.detail = Some("The false branch is unreachable. Consider replacing this ternary with just the true branch.".to_string());
+                    diag.detail = Some(
+                        "The false branch is unreachable. Consider replacing this ternary with just the true branch."
+                            .to_string(),
+                    );
                     diags.push(diag);
                 }
                 Expression::Bool(false, _) => {
@@ -191,7 +182,10 @@ impl Linter {
                     );
                     diag.severity = Severity::Warning;
                     diag.summary = Some("Condition is constant false".to_string());
-                    diag.detail = Some("The true branch is unreachable. Consider replacing this ternary with just the false branch.".to_string());
+                    diag.detail = Some(
+                        "The true branch is unreachable. Consider replacing this ternary with just the false branch."
+                            .to_string(),
+                    );
                     diags.push(diag);
                 }
                 Expression::BinaryOp(BinaryOp::Eq, left, right, _)
@@ -224,7 +218,6 @@ impl Linter {
             }
         }
     }
-
     /// Checks string template directives for unreachable branches (e.g. `%{ if false }...%{ endif }`).
     ///
     /// # Arguments
@@ -237,7 +230,6 @@ impl Linter {
             }
         }
     }
-
     fn lint_template_part(&self, part: &TemplatePart, diags: &mut Diagnostics) {
         match part {
             TemplatePart::Literal(_, _) => {}
@@ -261,27 +253,35 @@ impl Linter {
                         );
                         diag.severity = Severity::Warning;
                         diag.summary = Some("Template branch is unreachable".to_string());
-                        diag.detail = Some("The condition `%{ if false }` is never satisfied. This template block will never produce output.".to_string());
+                        diag.detail = Some(
+                                "The condition `%{ if false }` is never satisfied. This template block will never produce output."
+                                    .to_string(),
+                            );
                         diags.push(diag);
-                    } else if let Expression::Bool(true, _) = cond
-                        && (!else_ifs.is_empty() || false_expr.is_some())
-                    {
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint("Unreachable else/elif template branches: initial if is constant true".to_string()),
-                            span.clone(),
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary =
-                            Some("Else / elif template branches are unreachable".to_string());
-                        diags.push(diag);
+                    } else if let Expression::Bool(true, _) = cond {
+                        if !else_ifs.is_empty() || false_expr.is_some() {
+                            let mut diag = Diagnostic::new(
+                                    HclError::Lint(
+                                        "Unreachable else/elif template branches: initial if is constant true"
+                                            .to_string(),
+                                    ),
+                                    span.clone(),
+                                );
+                            diag.severity = Severity::Warning;
+                            diag.summary =
+                                Some("Else / elif template branches are unreachable".to_string());
+                            diags.push(diag);
+                        }
                     }
-
                     for (elif_cond, elif_body) in else_ifs {
                         if let Expression::Bool(false, _) = elif_cond {
                             let mut diag = Diagnostic::new(
-                                HclError::Lint("Unreachable template else-if branch: condition is constant false".to_string()),
-                                elif_cond.span(),
-                            );
+                                    HclError::Lint(
+                                        "Unreachable template else-if branch: condition is constant false"
+                                            .to_string(),
+                                    ),
+                                    elif_cond.span(),
+                                );
                             diag.severity = Severity::Warning;
                             diags.push(diag);
                         }
@@ -289,7 +289,6 @@ impl Linter {
                             self.lint_template_part(p, diags);
                         }
                     }
-
                     for p in true_expr {
                         self.lint_template_part(p, diags);
                     }
@@ -311,119 +310,131 @@ impl Linter {
             },
         }
     }
-
     /// Checks for redundant standard library type conversions (e.g. `tostring("literal")`).
     ///
     /// # Arguments
     /// * `expr` - The expression to inspect.
     /// * `diags` - The diagnostics list to append warnings to.
     pub fn lint_redundant_conversions(&self, expr: &Expression, diags: &mut Diagnostics) {
-        if let Expression::FuncCall(fc, span) = expr
-            && let Some(name) = fc.simple_name()
-            && fc.args.len() == 1
-        {
-            let arg = &fc.args[0];
-            let inferred = self
-                .type_checker
-                .as_ref()
-                .and_then(|tc| tc.infer_expression_type(arg).ok());
-
-            match name {
-                "tostring" => {
-                    let is_str =
-                        matches!(arg, Expression::String(_, _) | Expression::Template(_, _))
-                            || inferred == Some(Type::String);
-                    if is_str {
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint(
-                                "Redundant type conversion: argument is already a string"
-                                    .to_string(),
-                            ),
-                            span.clone(),
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary = Some("Redundant `tostring` call".to_string());
-                        diag.detail = Some("The target expression is already statically known to be a string. Calling `tostring(...)` is redundant.".to_string());
-                        diags.push(diag);
+        if let Expression::FuncCall(fc, span) = expr {
+            if let Some(name) = fc.simple_name() {
+                if fc.args.len() == 1 {
+                    let arg = &fc.args[0];
+                    let inferred = self
+                        .type_checker
+                        .as_ref()
+                        .and_then(|tc| tc.infer_expression_type(arg).ok());
+                    match name {
+                        "tostring" => {
+                            let is_str = matches!(
+                                arg,
+                                Expression::String(_, _) | Expression::Template(_, _)
+                            ) || inferred == Some(Type::String);
+                            if is_str {
+                                let mut diag = Diagnostic::new(
+                                    HclError::Lint(
+                                        "Redundant type conversion: argument is already a string"
+                                            .to_string(),
+                                    ),
+                                    span.clone(),
+                                );
+                                diag.severity = Severity::Warning;
+                                diag.summary = Some("Redundant `tostring` call".to_string());
+                                diag.detail = Some(
+                                    "The target expression is already statically known to be a string. Calling `tostring(...)` is redundant."
+                                        .to_string(),
+                                );
+                                diags.push(diag);
+                            }
+                        }
+                        "tonumber" => {
+                            let is_num = matches!(arg, Expression::Number(_, _))
+                                || inferred == Some(Type::Number);
+                            if is_num {
+                                let mut diag = Diagnostic::new(
+                                    HclError::Lint(
+                                        "Redundant type conversion: argument is already a number"
+                                            .to_string(),
+                                    ),
+                                    span.clone(),
+                                );
+                                diag.severity = Severity::Warning;
+                                diag.summary = Some("Redundant `tonumber` call".to_string());
+                                diag.detail = Some(
+                                    "The target expression is already statically known to be a number. Calling `tonumber(...)` is redundant."
+                                        .to_string(),
+                                );
+                                diags.push(diag);
+                            }
+                        }
+                        "tobool" => {
+                            let is_bool = matches!(arg, Expression::Bool(_, _))
+                                || inferred == Some(Type::Bool);
+                            if is_bool {
+                                let mut diag = Diagnostic::new(
+                                    HclError::Lint(
+                                        "Redundant type conversion: argument is already a bool"
+                                            .to_string(),
+                                    ),
+                                    span.clone(),
+                                );
+                                diag.severity = Severity::Warning;
+                                diag.summary = Some("Redundant `tobool` call".to_string());
+                                diag.detail = Some(
+                                    "The target expression is already statically known to be a bool. Calling `tobool(...)` is redundant."
+                                        .to_string(),
+                                );
+                                diags.push(diag);
+                            }
+                        }
+                        "tolist" => {
+                            if let Some(Type::List(_)) = inferred {
+                                let mut diag = Diagnostic::new(
+                                    HclError::Lint(
+                                        "Redundant type conversion: argument is already a list"
+                                            .to_string(),
+                                    ),
+                                    span.clone(),
+                                );
+                                diag.severity = Severity::Warning;
+                                diag.summary = Some("Redundant `tolist` call".to_string());
+                                diags.push(diag);
+                            }
+                        }
+                        "tomap" => {
+                            if let Some(Type::Map(_)) = inferred {
+                                let mut diag = Diagnostic::new(
+                                    HclError::Lint(
+                                        "Redundant type conversion: argument is already a map"
+                                            .to_string(),
+                                    ),
+                                    span.clone(),
+                                );
+                                diag.severity = Severity::Warning;
+                                diag.summary = Some("Redundant `tomap` call".to_string());
+                                diags.push(diag);
+                            }
+                        }
+                        "toset" => {
+                            if let Some(Type::Set(_)) = inferred {
+                                let mut diag = Diagnostic::new(
+                                    HclError::Lint(
+                                        "Redundant type conversion: argument is already a set"
+                                            .to_string(),
+                                    ),
+                                    span.clone(),
+                                );
+                                diag.severity = Severity::Warning;
+                                diag.summary = Some("Redundant `toset` call".to_string());
+                                diags.push(diag);
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                "tonumber" => {
-                    let is_num =
-                        matches!(arg, Expression::Number(_, _)) || inferred == Some(Type::Number);
-                    if is_num {
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint(
-                                "Redundant type conversion: argument is already a number"
-                                    .to_string(),
-                            ),
-                            span.clone(),
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary = Some("Redundant `tonumber` call".to_string());
-                        diag.detail = Some("The target expression is already statically known to be a number. Calling `tonumber(...)` is redundant.".to_string());
-                        diags.push(diag);
-                    }
-                }
-                "tobool" => {
-                    let is_bool =
-                        matches!(arg, Expression::Bool(_, _)) || inferred == Some(Type::Bool);
-                    if is_bool {
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint(
-                                "Redundant type conversion: argument is already a bool".to_string(),
-                            ),
-                            span.clone(),
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary = Some("Redundant `tobool` call".to_string());
-                        diag.detail = Some("The target expression is already statically known to be a bool. Calling `tobool(...)` is redundant.".to_string());
-                        diags.push(diag);
-                    }
-                }
-                "tolist" => {
-                    if let Some(Type::List(_)) = inferred {
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint(
-                                "Redundant type conversion: argument is already a list".to_string(),
-                            ),
-                            span.clone(),
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary = Some("Redundant `tolist` call".to_string());
-                        diags.push(diag);
-                    }
-                }
-                "tomap" => {
-                    if let Some(Type::Map(_)) = inferred {
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint(
-                                "Redundant type conversion: argument is already a map".to_string(),
-                            ),
-                            span.clone(),
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary = Some("Redundant `tomap` call".to_string());
-                        diags.push(diag);
-                    }
-                }
-                "toset" => {
-                    if let Some(Type::Set(_)) = inferred {
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint(
-                                "Redundant type conversion: argument is already a set".to_string(),
-                            ),
-                            span.clone(),
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary = Some("Redundant `toset` call".to_string());
-                        diags.push(diag);
-                    }
-                }
-                _ => {}
             }
         }
     }
-
     fn lint_body_expressions(&self, body: &Body, diags: &mut Diagnostics) {
         for attr in body.attributes.values() {
             self.lint_expr_recursive(&attr.expr, diags);
@@ -441,12 +452,10 @@ impl Linter {
             self.lint_body_expressions(&dyn_block.content, diags);
         }
     }
-
     fn lint_expr_recursive(&self, expr: &Expression, diags: &mut Diagnostics) {
         self.lint_tautologies(expr, diags);
         self.lint_unreachable_templates(expr, diags);
         self.lint_redundant_conversions(expr, diags);
-
         match expr {
             Expression::Tuple(elems, _) => {
                 for el in elems {
@@ -503,7 +512,6 @@ impl Linter {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -513,16 +521,13 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::analysis::type_check::ScopeSchema;
     use crate::parse::parser::Parser;
-
     fn parse_body(input: &str) -> Body {
         let mut parser = Parser::new(input);
         parser.parse_body()
     }
-
     #[test]
     fn test_lint_unused_locals_and_variables() {
         let input = r#"
@@ -541,11 +546,9 @@ mod tests {
 
             output = "${local.used_local} - ${var.used_var}"
         "#;
-
         let body = parse_body(input);
         let linter = Linter::new();
         let diags = linter.lint_body(&body);
-
         let msgs: Vec<String> = diags.iter().map(|d| d.error.to_string()).collect();
         assert!(
             msgs.iter().any(|m| m.contains("unused_local")),
@@ -564,11 +567,9 @@ mod tests {
             "Did not expect warning for used_var: {msgs:?}"
         );
     }
-
     #[test]
     fn test_lint_tautological_conditionals() {
         let linter = Linter::new();
-
         let b1 = parse_body("val = true ? 1 : 2");
         let d1 = linter.lint_body(&b1);
         assert!(
@@ -576,7 +577,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Condition is constant true")),
             "Expected constant true warning: {d1:?}"
         );
-
         let b2 = parse_body("val = false ? 1 : 2");
         let d2 = linter.lint_body(&b2);
         assert!(
@@ -584,7 +584,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Condition is constant false")),
             "Expected constant false warning: {d2:?}"
         );
-
         let b3 = parse_body("val = 1 == 1 ? 1 : 2");
         let d3 = linter.lint_body(&b3);
         assert!(
@@ -592,7 +591,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Comparison of identical expressions")),
             "Expected identical comparison warning: {d3:?}"
         );
-
         let b4 = parse_body("val = 1 != 1 ? 1 : 2");
         let d4 = linter.lint_body(&b4);
         assert!(
@@ -600,24 +598,17 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Comparison of identical expressions")),
             "Expected identical comparison warning: {d4:?}"
         );
-
-        // Clean conditional
         let b_clean = parse_body("val = count > 0 ? 1 : 2");
         let d_clean = linter.lint_body(&b_clean);
         assert!(!d_clean.has_errors());
         assert_eq!(d_clean.iter().count(), 0);
-
-        // NotEq with different expressions
         let b_neq_diff = parse_body("val = 1 != 2 ? 1 : 2");
         let d_neq_diff = linter.lint_body(&b_neq_diff);
         assert_eq!(d_neq_diff.iter().count(), 0);
     }
-
     #[test]
     fn test_lint_unreachable_template_directives() {
         let linter = Linter::new();
-
-        // Unreachable if
         let b1 = parse_body(r#"val = "hello %{ if false }unreachable%{ endif } world""#);
         let d1 = linter.lint_body(&b1);
         assert!(
@@ -627,8 +618,6 @@ mod tests {
                 .contains("Unreachable template directive")),
             "Expected unreachable template directive: {d1:?}"
         );
-
-        // Constant true with else
         let b2 = parse_body(r#"val = "hello %{ if true }always%{ else }never%{ endif }""#);
         let d2 = linter.lint_body(&b2);
         assert!(
@@ -636,8 +625,6 @@ mod tests {
                 .any(|d| d.error.to_string().contains("Unreachable else/elif")),
             "Expected unreachable else warning: {d2:?}"
         );
-
-        // Constant false in else-if
         let b3 = parse_body(r#"val = "hello %{ if cond }a%{ elif false }never%{ endif }""#);
         let d3 = linter.lint_body(&b3);
         assert!(
@@ -646,7 +633,6 @@ mod tests {
             "Expected unreachable elif warning: {d3:?}"
         );
     }
-
     #[test]
     fn test_lint_redundant_conversions() {
         let scope = ScopeSchema::new()
@@ -655,8 +641,6 @@ mod tests {
             .with_variable("my_set", Type::Set(Box::new(Type::String)));
         let tc = TypeChecker::new().with_scope(scope);
         let linter = Linter::new().with_type_checker(tc);
-
-        // tostring with string literal
         let b_str = parse_body(r#"val = tostring("already string")"#);
         let d_str = linter.lint_body(&b_str);
         assert!(
@@ -665,8 +649,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Redundant `tostring` call")),
             "Expected redundant tostring: {d_str:?}"
         );
-
-        // tonumber with number literal
         let b_num = parse_body("val = tonumber(42)");
         let d_num = linter.lint_body(&b_num);
         assert!(
@@ -675,8 +657,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Redundant `tonumber` call")),
             "Expected redundant tonumber: {d_num:?}"
         );
-
-        // tobool with bool literal
         let b_bool = parse_body("val = tobool(true)");
         let d_bool = linter.lint_body(&b_bool);
         assert!(
@@ -685,8 +665,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Redundant `tobool` call")),
             "Expected redundant tobool: {d_bool:?}"
         );
-
-        // tolist with known list
         let b_list = parse_body("val = tolist(my_list)");
         let d_list = linter.lint_body(&b_list);
         assert!(
@@ -695,8 +673,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Redundant `tolist` call")),
             "Expected redundant tolist: {d_list:?}"
         );
-
-        // tomap with known map
         let b_map = parse_body("val = tomap(my_map)");
         let d_map = linter.lint_body(&b_map);
         assert!(
@@ -705,8 +681,6 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Redundant `tomap` call")),
             "Expected redundant tomap: {d_map:?}"
         );
-
-        // toset with known set
         let b_set = parse_body("val = toset(my_set)");
         let d_set = linter.lint_body(&b_set);
         assert!(
@@ -715,13 +689,10 @@ mod tests {
                 .any(|d| d.summary.as_deref() == Some("Redundant `toset` call")),
             "Expected redundant toset: {d_set:?}"
         );
-
-        // Legitimate conversion (number to string)
         let b_ok = parse_body("val = tostring(123)");
         let d_ok = linter.lint_body(&b_ok);
         assert_eq!(d_ok.iter().count(), 0);
     }
-
     #[test]
     fn test_lint_clean_run() {
         let input = r#"
@@ -738,7 +709,6 @@ mod tests {
                 enabled = var.environment == "production" ? true : false
             }
         "#;
-
         let body = parse_body(input);
         let linter = Linter::new();
         let diags = linter.lint_body(&body);
@@ -748,12 +718,10 @@ mod tests {
             "Expected 0 diagnostics, got: {diags:?}"
         );
     }
-
     /// Tests `are_expressions_equivalent` covering all variants and mismatches.
     #[test]
     fn test_are_expressions_equivalent() {
         use crate::span::Span;
-
         let sp = Span::new(0, 0, 1, 1, 1, 1);
         let null_expr = Expression::Null(sp.clone());
         let bool_true = Expression::Bool(true, sp.clone());
@@ -764,7 +732,6 @@ mod tests {
         let str_b = Expression::String("b".to_string(), sp.clone());
         let var_x = Expression::Variable("x".to_string(), sp.clone());
         let var_y = Expression::Variable("y".to_string(), sp);
-
         assert!(are_expressions_equivalent(&null_expr, &null_expr));
         assert!(are_expressions_equivalent(&bool_true, &bool_true));
         assert!(!are_expressions_equivalent(&bool_true, &bool_false));
@@ -777,7 +744,6 @@ mod tests {
         assert!(!are_expressions_equivalent(&null_expr, &num_1));
         assert!(!are_expressions_equivalent(&str_a, &var_x));
     }
-
     /// Tests `lint_expression` API directly and `Linter::default`.
     #[test]
     fn test_lint_expression_api_and_default() {
@@ -794,13 +760,11 @@ mod tests {
         let diags = linter.lint_expression(&tautology);
         assert_eq!(diags.iter().count(), 1);
     }
-
     /// Tests unused definition edge cases (index on local/var, variable block without labels, empty `label_spans`).
     #[test]
     fn test_lint_unused_definitions_edge_cases() {
         use crate::ast::structure::Block;
         use crate::span::Span;
-
         let input = r#"
             locals {
                 idx_local = "val"
@@ -824,9 +788,7 @@ mod tests {
                 .iter()
                 .any(|d| d.error.to_string().contains("idx_var"))
         );
-
         let sp = Span::new(0, 0, 1, 1, 1, 1);
-        // Block with variable type but no labels
         let mut var_no_labels = Block::new(
             "variable".to_string(),
             vec![],
@@ -834,12 +796,9 @@ mod tests {
             sp.clone(),
         );
         body.blocks.push(var_no_labels.clone());
-
-        // Block with variable type, label, but empty label_spans
         var_no_labels.labels.push("unlabeled_var".to_string());
         var_no_labels.label_spans.clear();
         body.blocks.push(var_no_labels);
-
         let diags2 = linter.lint_body(&body);
         assert!(
             diags2
@@ -847,18 +806,13 @@ mod tests {
                 .any(|d| d.error.to_string().contains("unlabeled_var"))
         );
     }
-
     /// Tests template directives: simple if true, elif true, and `Directive::Strip`.
     #[test]
     fn test_lint_templates_exhaustive() {
         let linter = Linter::new();
-
-        // If true without else or elif
         let b1 = parse_body(r#"val = "hello %{ if true }world%{ endif }""#);
         let d1 = linter.lint_body(&b1);
         assert_eq!(d1.iter().count(), 0);
-
-        // If true with elif (exercises !else_ifs.is_empty() true branch)
         let b_elif_true = parse_body(r#"val = "hello %{ if true }a%{ elif x }b%{ endif }""#);
         let d_elif_true = linter.lint_body(&b_elif_true);
         assert!(
@@ -866,8 +820,6 @@ mod tests {
                 .iter()
                 .any(|d| d.error.to_string().contains("Unreachable else/elif"))
         );
-
-        // If cond, elif false, elif other
         let b2 =
             parse_body(r#"val = "hello %{ if x }a%{ elif false }never%{ elif y }maybe%{ endif }""#);
         let d2 = linter.lint_body(&b2);
@@ -875,13 +827,9 @@ mod tests {
             d2.iter()
                 .any(|d| d.error.to_string().contains("Unreachable template else-if"))
         );
-
-        // For directive inside template
         let b3 = parse_body(r#"val = "hello %{ for item in [1, 2] }${item}%{ endfor }""#);
         let d3 = linter.lint_body(&b3);
         assert_eq!(d3.iter().count(), 0);
-
-        // Directive::Strip via AST insertion
         let mut b4 = parse_body(r#"val = "text""#);
         let sp = crate::span::Span::new(0, 0, 1, 1, 1, 1);
         let attr = b4.attributes.get_mut("val").unwrap();
@@ -898,7 +846,6 @@ mod tests {
         let d4 = linter.lint_body(&b4);
         assert_eq!(d4.iter().count(), 0);
     }
-
     /// Tests dynamic blocks and all recursive expression types in `lint_body_expressions`.
     #[test]
     fn test_lint_body_expressions_and_recursive_types() {
@@ -928,8 +875,6 @@ mod tests {
         let linter = Linter::new();
         let diags = linter.lint_body(&body);
         assert!(diags.iter().count() >= 6);
-
-        // Direct ForExpr with Some and None key_expr / cond_expr
         let sp = crate::span::Span::new(0, 0, 1, 1, 1, 1);
         let for_expr_some = Expression::ForExpr(
             Box::new(crate::ast::expr::ForExpr {
@@ -958,7 +903,6 @@ mod tests {
         );
         let d_for_some = linter.lint_expression(&for_expr_some);
         assert!(d_for_some.iter().count() >= 1);
-
         let for_expr_none = Expression::ForExpr(
             Box::new(crate::ast::expr::ForExpr {
                 key_var: None,
@@ -979,8 +923,6 @@ mod tests {
         );
         let d_for_none = linter.lint_expression(&for_expr_none);
         assert_eq!(d_for_none.iter().count(), 0);
-
-        // Function call without simple name (namespaced)
         let namespaced_func = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: crate::ast::expr::NamespacedIdent {
@@ -999,13 +941,10 @@ mod tests {
         let d_ns = linter.lint_expression(&namespaced_func);
         assert_eq!(d_ns.iter().count(), 0);
     }
-
     /// Tests redundant conversion edge cases when types are mismatched or functions differ.
     #[test]
     fn test_lint_redundant_conversions_edge_cases() {
         let linter = Linter::new();
-
-        // Non-redundant conversions (conversion needed or unknown)
         let body = parse_body(
             r#"
             v1 = tostring(123)

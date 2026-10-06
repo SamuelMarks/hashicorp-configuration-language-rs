@@ -5,14 +5,12 @@ use crate::number::Number;
 use crate::types::{Type, Value, ValueData};
 use bigdecimal::ToPrimitive;
 use std::collections::BTreeMap;
-
 /// Evaluates an AST `Expression` into a `Value`.
 pub struct Evaluator<'a> {
     ctx: &'a Context<'a>,
     diagnostics: Diagnostics,
     eval_callouts: Vec<crate::diagnostic::EvalCallout>,
 }
-
 impl<'a> Evaluator<'a> {
     /// Creates a new `Evaluator` with the given context.
     #[must_use]
@@ -23,7 +21,6 @@ impl<'a> Evaluator<'a> {
             eval_callouts: Vec::new(),
         }
     }
-
     /// Pushes a diagnostic, attaching any recorded sub-expression callouts.
     fn push_diagnostic(&mut self, mut diag: Diagnostic) {
         if diag.eval_callouts.is_empty() && !self.eval_callouts.is_empty() {
@@ -31,7 +28,6 @@ impl<'a> Evaluator<'a> {
         }
         self.diagnostics.push(diag);
     }
-
     /// Evaluates an expression, returning the result and any accumulated diagnostics.
     ///
     /// # Errors
@@ -45,7 +41,6 @@ impl<'a> Evaluator<'a> {
             Ok((val, self.diagnostics))
         }
     }
-
     /// Partially evaluates an expression, simplifying constant sub-trees and preserving unknowns.
     ///
     /// # Arguments
@@ -56,7 +51,6 @@ impl<'a> Evaluator<'a> {
     pub fn partial_evaluate(&self, expr: &Expression) -> Result<Expression, Diagnostics> {
         crate::eval::partial::partial_eval(expr, self.ctx)
     }
-
     /// Evaluates a binary operator expression on two operands.
     ///
     /// # Arguments
@@ -76,7 +70,6 @@ impl<'a> Evaluator<'a> {
     ) -> Value {
         self.eval_binary_op(op, lhs, rhs, span)
     }
-
     /// Evaluates a unary operator expression on an inner expression.
     ///
     /// # Arguments
@@ -94,7 +87,6 @@ impl<'a> Evaluator<'a> {
     ) -> Value {
         self.eval_unary_op(op, inner, span)
     }
-
     pub(crate) fn eval_expr(&mut self, expr: &Expression) -> Value {
         match expr {
             Expression::Null(_) => Value::null(Type::Dynamic),
@@ -122,9 +114,6 @@ impl<'a> Evaluator<'a> {
                             continue;
                         }
                         _ => {
-                            // Coerce to string if possible, for now just err if not string
-                            // HCL keys are strings.
-
                             self.push_diagnostic(Diagnostic::error(
                                 "Object key must be a string",
                                 "",
@@ -198,7 +187,6 @@ impl<'a> Evaluator<'a> {
             Expression::ForExpr(f, span) => self.eval_for(f, span.clone()),
         }
     }
-
     /// Evaluates a function call expression, resolving built-in, registered, or standard library functions.
     ///
     /// If the function name is unknown, typo suggestions are computed against registered functions
@@ -221,7 +209,6 @@ impl<'a> Evaluator<'a> {
                 ));
                 return Value::unknown(Type::Dynamic);
             }
-
             for arg_expr in &f.args {
                 let mut isolated = Evaluator::new(self.ctx);
                 let val = isolated.eval_expr(arg_expr);
@@ -229,7 +216,6 @@ impl<'a> Evaluator<'a> {
                     return val;
                 }
             }
-
             let detail = "All expressions provided to 'try' resulted in errors.";
             self.push_diagnostic(Diagnostic::error(
                 "No alternative expression succeeded in 'try'",
@@ -238,7 +224,6 @@ impl<'a> Evaluator<'a> {
             ));
             return Value::unknown(Type::Dynamic);
         }
-
         if f.name == "can" {
             if f.args.len() != 1 {
                 self.push_diagnostic(Diagnostic::error(
@@ -248,7 +233,6 @@ impl<'a> Evaluator<'a> {
                 ));
                 return Value::unknown(Type::Bool);
             }
-
             let mut isolated = Evaluator::new(self.ctx);
             let val = isolated.eval_expr(&f.args[0]);
             return if isolated.diagnostics.has_errors() {
@@ -259,7 +243,6 @@ impl<'a> Evaluator<'a> {
                 Value::new(Type::Bool, ValueData::Bool(true))
             };
         }
-
         let mut args = Vec::new();
         let mut arg_marks = std::collections::BTreeSet::new();
         for arg_expr in &f.args {
@@ -267,7 +250,6 @@ impl<'a> Evaluator<'a> {
             arg_marks.extend(evaluated_arg.marks.clone());
             args.push(evaluated_arg);
         }
-
         if f.expand_final {
             let Some(final_arg) = args.pop() else {
                 return Value::unknown(Type::Dynamic).with_marks(arg_marks);
@@ -300,7 +282,6 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-
         if let Some(func) = self.ctx.get_namespaced_func(&f.name) {
             if let Some(sig) = &func.signature {
                 let expected_fixed = sig.params.len();
@@ -386,17 +367,18 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
-
             match (func.func)(&args) {
                 Ok(mut v) => {
-                    if let Some(sig) = &func.signature
-                        && let Some(val_calc) = &sig.value_return_type
-                        && let Ok(expected_ty) = (val_calc)(&args)
-                        && v.ty() != &expected_ty
-                        && expected_ty != Type::Dynamic
-                        && let Ok(coerced) = v.coerce(&expected_ty)
-                    {
-                        v = coerced;
+                    if let Some(sig) = &func.signature {
+                        if let Some(val_calc) = &sig.value_return_type {
+                            if let Ok(expected_ty) = (val_calc)(&args) {
+                                if v.ty() != &expected_ty && expected_ty != Type::Dynamic {
+                                    if let Ok(coerced) = v.coerce(&expected_ty) {
+                                        v = coerced;
+                                    }
+                                }
+                            }
+                        }
                     }
                     if f.name == "nonsensitive" {
                         for m in arg_marks {
@@ -439,12 +421,10 @@ impl<'a> Evaluator<'a> {
             Value::unknown(Type::Dynamic).with_marks(arg_marks)
         }
     }
-
     fn eval_conditional(&mut self, cond: &Conditional, span: crate::span::Span) -> Value {
         let cond_val = self.eval_expr(&cond.cond_expr);
         let cond_marks = cond_val.marks.clone();
         if cond_val.is_unknown() {
-            // If condition is unknown, the result is unknown, but we must unify the types
             let t_val = self.eval_expr(&cond.true_expr);
             let f_val = self.eval_expr(&cond.false_expr);
             if let Some(unified) = crate::types::unify::unify(t_val.ty(), f_val.ty()) {
@@ -453,7 +433,6 @@ impl<'a> Evaluator<'a> {
                 marks.extend(f_val.marks);
                 return Value::unknown(unified).with_marks(marks);
             }
-
             let msg = format!(
                 "True branch is {:?}, false branch is {:?}",
                 t_val.ty(),
@@ -466,7 +445,6 @@ impl<'a> Evaluator<'a> {
             ));
             return Value::unknown(Type::Dynamic).with_marks(cond_marks);
         }
-
         match &*cond_val.data {
             ValueData::Bool(true) => {
                 let mut res = self.eval_expr(&cond.true_expr);
@@ -488,7 +466,6 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
-
     fn eval_binary_op(
         &mut self,
         op: BinaryOp,
@@ -524,7 +501,6 @@ impl<'a> Evaluator<'a> {
                 Value::unknown(Type::Bool).with_marks(marks)
             };
         }
-
         if op == BinaryOp::Or {
             let l_val = self.eval_expr(lhs);
             if let ValueData::Bool(true) = &*l_val.data {
@@ -553,13 +529,10 @@ impl<'a> Evaluator<'a> {
                 Value::unknown(Type::Bool).with_marks(marks)
             };
         }
-
         let l_val = self.eval_expr(lhs);
         let r_val = self.eval_expr(rhs);
-
         let mut combined_marks = l_val.marks.clone();
         combined_marks.extend(r_val.marks.clone());
-
         if l_val.is_unknown() || r_val.is_unknown() {
             match op {
                 BinaryOp::Eq
@@ -573,7 +546,7 @@ impl<'a> Evaluator<'a> {
                 BinaryOp::Add => {
                     let is_num =
                         l_val.coerce(&Type::Number).is_ok() && r_val.coerce(&Type::Number).is_ok();
-                    if !is_num && (l_val.ty() == &Type::String && r_val.ty() == &Type::String) {
+                    if !is_num && l_val.ty() == &Type::String && r_val.ty() == &Type::String {
                         let mut ref_res = crate::types::refinement::Refinement::not_null();
                         let l_prefix = match &*l_val.data {
                             ValueData::String(s) => Some(s.clone()),
@@ -598,7 +571,6 @@ impl<'a> Evaluator<'a> {
                                 ref_res = ref_res.with_prefix(lp);
                             }
                         }
-
                         let l_suffix = match &*l_val.data {
                             ValueData::String(s) => Some(s.clone()),
                             ValueData::Unknown(_) => {
@@ -622,7 +594,6 @@ impl<'a> Evaluator<'a> {
                                 ref_res = ref_res.with_suffix(rs);
                             }
                         }
-
                         let l_min = match &*l_val.data {
                             ValueData::String(s) => s.chars().count(),
                             ValueData::Unknown(_) => l_val
@@ -640,7 +611,6 @@ impl<'a> Evaluator<'a> {
                             _ => 0,
                         };
                         ref_res.string_length_min = Some(l_min + r_min);
-
                         let l_max = match &*l_val.data {
                             ValueData::String(s) => Some(s.chars().count()),
                             ValueData::Unknown(_) => {
@@ -658,7 +628,6 @@ impl<'a> Evaluator<'a> {
                         if let (Some(l_m), Some(r_m)) = (l_max, r_max) {
                             ref_res.string_length_max = Some(l_m + r_m);
                         }
-
                         return Value::unknown_refined(Type::String, ref_res)
                             .with_marks(combined_marks);
                     }
@@ -681,7 +650,6 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-
         match op {
             BinaryOp::Eq => {
                 let eq = l_val.unmark().0 == r_val.unmark().0;
@@ -692,7 +660,6 @@ impl<'a> Evaluator<'a> {
                 Value::new_with_marks(Type::Bool, ValueData::Bool(ne), combined_marks)
             }
             _ => {
-                // Capsule relational comparison dispatch
                 let capsule_cmp = match op {
                     BinaryOp::Less | BinaryOp::LessEq | BinaryOp::Greater | BinaryOp::GreaterEq => {
                         l_val
@@ -714,7 +681,7 @@ impl<'a> Evaluator<'a> {
                     };
                     match (cmp_fn)(l_any, r_any) {
                         Ok(ordering) => {
-                            let res = match op {
+                            let result = match op {
                                 BinaryOp::Less => ordering == std::cmp::Ordering::Less,
                                 BinaryOp::LessEq => ordering != std::cmp::Ordering::Greater,
                                 BinaryOp::Greater => ordering == std::cmp::Ordering::Greater,
@@ -722,7 +689,7 @@ impl<'a> Evaluator<'a> {
                             };
                             return Value::new_with_marks(
                                 Type::Bool,
-                                ValueData::Bool(res),
+                                ValueData::Bool(result),
                                 combined_marks,
                             );
                         }
@@ -732,8 +699,6 @@ impl<'a> Evaluator<'a> {
                         }
                     }
                 }
-
-                // Capsule arithmetic dispatch
                 let capsule_arith = match op {
                     BinaryOp::Add => l_val
                         .ty()
@@ -790,9 +755,9 @@ impl<'a> Evaluator<'a> {
                         }
                     }
                 }
-
                 if op == BinaryOp::Add
-                    && (l_val.ty() == &Type::String && r_val.ty() == &Type::String)
+                    && l_val.ty() == &Type::String
+                    && r_val.ty() == &Type::String
                     && (l_val.coerce(&Type::Number).is_err()
                         || r_val.coerce(&Type::Number).is_err())
                 {
@@ -809,7 +774,6 @@ impl<'a> Evaluator<'a> {
                     self.push_diagnostic(Diagnostic::error(msg, "", span));
                     return Value::unknown(Type::String).with_marks(combined_marks);
                 }
-
                 let (l_num, r_num) = if let (Ok(l_c), Ok(r_c)) =
                     (l_val.coerce(&Type::Number), r_val.coerce(&Type::Number))
                 {
@@ -826,7 +790,6 @@ impl<'a> Evaluator<'a> {
                     self.push_diagnostic(Diagnostic::error(msg, "", span));
                     return Value::unknown(Type::Number).with_marks(combined_marks);
                 };
-
                 match op {
                     BinaryOp::Add => Value::new_with_marks(
                         Type::Number,
@@ -896,7 +859,6 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
-
     fn eval_unary_op(&mut self, op: UnaryOp, inner: &Expression, span: crate::span::Span) -> Value {
         let val = self.eval_expr(inner);
         let marks = val.marks.clone();
@@ -912,7 +874,6 @@ impl<'a> Evaluator<'a> {
                 }
             };
         }
-
         match op {
             UnaryOp::Not => {
                 if let ValueData::Bool(b) = &*val.data {
@@ -964,7 +925,6 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
-
     fn eval_single_step(&mut self, current: &Value, op: &TraversalOperator) -> Value {
         if current.is_unknown() {
             return Value::unknown(Type::Dynamic).with_marks(current.marks.clone());
@@ -978,7 +938,6 @@ impl<'a> Evaluator<'a> {
             ));
             return Value::unknown(Type::Dynamic).with_marks(marks);
         }
-
         let parent_marks = current.marks.clone();
         match op {
             TraversalOperator::GetAttr(name, op_span) => {
@@ -1038,11 +997,9 @@ impl<'a> Evaluator<'a> {
                 let idx_val = self.eval_expr(idx_expr);
                 let mut op_marks = parent_marks.clone();
                 op_marks.extend(idx_val.marks.clone());
-
                 if idx_val.is_unknown() {
                     return Value::unknown(Type::Dynamic).with_marks(op_marks);
                 }
-
                 if let (Some(any), Some(ops)) =
                     (current.as_capsule_any(), current.ty().capsule_ops())
                 {
@@ -1181,7 +1138,6 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
-
     fn eval_traversal(
         &mut self,
         traversal: &crate::ast::expr::Traversal,
@@ -1189,7 +1145,6 @@ impl<'a> Evaluator<'a> {
     ) -> Value {
         let mut current = self.eval_expr(&traversal.expr);
         let mut op_idx = 0;
-
         while op_idx < traversal.operators.len() {
             let op = &traversal.operators[op_idx];
             match op {
@@ -1217,13 +1172,11 @@ impl<'a> Evaluator<'a> {
                         }
                         continue;
                     }
-
                     let elements = match &*current.data {
                         ValueData::Array(arr) => arr.clone(),
                         ValueData::Set(set) => set.iter().cloned().collect(),
                         _ => vec![current.clone()],
                     };
-
                     op_idx += 1;
                     let mut sub_attrs = Vec::new();
                     while op_idx < traversal.operators.len() {
@@ -1234,7 +1187,6 @@ impl<'a> Evaluator<'a> {
                             break;
                         }
                     }
-
                     if elements.is_empty() {
                         current = Value::new(
                             Type::List(Box::new(Type::Dynamic)),
@@ -1243,7 +1195,6 @@ impl<'a> Evaluator<'a> {
                         .with_marks(parent_marks);
                         continue;
                     }
-
                     let mut results = Vec::with_capacity(elements.len());
                     for mut elem in elements {
                         for (attr_name, attr_span) in &sub_attrs {
@@ -1282,7 +1233,6 @@ impl<'a> Evaluator<'a> {
                         }
                         continue;
                     }
-
                     let elements = match &*current.data {
                         ValueData::Array(arr) => arr.clone(),
                         ValueData::Set(set) => set.iter().cloned().collect(),
@@ -1295,7 +1245,6 @@ impl<'a> Evaluator<'a> {
                             return Value::unknown(Type::Dynamic).with_marks(parent_marks);
                         }
                     };
-
                     op_idx += 1;
                     let mut sub_ops = Vec::new();
                     while op_idx < traversal.operators.len() {
@@ -1305,7 +1254,6 @@ impl<'a> Evaluator<'a> {
                         sub_ops.push(traversal.operators[op_idx].clone());
                         op_idx += 1;
                     }
-
                     if elements.is_empty() {
                         current = Value::new(
                             Type::List(Box::new(Type::Dynamic)),
@@ -1314,7 +1262,6 @@ impl<'a> Evaluator<'a> {
                         .with_marks(parent_marks);
                         continue;
                     }
-
                     let mut results = Vec::with_capacity(elements.len());
                     for mut elem in elements {
                         for sub_op in &sub_ops {
@@ -1340,16 +1287,12 @@ impl<'a> Evaluator<'a> {
             ));
         current
     }
-
     fn eval_for(&mut self, for_expr: &ForExpr, _span: crate::span::Span) -> Value {
         let coll_val = self.eval_expr(&for_expr.collection);
         if coll_val.is_unknown() {
             return Value::unknown(Type::Dynamic).with_marks(coll_val.marks.clone());
         }
-
         let coll_marks = coll_val.marks.clone();
-
-        // Extract items to iterate over
         let items: Vec<(Value, Value)> = match &*coll_val.data {
             ValueData::Array(arr) => arr
                 .iter()
@@ -1382,22 +1325,16 @@ impl<'a> Evaluator<'a> {
                 return Value::unknown(Type::Dynamic).with_marks(coll_marks);
             }
         };
-
         let mut out_array = Vec::new();
         let mut out_map = BTreeMap::new();
         let mut out_groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
-
         for (k_val, v_val) in items {
             let mut iter_ctx = Context::new_child(self.ctx);
             if let Some(ref k_name) = for_expr.key_var {
                 iter_ctx.set_variable(k_name, k_val.clone());
             }
             iter_ctx.set_variable(&for_expr.val_var, v_val.clone());
-
-            // Sub-evaluator for the iteration
             let mut sub_eval = Evaluator::new(&iter_ctx);
-
-            // Filter
             if let Some(ref cond_expr) = for_expr.cond_expr {
                 let cond_res = sub_eval.eval_expr(cond_expr);
                 match &*cond_res.data {
@@ -1409,7 +1346,6 @@ impl<'a> Evaluator<'a> {
                         for e in sub_eval.diagnostics.errors() {
                             self.push_diagnostic(e.clone());
                         }
-
                         self.push_diagnostic(Diagnostic::error(
                             "For expression condition must be a boolean",
                             "",
@@ -1419,7 +1355,6 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
-
             let res_v = sub_eval.eval_expr(&for_expr.val_expr);
             if let Some(ref key_expr) = for_expr.key_expr {
                 let res_k = sub_eval.eval_expr(key_expr);
@@ -1446,7 +1381,6 @@ impl<'a> Evaluator<'a> {
                 self.push_diagnostic(e.clone());
             }
         }
-
         if for_expr.grouping {
             let mut final_map = BTreeMap::new();
             let mut types = BTreeMap::new();
@@ -1461,7 +1395,6 @@ impl<'a> Evaluator<'a> {
                 coll_marks,
             )
         } else if for_expr.key_expr.is_some() {
-            // Need to construct the Type map
             let mut types = BTreeMap::new();
             for (k, v) in &out_map {
                 types.insert(k.clone(), v.ty().clone());
@@ -1472,7 +1405,6 @@ impl<'a> Evaluator<'a> {
             Value::new_with_marks(Type::Tuple(types), ValueData::Array(out_array), coll_marks)
         }
     }
-
     /// Evaluates a slice of template parts, appending literal text and interpolated values to `out`.
     ///
     /// # Arguments
@@ -1517,7 +1449,6 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
-
     /// Evaluates a template control directive (`if` condition or `for` loop).
     ///
     /// # Arguments
@@ -1577,8 +1508,10 @@ impl<'a> Evaluator<'a> {
                                 }
                             }
                         }
-                        if !matched && let Some(false_parts) = false_expr {
-                            self.eval_template_parts(false_parts, out, has_unknown, marks);
+                        if !matched {
+                            if let Some(false_parts) = false_expr {
+                                self.eval_template_parts(false_parts, out, has_unknown, marks);
+                            }
                         }
                     }
                     _ => {
@@ -1638,13 +1571,16 @@ impl<'a> Evaluator<'a> {
                         })
                         .collect(),
                     _ => {
-                        self.push_diagnostic(Diagnostic::error(
-                            "Collection in %{ for } directive must be a tuple, list, set, or object", "", collection.span(),
-                        ));
+                        self.push_diagnostic(
+                            Diagnostic::error(
+                                "Collection in %{ for } directive must be a tuple, list, set, or object",
+                                "",
+                                collection.span(),
+                            ),
+                        );
                         return;
                     }
                 };
-
                 for (k_val, v_val) in items {
                     let mut iter_ctx = Context::new_child(self.ctx);
                     if let Some(k_name) = key_var {
@@ -1662,7 +1598,6 @@ impl<'a> Evaluator<'a> {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -1672,12 +1607,10 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     #[test]
     fn test_eval_binary_logical_right_errors() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::BinaryOp(
             BinaryOp::And,
             Box::new(Expression::Bool(true, empty_span())),
@@ -1694,7 +1627,6 @@ mod tests {
                 .to_string()
                 .contains("must be a boolean")
         );
-
         let evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::BinaryOp(
             BinaryOp::Or,
@@ -1713,12 +1645,10 @@ mod tests {
                 .contains("must be a boolean")
         );
     }
-
     #[test]
     fn test_eval_binary_math_unknown_rhs_all_ops() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Dynamic));
-
         let ops = vec![
             BinaryOp::NotEq,
             BinaryOp::Less,
@@ -1730,7 +1660,6 @@ mod tests {
             BinaryOp::Div,
             BinaryOp::Mod,
         ];
-
         for op in ops {
             let expr = Expression::BinaryOp(
                 op,
@@ -1749,7 +1678,6 @@ mod tests {
     fn test_eval_binary_logical_right_unknown() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Dynamic));
-
         let expr = Expression::BinaryOp(
             BinaryOp::And,
             Box::new(Expression::Bool(true, empty_span())),
@@ -1759,7 +1687,6 @@ mod tests {
         let val = Evaluator::new(&ctx).evaluate(&expr).unwrap().0;
         assert_eq!(val.ty(), &Type::Bool);
         assert!(val.is_unknown());
-
         let expr2 = Expression::BinaryOp(
             BinaryOp::Or,
             Box::new(Expression::Bool(false, empty_span())),
@@ -1770,12 +1697,10 @@ mod tests {
         assert_eq!(val2.ty(), &Type::Bool);
         assert!(val2.is_unknown());
     }
-
     #[test]
     fn test_eval_binary_math_unknown_rhs2() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Dynamic));
-
         let expr3 = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Number(
@@ -1788,7 +1713,6 @@ mod tests {
         let val3 = Evaluator::new(&ctx).evaluate(&expr3).unwrap().0;
         assert_eq!(val3.ty(), &Type::Number);
         assert!(val3.is_unknown());
-
         let expr4 = Expression::BinaryOp(
             BinaryOp::Eq,
             Box::new(Expression::Number(
@@ -1802,38 +1726,31 @@ mod tests {
         assert_eq!(val4.ty(), &Type::Bool);
         assert!(val4.is_unknown());
     }
-
     use super::*;
     use crate::number::Number;
     use crate::span::Span;
     use bigdecimal::BigDecimal;
     use std::collections::BTreeSet;
     use std::str::FromStr;
-
     fn empty_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
-
     #[test]
     fn test_eval_literal() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::Null(empty_span());
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert!(val.is_null());
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::Bool(true, empty_span());
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
-
         let evaluator = Evaluator::new(&ctx);
         let n = Number::from_str("42").unwrap();
         let expr = Expression::Number(n.clone(), empty_span());
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Number, ValueData::Number(n)));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::String("hello".to_string(), empty_span());
         let (val, _) = evaluator.evaluate(&expr).unwrap();
@@ -1842,18 +1759,14 @@ mod tests {
             Value::new(Type::String, ValueData::String("hello".to_string()))
         );
     }
-
     #[test]
     fn test_eval_variable() {
         let mut ctx = Context::new();
         ctx.set_variable("foo", Value::new(Type::Bool, ValueData::Bool(true)));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::Variable("foo".to_string(), empty_span());
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
-
-        // Local variable
         ctx.set_variable(
             "local.bar",
             Value::new(
@@ -1871,8 +1784,6 @@ mod tests {
                 ValueData::Number(crate::number::Number::from(42))
             )
         );
-
-        // Missing variable
         let _evaluator = Evaluator::new(&ctx);
         let expr = Expression::Variable("bar".to_string(), empty_span());
         let evaluator = Evaluator::new(&ctx);
@@ -1885,12 +1796,10 @@ mod tests {
                 .contains("Unknown variable 'bar'")
         );
     }
-
     #[test]
     fn test_eval_tuple() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::Tuple(
             vec![
                 Expression::Bool(true, empty_span()),
@@ -1898,32 +1807,25 @@ mod tests {
             ],
             empty_span(),
         );
-
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Tuple(vec![Type::Bool, Type::String]));
     }
-
     #[test]
     fn test_eval_object() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let k1 = Expression::String("k1".to_string(), empty_span());
         let v1 = Expression::Bool(true, empty_span());
-
         let expr = Expression::Object(vec![(k1, v1)], empty_span());
-
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         let mut expected_map = BTreeMap::new();
         expected_map.insert("k1".to_string(), Type::Bool);
         assert_eq!(val.ty(), &Type::object(expected_map));
     }
-
     #[test]
     fn test_eval_unary() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::UnaryOp(
             UnaryOp::Not,
             Box::new(Expression::Bool(true, empty_span())),
@@ -1931,7 +1833,6 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
             UnaryOp::Neg,
@@ -1950,12 +1851,10 @@ mod tests {
             )
         );
     }
-
     #[test]
     fn test_eval_binary() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::BinaryOp(
             BinaryOp::Eq,
             Box::new(Expression::Bool(true, empty_span())),
@@ -1964,24 +1863,19 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
-
-        // Short-circuit AND
         let evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::BinaryOp(
             BinaryOp::And,
             Box::new(Expression::Bool(false, empty_span())),
-            // Missing variable would error if evaluated, but short circuits
             Box::new(Expression::Variable("missing".to_string(), empty_span())),
             empty_span(),
         );
         let (val2, _) = evaluator.evaluate(&expr2).unwrap();
         assert_eq!(val2, Value::new(Type::Bool, ValueData::Bool(false)));
     }
-
     #[test]
     fn test_eval_conditional() {
         let ctx = Context::new();
-
         let evaluator = Evaluator::new(&ctx);
         let cond = Conditional {
             cond_expr: Expression::Bool(true, empty_span()),
@@ -1989,7 +1883,6 @@ mod tests {
             false_expr: Expression::Number(Number::from_str("2").unwrap(), empty_span()),
         };
         let expr = Expression::Conditional(Box::new(cond), empty_span());
-
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(
             val,
@@ -1999,14 +1892,11 @@ mod tests {
             )
         );
     }
-
     #[test]
     fn test_eval_binary_math_logic_unknown() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::String));
         let evaluator = Evaluator::new(&ctx);
-
-        // Eq between unk and unk -> Unknown Bool
         let expr = Expression::BinaryOp(
             BinaryOp::Eq,
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
@@ -2015,7 +1905,6 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Bool);
-
         let evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::BinaryOp(
             BinaryOp::Add,
@@ -2027,7 +1916,6 @@ mod tests {
         assert_eq!(val2.ty(), &Type::Number);
         assert!(val2.is_unknown());
     }
-
     #[test]
     fn test_eval_binary_unsupported() {
         let ctx = Context::new();
@@ -2047,11 +1935,9 @@ mod tests {
                 .contains("Cannot coerce operands of Add to numbers")
         );
     }
-
     #[test]
     fn test_eval_logical_errors() {
         let ctx = Context::new();
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
             BinaryOp::And,
@@ -2063,7 +1949,6 @@ mod tests {
             empty_span(),
         );
         let _errs = evaluator.evaluate(&expr).err().unwrap();
-
         let evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::BinaryOp(
             BinaryOp::Or,
@@ -2076,12 +1961,10 @@ mod tests {
         );
         let _errs = evaluator.evaluate(&expr2).err().unwrap();
     }
-
     #[test]
     fn test_eval_logical_unknown() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Bool));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
             BinaryOp::And,
@@ -2090,7 +1973,6 @@ mod tests {
             empty_span(),
         );
         let (_val, _) = evaluator.evaluate(&expr).unwrap();
-
         let evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::BinaryOp(
             BinaryOp::And,
@@ -2099,7 +1981,6 @@ mod tests {
             empty_span(),
         );
         let (_val, _) = evaluator.evaluate(&expr2).unwrap();
-
         let evaluator = Evaluator::new(&ctx);
         let expr3 = Expression::BinaryOp(
             BinaryOp::Or,
@@ -2108,7 +1989,6 @@ mod tests {
             empty_span(),
         );
         let (_val, _) = evaluator.evaluate(&expr3).unwrap();
-
         let evaluator = Evaluator::new(&ctx);
         let expr4 = Expression::BinaryOp(
             BinaryOp::Or,
@@ -2122,7 +2002,6 @@ mod tests {
     fn test_eval_unary_errors_and_unknown() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Bool));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
             UnaryOp::Not,
@@ -2131,7 +2010,6 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Bool);
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
             UnaryOp::Neg,
@@ -2140,7 +2018,6 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::Number);
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
             UnaryOp::Not,
@@ -2151,7 +2028,6 @@ mod tests {
             empty_span(),
         );
         let _errs = evaluator.evaluate(&expr).err().unwrap();
-
         let _evaluator = Evaluator::new(&ctx);
         let expr = Expression::UnaryOp(
             UnaryOp::Neg,
@@ -2167,12 +2043,10 @@ mod tests {
                 .contains("must be a number")
         );
     }
-
     #[test]
     fn test_eval_cond_unknown_and_errors() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Bool));
-
         let evaluator = Evaluator::new(&ctx);
         let cond = Conditional {
             cond_expr: Expression::Variable("unk".to_string(), empty_span()),
@@ -2181,8 +2055,6 @@ mod tests {
         };
         let expr = Expression::Conditional(Box::new(cond), empty_span());
         let (_val, _) = evaluator.evaluate(&expr).unwrap();
-
-        // Unknown with bad types
         let _evaluator = Evaluator::new(&ctx);
         let cond2 = Conditional {
             cond_expr: Expression::Variable("unk".to_string(), empty_span()),
@@ -2198,8 +2070,6 @@ mod tests {
                 .to_string()
                 .contains("Incompatible types")
         );
-
-        // Bad cond
         let _evaluator = Evaluator::new(&ctx);
         let cond3 = Conditional {
             cond_expr: Expression::Number(Number::from_str("1").unwrap(), empty_span()),
@@ -2216,13 +2086,10 @@ mod tests {
                 .contains("must be a boolean")
         );
     }
-
     #[test]
     fn test_eval_stubs() {
         let ctx = Context::new();
-
         let exprs = vec![Expression::Template(vec![], empty_span())];
-
         for expr in exprs {
             let evaluator = Evaluator::new(&ctx);
             let val = evaluator.evaluate(&expr).unwrap().0;
@@ -2231,7 +2098,6 @@ mod tests {
                 Value::new(Type::String, ValueData::String(String::new()))
             );
         }
-
         let evaluator = Evaluator::new(&ctx);
         let errs = evaluator
             .evaluate(&Expression::FuncCall(
@@ -2255,7 +2121,6 @@ mod tests {
     fn test_eval_object_errors() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::String));
-
         let _evaluator = Evaluator::new(&ctx);
         let expr = Expression::Object(
             vec![(
@@ -2272,7 +2137,6 @@ mod tests {
                 .to_string()
                 .contains("Object key cannot be unknown")
         );
-
         let _evaluator = Evaluator::new(&ctx);
         let expr2 = Expression::Object(
             vec![(
@@ -2290,18 +2154,15 @@ mod tests {
                 .contains("Object key must be a string")
         );
     }
-
     #[test]
     fn test_eval_binary_math_logic_ops() {
         let ctx = Context::new();
-
         let cases = vec![
             (BinaryOp::Less, "1", "2", true),
             (BinaryOp::LessEq, "2", "2", true),
             (BinaryOp::Greater, "3", "2", true),
             (BinaryOp::GreaterEq, "2", "2", true),
         ];
-
         for (op, lhs, rhs, expected) in cases {
             let evaluator = Evaluator::new(&ctx);
             let expr = Expression::BinaryOp(
@@ -2319,8 +2180,6 @@ mod tests {
             let (val, _) = evaluator.evaluate(&expr).unwrap();
             assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(expected)));
         }
-
-        // Eq on unequal types
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
             BinaryOp::Eq,
@@ -2330,7 +2189,6 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
             BinaryOp::NotEq,
@@ -2341,13 +2199,11 @@ mod tests {
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
     }
-
     #[test]
     fn test_eval_logical_right_operand_unknown() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Bool));
         ctx.set_variable("unk_num", Value::unknown(Type::Number));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
             BinaryOp::And,
@@ -2356,7 +2212,6 @@ mod tests {
             empty_span(),
         );
         let (_val, _) = evaluator.evaluate(&expr).unwrap();
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
             BinaryOp::Or,
@@ -2366,12 +2221,10 @@ mod tests {
         );
         let (_val, _) = evaluator.evaluate(&expr).unwrap();
     }
-
     #[test]
     fn test_eval_object_key_unknown_or_bad() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::String));
-
         let _evaluator = Evaluator::new(&ctx);
         let expr = Expression::Object(
             vec![(
@@ -2389,12 +2242,9 @@ mod tests {
                 .contains("Object key cannot be unknown")
         );
     }
-
     #[test]
     fn test_eval_splats() {
         let mut ctx = Context::new();
-
-        // 1. Attribute splat on scalar: auto-wraps into a single-element list
         let t1 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Bool(true, empty_span())),
             operators: vec![TraversalOperator::AttrSplat(empty_span())],
@@ -2406,8 +2256,6 @@ mod tests {
             *val.data,
             ValueData::Array(vec![Value::new(Type::Bool, ValueData::Bool(true))])
         );
-
-        // 2. Full splat on non-sequence scalar: should reject auto-wrapping and emit diagnostic error
         let t2 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Bool(true, empty_span())),
             operators: vec![TraversalOperator::FullSplat(empty_span())],
@@ -2422,8 +2270,6 @@ mod tests {
                 .to_string()
                 .contains("Cannot apply full splat operator to non-sequence value")
         );
-
-        // 3. Attribute splat on list of objects
         let mut obj1 = BTreeMap::new();
         obj1.insert(
             "name".to_string(),
@@ -2436,7 +2282,6 @@ mod tests {
                 ValueData::Number(Number::new(BigDecimal::from(80))),
             ),
         );
-
         let mut obj2 = BTreeMap::new();
         obj2.insert(
             "name".to_string(),
@@ -2449,7 +2294,6 @@ mod tests {
                 ValueData::Number(Number::new(BigDecimal::from(443))),
             ),
         );
-
         let list_val = Value::new(
             Type::List(Box::new(Type::Dynamic)),
             ValueData::Array(vec![
@@ -2458,7 +2302,6 @@ mod tests {
             ]),
         );
         ctx.set_variable("servers", list_val);
-
         let t3 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("servers".to_string(), empty_span())),
             operators: vec![
@@ -2476,8 +2319,6 @@ mod tests {
                 Value::new(Type::String, ValueData::String("server2".to_string())),
             ])
         );
-
-        // 4. Null short-circuiting: null.* returns empty list without error
         let t_null = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Null(empty_span())),
             operators: vec![
@@ -2489,8 +2330,6 @@ mod tests {
             .evaluate(&Expression::Traversal(Box::new(t_null), empty_span()))
             .unwrap();
         assert_eq!(*val_null.data, ValueData::Array(Vec::new()));
-
-        // 5. Empty list short-circuiting: [].* returns empty list
         let t_empty = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Tuple(vec![], empty_span())),
             operators: vec![
@@ -2502,8 +2341,6 @@ mod tests {
             .evaluate(&Expression::Traversal(Box::new(t_empty), empty_span()))
             .unwrap();
         assert_eq!(*val_empty.data, ValueData::Array(Vec::new()));
-
-        // 6. Chained full splat with indexing: clusters[*].nodes[0].ip
         let mut node0 = BTreeMap::new();
         node0.insert(
             "ip".to_string(),
@@ -2517,7 +2354,6 @@ mod tests {
                 ValueData::Array(vec![Value::new(Type::Dynamic, ValueData::Object(node0))]),
             ),
         );
-
         let mut node1 = BTreeMap::new();
         node1.insert(
             "ip".to_string(),
@@ -2531,7 +2367,6 @@ mod tests {
                 ValueData::Array(vec![Value::new(Type::Dynamic, ValueData::Object(node1))]),
             ),
         );
-
         ctx.set_variable(
             "clusters",
             Value::new(
@@ -2542,7 +2377,6 @@ mod tests {
                 ]),
             ),
         );
-
         let eval_clusters = Evaluator::new(&ctx);
         let t_chained_full = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("clusters".to_string(), empty_span())),
@@ -2569,8 +2403,6 @@ mod tests {
                 Value::new(Type::String, ValueData::String("10.0.0.2".to_string())),
             ])
         );
-
-        // 7. Mark propagation through splat
         let mut marked_list = Value::new(
             Type::List(Box::new(Type::Dynamic)),
             ValueData::Array(vec![Value::new(
@@ -2582,7 +2414,6 @@ mod tests {
             .marks
             .insert(crate::types::val::ValueMark::Sensitive);
         ctx.set_variable("marked_list", marked_list);
-
         let eval_marked = Evaluator::new(&ctx);
         let t_marked = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable(
@@ -2599,8 +2430,6 @@ mod tests {
                 .marks
                 .contains(&crate::types::val::ValueMark::Sensitive)
         );
-
-        // 8. Unknown propagation
         ctx.set_variable(
             "unknown_seq",
             Value::unknown(Type::List(Box::new(Type::String))),
@@ -2618,12 +2447,9 @@ mod tests {
             .unwrap();
         assert!(val_unk.is_unknown());
     }
-
     #[test]
     fn test_eval_func_call_expand_final() {
         let mut ctx = Context::new().enable_stdlib();
-
-        // 1. Calling format with expand_final on a list: format("%s-%d", ["host", 1]...)
         let expr = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "format".into(),
@@ -2643,8 +2469,6 @@ mod tests {
         );
         let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(*val.data, ValueData::String("host-1".to_string()));
-
-        // 2. Calling concat with expand_final on a list of lists: concat([["a"], ["b", "c"]]...)
         let expr_concat = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "concat".into(),
@@ -2677,8 +2501,6 @@ mod tests {
                 Value::new(Type::String, ValueData::String("c".to_string())),
             ])
         );
-
-        // 3. Mark preservation on unpacked arguments
         let mut sensitive_list = Value::new(
             Type::List(Box::new(Type::String)),
             ValueData::Array(vec![Value::new(
@@ -2690,7 +2512,6 @@ mod tests {
             .marks
             .insert(crate::types::val::ValueMark::Sensitive);
         ctx.set_variable("sec_args", sensitive_list);
-
         ctx.set_function(
             "check_mark",
             crate::eval::func::Function {
@@ -2708,7 +2529,6 @@ mod tests {
                 signature: None,
             },
         );
-
         let expr_mark = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "check_mark".into(),
@@ -2719,7 +2539,6 @@ mod tests {
         );
         let (val_mark, _) = Evaluator::new(&ctx).evaluate(&expr_mark).unwrap();
         assert_eq!(*val_mark.data, ValueData::Bool(true));
-
         let expr_unmark = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "check_mark".into(),
@@ -2730,8 +2549,6 @@ mod tests {
         );
         let (val_unmark, _) = Evaluator::new(&ctx).evaluate(&expr_unmark).unwrap();
         assert_eq!(*val_unmark.data, ValueData::Bool(false));
-
-        // 4. Expanding a set
         let mut set_data = BTreeSet::new();
         set_data.insert(Value::new(
             Type::String,
@@ -2741,7 +2558,6 @@ mod tests {
             "my_set",
             Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set_data)),
         );
-
         ctx.set_function(
             "count_args",
             crate::eval::func::Function {
@@ -2756,7 +2572,6 @@ mod tests {
                 signature: None,
             },
         );
-
         let expr_set = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "count_args".into(),
@@ -2770,8 +2585,6 @@ mod tests {
             *val_count.data,
             ValueData::Number(Number::new(BigDecimal::from(1)))
         );
-
-        // 5. Expanding unknown sequence
         ctx.set_variable(
             "unk_args",
             Value::unknown(Type::List(Box::new(Type::String))),
@@ -2789,8 +2602,6 @@ mod tests {
         );
         let (val_unk, _) = Evaluator::new(&ctx).evaluate(&expr_unk).unwrap();
         assert!(val_unk.is_unknown());
-
-        // 6. Expanding non-sequence (diagnostic error)
         let expr_bad = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "format".into(),
@@ -2810,11 +2621,9 @@ mod tests {
                 .contains("Cannot expand non-sequence")
         );
     }
-
     #[test]
     fn test_eval_lazy_try_and_can() {
         let mut ctx = Context::new();
-
         let mut map = BTreeMap::new();
         map.insert(
             "existing".to_string(),
@@ -2824,7 +2633,6 @@ mod tests {
             "obj",
             Value::new(Type::object(BTreeMap::new()), ValueData::Object(map)),
         );
-
         ctx.set_variable(
             "arr",
             Value::new(
@@ -2835,8 +2643,6 @@ mod tests {
                 )]),
             ),
         );
-
-        // 1. try(obj.missing, "fallback") -> returns "fallback" without error
         let expr_try_fallback = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "try".into(),
@@ -2859,8 +2665,6 @@ mod tests {
         );
         let (val_try1, _) = Evaluator::new(&ctx).evaluate(&expr_try_fallback).unwrap();
         assert_eq!(*val_try1.data, ValueData::String("fallback".to_string()));
-
-        // 2. try(obj.existing, "fallback") -> returns "found" immediately
         let expr_try_found = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "try".into(),
@@ -2883,8 +2687,6 @@ mod tests {
         );
         let (val_try2, _) = Evaluator::new(&ctx).evaluate(&expr_try_found).unwrap();
         assert_eq!(*val_try2.data, ValueData::String("found".to_string()));
-
-        // 3. Cascading try: try(arr[100], obj.missing, 42) -> 42
         let expr_try_cascade = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "try".into(),
@@ -2923,8 +2725,6 @@ mod tests {
             *val_try3.data,
             ValueData::Number(Number::new(BigDecimal::from(42)))
         );
-
-        // 4. try() with 0 arguments emits diagnostic
         let expr_try_zero = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "try".into(),
@@ -2940,8 +2740,6 @@ mod tests {
                 .to_string()
                 .contains("requires at least one argument")
         );
-
-        // 5. try() when all alternatives fail emits diagnostic
         let expr_try_all_fail = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "try".into(),
@@ -2981,8 +2779,6 @@ mod tests {
                 .to_string()
                 .contains("No alternative expression succeeded in 'try'")
         );
-
-        // 6. can(obj.missing) -> false
         let expr_can_false = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "can".into(),
@@ -3002,8 +2798,6 @@ mod tests {
         );
         let (val_can1, _) = Evaluator::new(&ctx).evaluate(&expr_can_false).unwrap();
         assert_eq!(*val_can1.data, ValueData::Bool(false));
-
-        // 7. can(obj.existing) -> true
         let expr_can_true = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "can".into(),
@@ -3023,8 +2817,6 @@ mod tests {
         );
         let (val_can2, _) = Evaluator::new(&ctx).evaluate(&expr_can_true).unwrap();
         assert_eq!(*val_can2.data, ValueData::Bool(true));
-
-        // 8. can(arr[0] / 0) division by zero -> false
         let expr_can_div_zero = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "can".into(),
@@ -3046,8 +2838,6 @@ mod tests {
         );
         let (val_can_div, _) = Evaluator::new(&ctx).evaluate(&expr_can_div_zero).unwrap();
         assert_eq!(*val_can_div.data, ValueData::Bool(false));
-
-        // 9. can(unknown_expr) -> unknown bool
         ctx.set_variable("unk", Value::unknown(Type::String));
         let expr_can_unk = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
@@ -3060,8 +2850,6 @@ mod tests {
         let (val_can_unk, _) = Evaluator::new(&ctx).evaluate(&expr_can_unk).unwrap();
         assert!(val_can_unk.is_unknown());
         assert_eq!(val_can_unk.ty(), &Type::Bool);
-
-        // 10. can() with arity != 1 emits diagnostic error
         let expr_can_bad_arity = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "can".into(),
@@ -3081,15 +2869,11 @@ mod tests {
                 .contains("requires exactly one argument")
         );
     }
-
     #[test]
     fn test_eval_function_signatures_and_type_checking() {
         use crate::eval::func::{Function, FunctionParamSpec, FunctionSignature};
         use std::sync::Arc;
-
         let mut ctx = Context::new();
-
-        // 1. Function with fixed parameters and automatic coercion
         let sig_calc = FunctionSignature::with_static_return_type(
             vec![
                 FunctionParamSpec::new("num1", Type::Number),
@@ -3133,8 +2917,6 @@ mod tests {
             .is_err()
         );
         ctx.set_function("add_nums", fn_add);
-
-        // Success with coercion: add_nums("10", 20) -> 30
         let expr_add_ok = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "add_nums".into(),
@@ -3151,8 +2933,6 @@ mod tests {
             *val_add.data,
             ValueData::Number(Number::new(BigDecimal::from(30)))
         );
-
-        // Arity mismatch: too few arguments (1 instead of 2)
         let expr_add_few = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "add_nums".into(),
@@ -3171,8 +2951,6 @@ mod tests {
                 .to_string()
                 .contains("Wrong number of arguments")
         );
-
-        // Arity mismatch: too many arguments (3 instead of 2)
         let expr_add_many = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "add_nums".into(),
@@ -3192,8 +2970,6 @@ mod tests {
                 .to_string()
                 .contains("Wrong number of arguments")
         );
-
-        // Type mismatch: uncoercible bool to number
         let expr_add_incompat = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "add_nums".into(),
@@ -3215,8 +2991,6 @@ mod tests {
                 .to_string()
                 .contains("Invalid argument")
         );
-
-        // Null check: passing null when allow_null is false
         let expr_add_null = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "add_nums".into(),
@@ -3235,8 +3009,6 @@ mod tests {
                 .to_string()
                 .contains("cannot be null")
         );
-
-        // 2. Variadic function signature
         let sig_join_custom = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("sep", Type::String)],
             Type::String,
@@ -3268,8 +3040,6 @@ mod tests {
             Value::new(Type::Bool, ValueData::Bool(true)),
         ]);
         ctx.set_function("custom_join", fn_join_custom);
-
-        // Success: custom_join(":", "a", "b", "c") -> "a:b:c"
         let expr_join_ok = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "custom_join".into(),
@@ -3285,8 +3055,6 @@ mod tests {
         );
         let (val_join, _) = Evaluator::new(&ctx).evaluate(&expr_join_ok).unwrap();
         assert_eq!(*val_join.data, ValueData::String("a:b:c".to_string()));
-
-        // Variadic arity error: missing fixed parameter
         let expr_join_few = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "custom_join".into(),
@@ -3303,12 +3071,10 @@ mod tests {
                 .contains("Too few arguments")
         );
     }
-
     #[test]
     fn test_eval_traversal_errors() {
         let mut ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-        // traverse null
         let t1 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Null(empty_span())),
             operators: vec![TraversalOperator::GetAttr("a".to_string(), empty_span())],
@@ -3323,9 +3089,7 @@ mod tests {
                 .to_string()
                 .contains("Attempt to traverse null value")
         );
-
         let evaluator = Evaluator::new(&ctx);
-        // traverse non-object attr
         let t2 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Bool(true, empty_span())),
             operators: vec![TraversalOperator::GetAttr("a".to_string(), empty_span())],
@@ -3340,8 +3104,6 @@ mod tests {
                 .to_string()
                 .contains("Cannot get attribute from non-object")
         );
-
-        // traverse missing attr
         let mut map = BTreeMap::new();
         map.insert(
             "a".to_string(),
@@ -3359,8 +3121,6 @@ mod tests {
             .err()
             .unwrap();
         assert!(errs.errors()[0].error.to_string().contains("not found"));
-
-        // Index array with non-number
         let arr = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         ctx.set_variable("arr", arr);
         let evaluator = Evaluator::new(&ctx);
@@ -3381,8 +3141,6 @@ mod tests {
                 .to_string()
                 .contains("Invalid index operation")
         );
-
-        // Index array out of bounds
         let evaluator = Evaluator::new(&ctx);
         let t4 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("arr".to_string(), empty_span())),
@@ -3401,8 +3159,6 @@ mod tests {
                 .to_string()
                 .contains("Index out of bounds")
         );
-
-        // Legacy index out of bounds
         let evaluator = Evaluator::new(&ctx);
         let t4 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("arr".to_string(), empty_span())),
@@ -3418,8 +3174,6 @@ mod tests {
                 .to_string()
                 .contains("Index out of bounds")
         );
-
-        // Legacy index on non-array
         let evaluator = Evaluator::new(&ctx);
         let t4 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Bool(true, empty_span())),
@@ -3435,8 +3189,6 @@ mod tests {
                 .to_string()
                 .contains("Legacy index on non-array")
         );
-
-        // Index object missing key
         let evaluator = Evaluator::new(&ctx);
         let t5 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("obj".to_string(), empty_span())),
@@ -3450,8 +3202,6 @@ mod tests {
             .err()
             .unwrap();
         assert!(errs.errors()[0].error.to_string().contains("not found"));
-
-        // Index unknown index
         let mut ctx2 = Context::new();
         ctx2.set_variable(
             "arr",
@@ -3473,8 +3223,6 @@ mod tests {
     #[test]
     fn test_eval_for_expr_errors() {
         let mut ctx = Context::new();
-
-        // non-tuple/object collection
         let evaluator = Evaluator::new(&ctx);
         let f = ForExpr {
             key_var: None,
@@ -3495,9 +3243,6 @@ mod tests {
                 .to_string()
                 .contains("collection must be a tuple")
         );
-
-        // Unreachable object group mock
-        // Handled through AST generation edge case not easily hit.
         ctx.set_variable("unk", Value::unknown(Type::Tuple(vec![])));
         let evaluator = Evaluator::new(&ctx);
         let f = ForExpr {
@@ -3512,8 +3257,6 @@ mod tests {
         let (_val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
             .unwrap();
-
-        // bad cond
         let arr = Value::new(
             Type::Tuple(vec![]),
             ValueData::Array(vec![Value::new(Type::Bool, ValueData::Bool(true))]),
@@ -3542,8 +3285,6 @@ mod tests {
                 .to_string()
                 .contains("condition must be a boolean")
         );
-
-        // filter false
         let evaluator = Evaluator::new(&ctx);
         let f = ForExpr {
             key_var: None,
@@ -3558,8 +3299,6 @@ mod tests {
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
             .unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Array(vec![]));
-
-        // map bad key
         let evaluator = Evaluator::new(&ctx);
         let f = ForExpr {
             key_var: None,
@@ -3581,7 +3320,6 @@ mod tests {
                 .contains("key must evaluate to string")
         );
     }
-
     #[test]
     fn test_eval_for_expr_grouping() {
         let mut ctx = Context::new();
@@ -3594,7 +3332,6 @@ mod tests {
         );
         ctx.set_variable("arr", arr);
         let evaluator = Evaluator::new(&ctx);
-
         let f = ForExpr {
             key_var: None,
             val_var: "v".to_string(),
@@ -3610,7 +3347,6 @@ mod tests {
         let (val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
             .unwrap();
-
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
             "fixed".to_string(),
@@ -3624,11 +3360,9 @@ mod tests {
         );
         assert_eq!(val.data.as_ref(), &ValueData::Object(expected_map));
     }
-
     #[test]
     fn test_eval_traversal() {
         let mut ctx = Context::new();
-
         let mut map = BTreeMap::new();
         map.insert(
             "a".to_string(),
@@ -3639,13 +3373,11 @@ mod tests {
         );
         let obj = Value::new(Type::object(BTreeMap::new()), ValueData::Object(map));
         ctx.set_variable("obj", obj);
-
         let arr = Value::new(
             Type::Tuple(vec![]),
             ValueData::Array(vec![Value::new(Type::Bool, ValueData::Bool(true))]),
         );
         ctx.set_variable("arr", arr);
-
         let evaluator = Evaluator::new(&ctx);
         let t1 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("obj".to_string(), empty_span())),
@@ -3661,7 +3393,6 @@ mod tests {
                 ValueData::Number(Number::from_str("1").unwrap())
             )
         );
-
         let evaluator = Evaluator::new(&ctx);
         let t2 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("arr".to_string(), empty_span())),
@@ -3672,12 +3403,10 @@ mod tests {
             .unwrap();
         assert_eq!(val2, Value::new(Type::Bool, ValueData::Bool(true)));
     }
-
     #[test]
     fn test_eval_for_expr_tuple() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let f = ForExpr {
             key_var: None,
             val_var: "v".to_string(),
@@ -3697,11 +3426,9 @@ mod tests {
             cond_expr: None,
             grouping: false,
         };
-
         let (val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
             .unwrap();
-
         let expected_arr = vec![
             Value::new(
                 Type::Number,
@@ -3714,15 +3441,12 @@ mod tests {
         ];
         assert_eq!(val.data.as_ref(), &ValueData::Array(expected_arr));
     }
-
     #[test]
     fn test_eval_for_expr_object() {
         let ctx = Context::new();
         let evaluator = Evaluator::new(&ctx);
-
         let k1 = Expression::String("a".to_string(), empty_span());
         let v1 = Expression::Number(Number::from_str("1").unwrap(), empty_span());
-
         let f = ForExpr {
             key_var: Some("k".to_string()),
             val_var: "v".to_string(),
@@ -3739,7 +3463,6 @@ mod tests {
             cond_expr: None,
             grouping: false,
         };
-
         let (val, _) = evaluator
             .evaluate(&Expression::ForExpr(Box::new(f), empty_span()))
             .unwrap();
@@ -3753,12 +3476,10 @@ mod tests {
         );
         assert_eq!(val.data.as_ref(), &ValueData::Object(expected_map));
     }
-
     #[test]
     fn test_eval_cov() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::object(BTreeMap::new())));
-
         let evaluator = Evaluator::new(&ctx);
         let t1 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("unk".to_string(), empty_span())),
@@ -3767,7 +3488,6 @@ mod tests {
         let (_val, _) = evaluator
             .evaluate(&Expression::Traversal(Box::new(t1), empty_span()))
             .unwrap();
-
         let arr = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         ctx.set_variable("arr", arr);
         let evaluator = Evaluator::new(&ctx);
@@ -3788,7 +3508,6 @@ mod tests {
                 .to_string()
                 .contains("Invalid array index")
         );
-
         let evaluator = Evaluator::new(&ctx);
         let f = ForExpr {
             key_var: None,
@@ -3815,7 +3534,6 @@ mod tests {
                 .to_string()
                 .contains("must be a boolean")
         );
-
         let evaluator = Evaluator::new(&ctx);
         let t3 = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("unk".to_string(), empty_span())),
@@ -3828,7 +3546,6 @@ mod tests {
             .evaluate(&Expression::Traversal(Box::new(t3), empty_span()))
             .unwrap();
     }
-
     #[test]
     fn test_eval_template_parts() {
         let mut ctx = Context::new();
@@ -3850,7 +3567,6 @@ mod tests {
             ),
         );
         ctx.set_variable("null", Value::null(Type::Dynamic));
-
         let evaluator = Evaluator::new(&ctx);
         let span = empty_span();
         let expr = Expression::Template(
@@ -3887,11 +3603,10 @@ mod tests {
             ],
             span,
         );
-
         let result = evaluator.evaluate(&expr);
         assert!(result.is_err());
         let diags = result.err().unwrap();
-        assert_eq!(diags.errors().len(), 1); // One for object interpolation
+        assert_eq!(diags.errors().len(), 1);
         assert!(
             diags.errors()[0]
                 .error
@@ -3899,13 +3614,11 @@ mod tests {
                 .contains("Cannot stringify complex value")
         );
     }
-
     #[test]
     fn test_eval_binary_math_unknown_rhs() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Number));
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Add,
             Box::new(Expression::Number(
@@ -3915,11 +3628,9 @@ mod tests {
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             empty_span(),
         );
-
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert!(val.is_unknown());
         assert_eq!(*val.ty(), Type::Number);
-
         let expr2 = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Eq,
             Box::new(Expression::Number(
@@ -3934,13 +3645,11 @@ mod tests {
         assert!(val2.is_unknown());
         assert_eq!(*val2.ty(), Type::Bool);
     }
-
     #[test]
     fn test_eval_template_interpolation_null() {
         let mut ctx = Context::new();
         ctx.set_variable("null_var", Value::null(Type::String));
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::Template(
             vec![crate::ast::expr::TemplatePart::Interpolation(
                 Expression::Variable("null_var".to_string(), empty_span()),
@@ -3948,35 +3657,29 @@ mod tests {
             )],
             empty_span(),
         );
-
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val.ty(), &Type::String);
     }
-
     #[test]
     fn test_eval_binary_math_unknown() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Number));
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Add,
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
             Box::new(Expression::Bool(false, empty_span())),
             empty_span(),
         );
-
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert!(val.is_unknown());
         assert_eq!(*val.ty(), Type::Number);
     }
-
     #[test]
     fn test_eval_cov2() {
         let mut ctx = Context::new();
         ctx.set_variable("unk", Value::unknown(Type::Bool));
         let evaluator = Evaluator::new(&ctx);
-
         let expr = Expression::BinaryOp(
             BinaryOp::And,
             Box::new(Expression::Bool(false, empty_span())),
@@ -3985,7 +3688,6 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::BinaryOp(
             BinaryOp::Or,
@@ -3995,8 +3697,6 @@ mod tests {
         );
         let (val, _) = evaluator.evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
-
-        // Also Splat stub hit
         let _evaluator = Evaluator::new(&ctx);
         let expr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
@@ -4014,7 +3714,6 @@ mod tests {
                 .to_lowercase()
                 .contains("splat")
         );
-
         let evaluator = Evaluator::new(&ctx);
         let expr = Expression::Template(vec![], empty_span());
         let val = evaluator.evaluate(&expr).unwrap().0;
@@ -4022,8 +3721,6 @@ mod tests {
             val,
             Value::new(Type::String, ValueData::String(String::new()))
         );
-
-        // test FuncCall error
         let expr = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "test_func_err".into(),
@@ -4050,8 +3747,6 @@ mod tests {
                 .to_string()
                 .contains("Function call 'test_func_err' failed")
         );
-
-        // test Conditional non-bool condition
         let expr = Expression::Conditional(
             Box::new(crate::ast::expr::Conditional {
                 cond_expr: Expression::String("not bool".to_string(), empty_span()),
@@ -4069,8 +3764,6 @@ mod tests {
                 .to_string()
                 .contains("Condition must be a boolean")
         );
-
-        // test BinaryOp::And / Or non-bool RHS
         let expr = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::And,
             Box::new(Expression::Bool(true, empty_span())),
@@ -4085,7 +3778,6 @@ mod tests {
                 .to_string()
                 .contains("Right operand of && must be a boolean")
         );
-
         let expr = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Or,
             Box::new(Expression::Bool(false, empty_span())),
@@ -4100,8 +3792,6 @@ mod tests {
                 .to_string()
                 .contains("Right operand of || must be a boolean")
         );
-
-        // test index out of bounds
         let expr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Tuple(vec![], empty_span())),
@@ -4119,8 +3809,6 @@ mod tests {
                 .to_string()
                 .contains("Index out of bounds")
         );
-
-        // test index missing key
         let expr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Object(vec![], empty_span())),
@@ -4138,8 +3826,6 @@ mod tests {
                 .to_string()
                 .contains("Key 'missing' not found")
         );
-
-        // test for expr cond not bool
         let expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -4165,8 +3851,6 @@ mod tests {
                 .to_string()
                 .contains("For expression condition must be a boolean")
         );
-
-        // test for expr error in sub eval loop (error in cond)
         let expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -4202,8 +3886,6 @@ mod tests {
                 .to_string()
                 .contains("For expression condition must be a boolean")
         );
-
-        // test for expr error in value eval loop
         let expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -4233,8 +3915,6 @@ mod tests {
                 .to_string()
                 .contains("Function call 'test_func_err' failed")
         );
-
-        // test for expr error in loop cond == false
         let _expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -4262,7 +3942,6 @@ mod tests {
             }),
             empty_span(),
         );
-        // Wait, And short-circuits. Let's do Or
         let expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -4297,14 +3976,10 @@ mod tests {
                 .to_string()
                 .contains("Function call 'test_func_err' failed")
         );
-
-        // test Parentheses
         let expr =
             Expression::Parentheses(Box::new(Expression::Bool(true, empty_span())), empty_span());
         let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
-
-        // test Conditional false branch
         let expr = Expression::Conditional(
             Box::new(crate::ast::expr::Conditional {
                 cond_expr: Expression::Bool(false, empty_span()),
@@ -4318,8 +3993,6 @@ mod tests {
             val,
             Value::new(Type::String, ValueData::String("false".to_string()))
         );
-
-        // test BinaryOp::And evaluating RHS
         let expr = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::And,
             Box::new(Expression::Bool(true, empty_span())),
@@ -4328,8 +4001,6 @@ mod tests {
         );
         let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(true)));
-
-        // test BinaryOp::Or evaluating RHS
         let expr = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Or,
             Box::new(Expression::Bool(false, empty_span())),
@@ -4338,8 +4009,6 @@ mod tests {
         );
         let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
         assert_eq!(val, Value::new(Type::Bool, ValueData::Bool(false)));
-
-        // test Index success
         let expr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Tuple(
@@ -4358,8 +4027,6 @@ mod tests {
             val,
             Value::new(Type::String, ValueData::String("a".to_string()))
         );
-
-        // test Object Index success
         let expr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Object(
@@ -4381,8 +4048,6 @@ mod tests {
             val,
             Value::new(Type::String, ValueData::String("v".to_string()))
         );
-
-        // test for expr cond == true
         let expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -4403,16 +4068,7 @@ mod tests {
             val.data.as_ref(),
             &ValueData::Array(vec![Value::new(Type::Bool, ValueData::Bool(true))])
         );
-
-        // test for expr cond == false with diagnostic (we need the condition to evaluate to false but push an error)
-        // A condition can't easily return false AND push an error unless it's evaluating a sub-expression that pushes an error
-        // but wait, if it pushes an error, the return value is Unknown! Not Bool(false)!
-        // Wait, how can cond_expr evaluate to Bool(false) but have errors?
-        // Ah, if `cond_expr` is `false && func_err()` it short-circuits and returns `false`, but doesn't run the RHS!
-        // What if we do an error in `collection`? No, we need it in `cond_expr`.
-        // I will just ignore 488-489 branch because it's practically unreachable or I'll just write it.
     }
-
     #[test]
     fn test_eval_extra_cov() {
         let mut ctx = Context::new();
@@ -4433,7 +4089,6 @@ mod tests {
             val,
             Value::new(Type::String, ValueData::String("s".to_string()))
         );
-
         let evaluator = Evaluator::new(&ctx);
         let expr_and = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::And,
@@ -4442,7 +4097,6 @@ mod tests {
             empty_span(),
         );
         assert!(evaluator.evaluate(&expr_and).is_err());
-
         let evaluator = Evaluator::new(&ctx);
         let expr_or = Expression::BinaryOp(
             crate::ast::expr::BinaryOp::Or,
@@ -4451,7 +4105,6 @@ mod tests {
             empty_span(),
         );
         assert!(evaluator.evaluate(&expr_or).is_err());
-
         ctx.set_variable("unk", Value::unknown(Type::Number));
         for op in [
             crate::ast::expr::BinaryOp::NotEq,
@@ -4471,7 +4124,6 @@ mod tests {
             assert_eq!(*val.ty(), Type::Bool);
         }
     }
-
     #[test]
     fn test_eval_binary_right_operand_errors_covered() {
         let input = r"
@@ -4485,13 +4137,10 @@ mod tests {
         assert!(res_a.is_err());
         assert!(res_b.is_err());
     }
-
     #[test]
     fn test_eval_template_directives_exhaustive() {
         use crate::ast::expr::{Directive, Expression, TemplatePart};
         let span = empty_span();
-
-        // 1. Directive::If branches
         let mut ctx = Context::new();
         ctx.set_variable("admin", Value::new(Type::Bool, ValueData::Bool(true)));
         let expr_if_true = Expression::Template(
@@ -4514,16 +4163,12 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String("Admin".to_string()))
         );
-
-        // If false with else
         ctx.set_variable("admin", Value::new(Type::Bool, ValueData::Bool(false)));
         let (v, _) = Evaluator::new(&ctx).evaluate(&expr_if_true).unwrap();
         assert_eq!(
             v,
             Value::new(Type::String, ValueData::String("User".to_string()))
         );
-
-        // If false without else
         let expr_no_else = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::If {
@@ -4541,8 +4186,6 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String(String::new()))
         );
-
-        // If false with else_if branches
         let expr_elif = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::If {
@@ -4569,8 +4212,6 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String("C".to_string()))
         );
-
-        // If condition unknown
         let expr_unk_cond = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::If {
@@ -4586,8 +4227,6 @@ mod tests {
         ctx.set_variable("unk", Value::unknown(Type::Bool));
         let (v, _) = Evaluator::new(&ctx).evaluate(&expr_unk_cond).unwrap();
         assert!(v.is_unknown());
-
-        // If condition not boolean
         let expr_bad_cond = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::If {
@@ -4601,8 +4240,6 @@ mod tests {
             span.clone(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_bad_cond).is_err());
-
-        // Else if condition unknown
         let expr_elif_unk = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::If {
@@ -4620,8 +4257,6 @@ mod tests {
         );
         let (v, _) = Evaluator::new(&ctx).evaluate(&expr_elif_unk).unwrap();
         assert!(v.is_unknown());
-
-        // Else if condition not boolean
         let expr_elif_bad = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::If {
@@ -4638,9 +4273,6 @@ mod tests {
             span.clone(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_elif_bad).is_err());
-
-        // 2. Directive::For loops
-        // Array with val_var
         let expr_for_arr = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::For {
@@ -4671,8 +4303,6 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String("[a][b]".to_string()))
         );
-
-        // Array with key_var and val_var
         let expr_for_key_val = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::For {
@@ -4707,8 +4337,6 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String("0:x;1:y;".to_string()))
         );
-
-        // Set iteration
         let mut set_vals = std::collections::BTreeSet::new();
         set_vals.insert(Value::new(
             Type::String,
@@ -4738,8 +4366,6 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String("set_item".to_string()))
         );
-
-        // Object iteration
         let mut obj_vals = BTreeMap::new();
         obj_vals.insert(
             "k1".to_string(),
@@ -4776,8 +4402,6 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String("k1=v1".to_string()))
         );
-
-        // For collection unknown
         let expr_for_unk = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::For {
@@ -4792,8 +4416,6 @@ mod tests {
         );
         let (v, _) = Evaluator::new(&ctx).evaluate(&expr_for_unk).unwrap();
         assert!(v.is_unknown());
-
-        // For collection null
         let expr_for_null = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::For {
@@ -4807,8 +4429,6 @@ mod tests {
             span.clone(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_for_null).is_err());
-
-        // For collection invalid type (e.g. number)
         let expr_for_bad = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::For {
@@ -4822,8 +4442,6 @@ mod tests {
             span.clone(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_for_bad).is_err());
-
-        // 3. Directive::Strip
         let expr_strip = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::Strip {
@@ -4839,8 +4457,6 @@ mod tests {
             v,
             Value::new(Type::String, ValueData::String(String::new()))
         );
-
-        // 4. End-to-end HCL string with parser and evaluator
         let input = r#"
             greeting = "Hello, %{ for name in names }${name}%{ if name == \"Alice\" } (boss)%{ endif }, %{ endfor }bye!"
         "#;
@@ -4867,28 +4483,22 @@ mod tests {
             )
         );
     }
-
     #[test]
     fn test_mark_propagation_comprehensive() {
         use crate::types::ValueMark;
-
         let mut ctx = Context::with_stdlib();
         let sens_num =
             Value::new(Type::Number, ValueData::Number(10_i32.into())).mark(ValueMark::Sensitive);
         let sens_bool = Value::new(Type::Bool, ValueData::Bool(true)).mark(ValueMark::Sensitive);
         let sens_str =
             Value::new(Type::String, ValueData::String("vault".into())).mark(ValueMark::Sensitive);
-
         ctx.set_variable("sens_num", sens_num);
         ctx.set_variable("sens_bool", sens_bool);
         ctx.set_variable("sens_str", sens_str);
-
         let parse_expr = |s: &str| {
             let body = crate::api::parse(&format!("v = {s}")).unwrap();
             body.attributes["v"].expr.clone()
         };
-
-        // Arithmetic
         let cases = [
             ("sens_num + 5", Type::Number),
             ("20 - sens_num", Type::Number),
@@ -4905,8 +4515,6 @@ mod tests {
                 "Expression {expr_str} should retain Sensitive mark"
             );
         }
-
-        // Division & modulo by zero with marked numbers
         let div_zero = parse_expr("sens_num / 0");
         let mut sub_eval = Evaluator::new(&ctx);
         let val = sub_eval.eval_expr(&div_zero);
@@ -4918,7 +4526,6 @@ mod tests {
                 .unwrap_or("")
                 .contains("Division by zero")
         }));
-
         let mod_zero = parse_expr("sens_num % 0");
         let mut sub_eval2 = Evaluator::new(&ctx);
         let val = sub_eval2.eval_expr(&mod_zero);
@@ -4930,8 +4537,6 @@ mod tests {
                 .unwrap_or("")
                 .contains("Division by zero in modulo")
         }));
-
-        // Comparisons & Equality
         let cmp_cases = [
             "sens_num == 10",
             "sens_num != 5",
@@ -4950,8 +4555,6 @@ mod tests {
                 "Expression {expr_str} should retain Sensitive mark"
             );
         }
-
-        // Logical ops & short-circuiting with marks
         let log_cases = [
             "sens_bool && true",
             "true && sens_bool",
@@ -4967,24 +4570,17 @@ mod tests {
                 "Expression {expr_str} should retain Sensitive mark"
             );
         }
-
-        // Unary ops
         let not_expr = parse_expr("!sens_bool");
         let (val, _) = Evaluator::new(&ctx).evaluate(&not_expr).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(false));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
         let neg_expr = parse_expr("-sens_num");
         let (val, _) = Evaluator::new(&ctx).evaluate(&neg_expr).unwrap();
         assert!(val.has_mark(&ValueMark::Sensitive));
-
-        // Conditionals
         let cond_expr = parse_expr("sens_bool ? \"yes\" : \"no\"");
         let (val, _) = Evaluator::new(&ctx).evaluate(&cond_expr).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("yes".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
-        // Traversals
         let mut obj_map = BTreeMap::new();
         obj_map.insert(
             "secret".to_string(),
@@ -4993,17 +4589,14 @@ mod tests {
         let marked_obj =
             Value::new(Type::Dynamic, ValueData::Object(obj_map)).mark(ValueMark::Sensitive);
         ctx.set_variable("marked_obj", marked_obj);
-
         let t_attr = parse_expr("marked_obj.secret");
         let (val, _) = Evaluator::new(&ctx).evaluate(&t_attr).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("pass123".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
         let t_idx = parse_expr("marked_obj[\"secret\"]");
         let (val, _) = Evaluator::new(&ctx).evaluate(&t_idx).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("pass123".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
         let marked_arr = Value::new(
             Type::List(Box::new(Type::String)),
             ValueData::Array(vec![Value::new(
@@ -5013,12 +4606,10 @@ mod tests {
         )
         .mark(ValueMark::Sensitive);
         ctx.set_variable("marked_arr", marked_arr);
-
         let t_arr_idx = parse_expr("marked_arr[0]");
         let (val, _) = Evaluator::new(&ctx).evaluate(&t_arr_idx).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("item0".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
         let t_arr_legacy = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("marked_arr".to_string(), empty_span())),
@@ -5032,8 +4623,6 @@ mod tests {
         let (val, _) = Evaluator::new(&ctx).evaluate(&t_arr_legacy).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("item0".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
-        // String templates & interpolation
         let tpl_expr = parse_expr("\"prefix-${sens_str}-suffix\"");
         let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_expr).unwrap();
         assert_eq!(
@@ -5041,7 +4630,6 @@ mod tests {
             &ValueData::String("prefix-vault-suffix".into())
         );
         assert!(val.has_mark(&ValueMark::Sensitive));
-
         let tpl_if = parse_expr("\"result: %{ if sens_bool }visible%{ endif }\"");
         let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_if).unwrap();
         assert_eq!(
@@ -5049,13 +4637,10 @@ mod tests {
             &ValueData::String("result: visible".into())
         );
         assert!(val.has_mark(&ValueMark::Sensitive));
-
         let tpl_for = parse_expr("\"items: %{ for x in marked_arr }${x}%{ endfor }\"");
         let (val, _) = Evaluator::new(&ctx).evaluate(&tpl_for).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("items: item0".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
-        // For-expression
         let for_tuple = Expression::ForExpr(
             Box::new(crate::ast::expr::ForExpr {
                 key_var: None,
@@ -5070,14 +4655,10 @@ mod tests {
         );
         let (val, _) = Evaluator::new(&ctx).evaluate(&for_tuple).unwrap();
         assert!(val.has_mark(&ValueMark::Sensitive));
-
-        // Functions: standard library marks propagation
         let func_upper = parse_expr("upper(sens_str)");
         let (val, _) = Evaluator::new(&ctx).evaluate(&func_upper).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("VAULT".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
-
-        // Functions: sensitive, issensitive, nonsensitive
         let is_sens = parse_expr("issensitive(sens_str)");
         let (val, _) = Evaluator::new(&ctx).evaluate(&is_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(true));
@@ -5085,12 +4666,10 @@ mod tests {
             !val.has_mark(&ValueMark::Sensitive),
             "issensitive result must NOT be marked sensitive"
         );
-
         let is_not_sens = parse_expr("issensitive(\"plain\")");
         let (val, _) = Evaluator::new(&ctx).evaluate(&is_not_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(false));
         assert!(!val.has_mark(&ValueMark::Sensitive));
-
         let non_sens = parse_expr("nonsensitive(sens_str)");
         let (val, _) = Evaluator::new(&ctx).evaluate(&non_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("vault".into()));
@@ -5098,21 +4677,16 @@ mod tests {
             !val.has_mark(&ValueMark::Sensitive),
             "nonsensitive result must NOT be marked sensitive"
         );
-
         let make_sens = parse_expr("sensitive(\"raw\")");
         let (val, _) = Evaluator::new(&ctx).evaluate(&make_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("raw".into()));
         assert!(val.has_mark(&ValueMark::Sensitive));
     }
-
     #[test]
     fn test_evaluator_coverage_exhaustive() {
         use crate::types::ValueMark;
         use crate::types::refinement::Refinement;
-
         let mut ctx = Context::new();
-
-        // 1. expand_final with empty args (line 175)
         let expr_empty_expand = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "foo".into(),
@@ -5123,8 +4697,6 @@ mod tests {
         );
         let res_empty = Evaluator::new(&ctx).eval_expr(&expr_empty_expand);
         assert!(res_empty.is_unknown());
-
-        // 2. Variadic function signatures: null errors and coercion errors
         let sig = crate::eval::func::FunctionSignature::with_static_return_type(
             vec![crate::eval::func::FunctionParamSpec::new(
                 "p1",
@@ -5136,7 +4708,6 @@ mod tests {
             "rest",
             Type::Number,
         ));
-
         ctx.set_function(
             "test_var",
             crate::eval::func::Function::new(
@@ -5145,8 +4716,6 @@ mod tests {
             )
             .with_signature(sig),
         );
-
-        // Fixed param null when !allow_null
         let expr_null_fixed = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "test_var".into(),
@@ -5162,8 +4731,6 @@ mod tests {
         let res_null_fixed = evaluator_null_fixed.eval_expr(&expr_null_fixed);
         assert!(res_null_fixed.is_unknown());
         assert!(evaluator_null_fixed.diagnostics.has_errors());
-
-        // Variadic param null when !allow_null
         let expr_null_variadic = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "test_var".into(),
@@ -5179,8 +4746,6 @@ mod tests {
         let res_null_variadic = evaluator_null_variadic.eval_expr(&expr_null_variadic);
         assert!(res_null_variadic.is_unknown());
         assert!(evaluator_null_variadic.diagnostics.has_errors());
-
-        // Fixed param coercion failure
         let expr_bad_fixed = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "test_var".into(),
@@ -5196,8 +4761,6 @@ mod tests {
         let res_bad_fixed = evaluator_bad_fixed.eval_expr(&expr_bad_fixed);
         assert!(res_bad_fixed.is_unknown());
         assert!(evaluator_bad_fixed.diagnostics.has_errors());
-
-        // Variadic param coercion failure
         let expr_bad_variadic = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "test_var".into(),
@@ -5213,8 +4776,6 @@ mod tests {
         let res_bad_variadic = evaluator_bad_variadic.eval_expr(&expr_bad_variadic);
         assert!(res_bad_variadic.is_unknown());
         assert!(evaluator_bad_variadic.diagnostics.has_errors());
-
-        // Variadic call with successful coercion
         let expr_coerce_success = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "test_var".into(),
@@ -5228,8 +4789,6 @@ mod tests {
         );
         let res_coerce_success = Evaluator::new(&ctx).eval_expr(&expr_coerce_success);
         assert_eq!(*res_coerce_success.data, ValueData::Bool(true));
-
-        // 3. nonsensitive preserving non-sensitive marks
         let mut ctx_std = Context::with_stdlib();
         let mut custom_marked = Value::new(Type::String, ValueData::String("secret".to_string()));
         custom_marked
@@ -5237,7 +4796,6 @@ mod tests {
             .insert(ValueMark::Custom("tag".to_string()));
         custom_marked.marks.insert(ValueMark::Sensitive);
         ctx_std.set_variable("marked_val", custom_marked);
-
         let expr_non_sens = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "nonsensitive".into(),
@@ -5253,8 +4811,6 @@ mod tests {
                 .marks
                 .contains(&ValueMark::Custom("tag".to_string()))
         );
-
-        // 4. BinaryOp::And and BinaryOp::Or non-boolean left operand
         let expr_and = Expression::BinaryOp(
             BinaryOp::And,
             Box::new(Expression::Number(1.into(), empty_span())),
@@ -5263,7 +4819,6 @@ mod tests {
         );
         let res_and = Evaluator::new(&ctx).eval_expr(&expr_and);
         assert_eq!(*res_and.data, ValueData::Bool(true));
-
         let expr_or = Expression::BinaryOp(
             BinaryOp::Or,
             Box::new(Expression::Number(1.into(), empty_span())),
@@ -5272,28 +4827,22 @@ mod tests {
         );
         let res_or = Evaluator::new(&ctx).eval_expr(&expr_or);
         assert_eq!(*res_or.data, ValueData::Bool(false));
-
-        // 5. Refinements in BinaryOp::Add with unknown strings
         let mut ref_l = Refinement::not_null();
         ref_l.string_prefix = Some("pre_".to_string());
         ref_l.string_suffix = Some("_suf".to_string());
         ref_l.string_length_min = Some(10);
         ref_l.string_length_max = Some(20);
         let unk_left = Value::unknown_refined(Type::String, ref_l);
-
         let mut ref_r = Refinement::not_null();
         ref_r.string_prefix = Some("start_".to_string());
         ref_r.string_suffix = Some("_end".to_string());
         ref_r.string_length_min = Some(5);
         ref_r.string_length_max = Some(15);
         let unk_right = Value::unknown_refined(Type::String, ref_r);
-
         let known_mid = Value::new(Type::String, ValueData::String("middle".to_string()));
-
         ctx.set_variable("unk_left", unk_left);
         ctx.set_variable("unk_right", unk_right);
         ctx.set_variable("known_mid", known_mid);
-
         let expr_both_unknown = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("unk_left".to_string(), empty_span())),
@@ -5328,7 +4877,6 @@ mod tests {
                 .and_then(|r| r.string_length_max),
             Some(35)
         );
-
         let expr_known_left = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("known_mid".to_string(), empty_span())),
@@ -5351,7 +4899,6 @@ mod tests {
                 .as_deref(),
             Some("_end")
         );
-
         let expr_known_right = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("unk_left".to_string(), empty_span())),
@@ -5374,10 +4921,8 @@ mod tests {
                 .as_deref(),
             Some("_sufmiddle")
         );
-
         let unk_bare = Value::unknown(Type::String);
         ctx.set_variable("unk_bare", unk_bare);
-
         let expr_known_bare = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("known_mid".to_string(), empty_span())),
@@ -5393,7 +4938,6 @@ mod tests {
                 .as_deref(),
             Some("middle")
         );
-
         let expr_bare_known = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("unk_bare".to_string(), empty_span())),
@@ -5409,10 +4953,8 @@ mod tests {
                 .as_deref(),
             Some("middle")
         );
-
         let corrupted_str = Value::new(Type::String, ValueData::Bool(true));
         ctx.set_variable("corrupted_str", corrupted_str);
-
         let expr_corrupt_left = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable(
@@ -5424,7 +4966,6 @@ mod tests {
         );
         let res_corrupt_left = Evaluator::new(&ctx).eval_expr(&expr_corrupt_left);
         assert!(res_corrupt_left.is_unknown());
-
         let expr_corrupt_right = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("unk_bare".to_string(), empty_span())),
@@ -5436,8 +4977,6 @@ mod tests {
         );
         let res_corrupt_right = Evaluator::new(&ctx).eval_expr(&expr_corrupt_right);
         assert!(res_corrupt_right.is_unknown());
-
-        // 6. BinaryOp::Add string concatenation
         let expr_str_concat = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::String("foo_".to_string(), empty_span())),
@@ -5449,7 +4988,6 @@ mod tests {
             *res_str_concat.data,
             ValueData::String("foo_bar".to_string())
         );
-
         let expr_num_str = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::String("10".to_string(), empty_span())),
@@ -5458,7 +4996,6 @@ mod tests {
         );
         let res_num_str = Evaluator::new(&ctx).eval_expr(&expr_num_str);
         assert_eq!(*res_num_str.data, ValueData::String("10foo".to_string()));
-
         let expr_num_num = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::String("10".to_string(), empty_span())),
@@ -5467,7 +5004,6 @@ mod tests {
         );
         let res_num_num = Evaluator::new(&ctx).eval_expr(&expr_num_num);
         assert_eq!(*res_num_num.data, ValueData::Number(30.into()));
-
         let bad_str_a = Value::new(Type::String, ValueData::Bool(true));
         let bad_str_b = Value::new(Type::String, ValueData::String("ok".to_string()));
         ctx.set_variable("bad_a", bad_str_a);
@@ -5482,8 +5018,6 @@ mod tests {
         let res_bad_s = eval_bad_s.eval_expr(&expr_bad_str);
         assert!(res_bad_s.is_unknown());
         assert!(eval_bad_s.diagnostics.has_errors());
-
-        // 7. Binary operator requires numbers error
         let bad_num_val = Value::new(Type::Number, ValueData::Bool(true));
         ctx.set_variable("bad_num_val", bad_num_val);
         let expr_bad_num = Expression::BinaryOp(
@@ -5499,22 +5033,17 @@ mod tests {
         let res_bad_n = eval_bad_n.eval_expr(&expr_bad_num);
         assert!(res_bad_n.is_unknown());
         assert!(eval_bad_n.diagnostics.has_errors());
-
-        // 8. eval_single_step with AttrSplat and FullSplat
         let base_bool_val = Value::new(Type::Bool, ValueData::Bool(true));
         let mut eval_step_attr = Evaluator::new(&ctx);
         let step_attr_res = eval_step_attr
             .eval_single_step(&base_bool_val, &TraversalOperator::AttrSplat(empty_span()));
         assert!(step_attr_res.is_unknown());
         assert!(eval_step_attr.diagnostics.has_errors());
-
         let mut eval_step_full = Evaluator::new(&ctx);
         let step_full_res = eval_step_full
             .eval_single_step(&base_bool_val, &TraversalOperator::FullSplat(empty_span()));
         assert!(step_full_res.is_unknown());
         assert!(eval_step_full.diagnostics.has_errors());
-
-        // 9. AttrSplat branches
         let t_null_splat = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Null(empty_span())),
             operators: vec![
@@ -5526,7 +5055,6 @@ mod tests {
         let mut eval_null_splat = Evaluator::new(&ctx);
         let res_null_splat = eval_null_splat.eval_traversal(&t_null_splat, empty_span());
         assert!(res_null_splat.is_unknown());
-
         let mut set_map = BTreeSet::new();
         let mut map_item = BTreeMap::new();
         map_item.insert(
@@ -5538,7 +5066,6 @@ mod tests {
             "my_set_obj",
             Value::new(Type::Set(Box::new(Type::Dynamic)), ValueData::Set(set_map)),
         );
-
         let t_set_traversal = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("my_set_obj".to_string(), empty_span())),
             operators: vec![
@@ -5554,7 +5081,6 @@ mod tests {
                 ValueData::String("set_item".to_string())
             )])
         );
-
         let t_arr_idx = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Tuple(
                 vec![Expression::Tuple(
@@ -5573,15 +5099,12 @@ mod tests {
             *res_arr_idx.data,
             ValueData::Array(vec![Value::new(Type::Number, ValueData::Number(42.into()))])
         );
-
         let t_unk_attr = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("unk_bare".to_string(), empty_span())),
             operators: vec![TraversalOperator::AttrSplat(empty_span())],
         };
         let res_unk_attr = Evaluator::new(&ctx).eval_traversal(&t_unk_attr, empty_span());
         assert!(res_unk_attr.is_unknown());
-
-        // 10. FullSplat branches
         let t_null_full = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Null(empty_span())),
             operators: vec![
@@ -5591,7 +5114,6 @@ mod tests {
         };
         let res_null_full = Evaluator::new(&ctx).eval_traversal(&t_null_full, empty_span());
         assert_eq!(*res_null_full.data, ValueData::Array(vec![]));
-
         let t_null_full_chain = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Null(empty_span())),
             operators: vec![
@@ -5602,7 +5124,6 @@ mod tests {
         };
         let res_null_chain = Evaluator::new(&ctx).eval_traversal(&t_null_full_chain, empty_span());
         assert_eq!(*res_null_chain.data, ValueData::Array(vec![]));
-
         let mut set_raw = BTreeSet::new();
         set_raw.insert(Value::new(
             Type::String,
@@ -5612,7 +5133,6 @@ mod tests {
             "simple_set",
             Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set_raw)),
         );
-
         let t_full_set = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Variable("simple_set".to_string(), empty_span())),
             operators: vec![TraversalOperator::FullSplat(empty_span())],
@@ -5625,7 +5145,6 @@ mod tests {
                 ValueData::String("item".to_string())
             )])
         );
-
         let t_splat_splat = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Tuple(
                 vec![Expression::Tuple(
@@ -5650,15 +5169,12 @@ mod tests {
                 )])
             )])
         );
-
         let t_empty_full = crate::ast::expr::Traversal {
             expr: Box::new(Expression::Tuple(vec![], empty_span())),
             operators: vec![TraversalOperator::FullSplat(empty_span())],
         };
         let res_empty_full = Evaluator::new(&ctx).eval_traversal(&t_empty_full, empty_span());
         assert_eq!(*res_empty_full.data, ValueData::Array(vec![]));
-
-        // 11. Template for-directive error propagation
         let expr_template_err = Expression::Template(
             vec![crate::ast::expr::TemplatePart::Directive(
                 crate::ast::expr::Directive::For {
@@ -5686,24 +5202,19 @@ mod tests {
         let _ = evaluator_template_err.eval_expr(&expr_template_err);
         assert!(evaluator_template_err.diagnostics.has_errors());
     }
-
     #[test]
     fn test_func_value_return_type_coercion() {
         use crate::eval::func::{Function, FunctionParamSpec, FunctionSignature};
         use std::sync::Arc;
-
         let mut ctx = Context::new();
         let sig = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("arg", Type::String)],
             Type::Dynamic,
         )
         .with_value_return_type(Arc::new(|_args| Ok(Type::Number)));
-
         let func = Function::new("return_coerced", Arc::new(|args| Ok(args[0].clone())))
             .with_signature(sig);
-
         ctx.set_function("return_coerced", func);
-
         let expr = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "return_coerced".into(),
@@ -5712,17 +5223,14 @@ mod tests {
             }),
             empty_span(),
         );
-
         let mut evaluator = Evaluator::new(&ctx);
         let val = evaluator.eval_expr(&expr);
         assert_eq!(val.ty(), &Type::Number);
         assert_eq!(val.to_string(), "42");
     }
-
     #[test]
     fn test_evaluator_subexpression_callouts_on_error() {
         use crate::types::ValueMark;
-
         let mut ctx = Context::new();
         ctx.set_variable(
             "count",
@@ -5733,8 +5241,6 @@ mod tests {
             Value::new(Type::String, ValueData::String("token123".into()))
                 .mark(ValueMark::Sensitive),
         );
-
-        // Expression: var.count + var.secret_token (cannot add number and string)
         let expr = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("count".to_string(), empty_span())),
@@ -5744,23 +5250,17 @@ mod tests {
             )),
             empty_span(),
         );
-
         let evaluator = Evaluator::new(&ctx);
         let diags = evaluator.evaluate(&expr).err().unwrap();
-
         assert!(diags.has_errors());
         let diag = &diags.errors()[0];
         assert_ne!(diag.eval_callouts.len(), 0);
-
-        // Check that var.count was recorded
         let count_callout = diag
             .eval_callouts
             .iter()
             .find(|c| c.expression_text == "var.count")
             .unwrap();
         assert_eq!(count_callout.evaluated_value, "10");
-
-        // Check that var.secret_token was recorded and masked
         let secret_callout = diag
             .eval_callouts
             .iter()
@@ -5768,7 +5268,6 @@ mod tests {
             .unwrap();
         assert_eq!(secret_callout.evaluated_value, "(sensitive value)");
     }
-
     #[test]
     fn test_variable_and_attribute_typo_suggestions() {
         let mut parent_ctx = Context::new();
@@ -5776,13 +5275,11 @@ mod tests {
             "instance_type",
             Value::new(Type::String, ValueData::String("t3.micro".into())),
         );
-
         let mut child_ctx = Context::new_child(&parent_ctx);
         child_ctx.set_variable(
             "user_count",
             Value::new(Type::Number, ValueData::Number(Number::from(5))),
         );
-
         let mut map = std::collections::BTreeMap::new();
         map.insert(
             "hostname".to_string(),
@@ -5799,8 +5296,6 @@ mod tests {
                 ValueData::Object(map),
             ),
         );
-
-        // 1. Misspelled variable in child scope: "user_cont" instead of "user_count"
         let expr_var = Expression::Variable("user_cont".to_string(), empty_span());
         let err_var = Evaluator::new(&child_ctx)
             .evaluate(&expr_var)
@@ -5811,8 +5306,6 @@ mod tests {
             diag_var.detail.as_deref(),
             Some("Did you mean var.user_count?")
         );
-
-        // 2. Misspelled variable from parent scope: "var.instance_typ" instead of "var.instance_type"
         let expr_parent = Expression::Variable("var.instance_typ".to_string(), empty_span());
         let err_parent = Evaluator::new(&child_ctx)
             .evaluate(&expr_parent)
@@ -5823,8 +5316,6 @@ mod tests {
             diag_parent.detail.as_deref(),
             Some("Did you mean var.instance_type?")
         );
-
-        // 3. Misspelled object attribute: server.hostnam
         let expr_attr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("server".to_string(), empty_span())),
@@ -5841,8 +5332,6 @@ mod tests {
             .unwrap();
         let diag_attr = &err_attr.errors()[0];
         assert_eq!(diag_attr.detail.as_deref(), Some("Did you mean .hostname?"));
-
-        // 4. Misspelled index key: server["port_numbr"]
         let expr_idx = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("server".to_string(), empty_span())),
@@ -5863,15 +5352,12 @@ mod tests {
             Some("Did you mean .port_number?")
         );
     }
-
     #[test]
     fn test_capsule_operator_overloading_and_hooks() {
         use crate::types::ty::CapsuleOps;
         use std::sync::Arc;
-
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         struct Matrix2x2(i64, i64, i64, i64);
-
         let ops = Arc::new(
             CapsuleOps::new(
                 "matrix2x2",
@@ -5978,15 +5464,11 @@ mod tests {
                 }
             })),
         );
-
         let m1_val = Value::capsule_with_ops("matrix2x2", ops.clone(), Matrix2x2(1, 2, 3, 4));
         let m2_val = Value::capsule_with_ops("matrix2x2", ops.clone(), Matrix2x2(5, 6, 7, 8));
-
         let mut ctx = Context::new();
         ctx.set_variable("m1", m1_val.clone());
         ctx.set_variable("m2", m2_val.clone());
-
-        // 1. Arithmetic: Add, Sub, Mul, Div, Mod
         let expr_add = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -5998,7 +5480,6 @@ mod tests {
             res_add.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(6, 8, 10, 12))
         );
-
         let expr_sub = Expression::BinaryOp(
             BinaryOp::Sub,
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
@@ -6010,7 +5491,6 @@ mod tests {
             res_sub.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(4, 4, 4, 4))
         );
-
         let expr_mul = Expression::BinaryOp(
             BinaryOp::Mul,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6022,7 +5502,6 @@ mod tests {
             res_mul.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(19, 22, 43, 50))
         );
-
         let expr_div = Expression::BinaryOp(
             BinaryOp::Div,
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
@@ -6034,7 +5513,6 @@ mod tests {
             res_div.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(5, 3, 2, 2))
         );
-
         let expr_mod = Expression::BinaryOp(
             BinaryOp::Mod,
             Box::new(Expression::Variable("m2".to_string(), empty_span())),
@@ -6046,8 +5524,6 @@ mod tests {
             res_mod.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(0, 0, 1, 0))
         );
-
-        // 2. Unary negation
         let expr_neg = Expression::UnaryOp(
             UnaryOp::Neg,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6058,14 +5534,8 @@ mod tests {
             res_neg.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(-1, -2, -3, -4))
         );
-
-        // 3. Relational comparisons: Less, LessEq, Greater, GreaterEq, Eq, NotEq
-        // det(m1) = 1*4 - 2*3 = -2
-        // det(m2) = 5*8 - 6*7 = -2
-        // det(m3) = 1*1 - 0*0 = 1
         let m3_val = Value::capsule_with_ops("matrix2x2", ops.clone(), Matrix2x2(1, 0, 0, 1));
         ctx.set_variable("m3", m3_val.clone());
-
         let expr_lt = Expression::BinaryOp(
             BinaryOp::Less,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6074,7 +5544,6 @@ mod tests {
         );
         let (res_lt, _) = Evaluator::new(&ctx).evaluate(&expr_lt).unwrap();
         assert_eq!(*res_lt.data, ValueData::Bool(true));
-
         let expr_lte = Expression::BinaryOp(
             BinaryOp::LessEq,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6083,7 +5552,6 @@ mod tests {
         );
         let (res_lte, _) = Evaluator::new(&ctx).evaluate(&expr_lte).unwrap();
         assert_eq!(*res_lte.data, ValueData::Bool(true));
-
         let expr_greater = Expression::BinaryOp(
             BinaryOp::Greater,
             Box::new(Expression::Variable("m3".to_string(), empty_span())),
@@ -6092,7 +5560,6 @@ mod tests {
         );
         let (res_greater, _) = Evaluator::new(&ctx).evaluate(&expr_greater).unwrap();
         assert_eq!(*res_greater.data, ValueData::Bool(true));
-
         let expr_greatereq = Expression::BinaryOp(
             BinaryOp::GreaterEq,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6101,7 +5568,6 @@ mod tests {
         );
         let (res_greatereq, _) = Evaluator::new(&ctx).evaluate(&expr_greatereq).unwrap();
         assert_eq!(*res_greatereq.data, ValueData::Bool(true));
-
         let expr_eq = Expression::BinaryOp(
             BinaryOp::Eq,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6110,7 +5576,6 @@ mod tests {
         );
         let (res_eq, _) = Evaluator::new(&ctx).evaluate(&expr_eq).unwrap();
         assert_eq!(*res_eq.data, ValueData::Bool(true));
-
         let expr_noteq = Expression::BinaryOp(
             BinaryOp::NotEq,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6119,8 +5584,6 @@ mod tests {
         );
         let (res_noteq, _) = Evaluator::new(&ctx).evaluate(&expr_noteq).unwrap();
         assert_eq!(*res_noteq.data, ValueData::Bool(true));
-
-        // 4. Attribute access: .a, .b, .c, .d
         let expr_attr_a = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6130,8 +5593,6 @@ mod tests {
         );
         let (res_a, _) = Evaluator::new(&ctx).evaluate(&expr_attr_a).unwrap();
         assert_eq!(*res_a.data, ValueData::Number(1.into()));
-
-        // 5. Indexing: [0], [1], [2], [3] and legacy index .0
         let expr_idx_2 = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6144,7 +5605,6 @@ mod tests {
         );
         let (res_idx, _) = Evaluator::new(&ctx).evaluate(&expr_idx_2).unwrap();
         assert_eq!(*res_idx.data, ValueData::Number(3.into()));
-
         let expr_legacy_idx = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6154,7 +5614,6 @@ mod tests {
         );
         let (res_legacy, _) = Evaluator::new(&ctx).evaluate(&expr_legacy_idx).unwrap();
         assert_eq!(*res_legacy.data, ValueData::Number(4.into()));
-
         for (attr_name, expected_num) in [("b", 2), ("c", 3), ("d", 4)] {
             let expr_attr = Expression::Traversal(
                 Box::new(crate::ast::expr::Traversal {
@@ -6169,7 +5628,6 @@ mod tests {
             let (res, _) = Evaluator::new(&ctx).evaluate(&expr_attr).unwrap();
             assert_eq!(*res.data, ValueData::Number(expected_num.into()));
         }
-
         for (idx_val, expected_num) in [(0, 1), (1, 2)] {
             let expr_idx = Expression::Traversal(
                 Box::new(crate::ast::expr::Traversal {
@@ -6184,7 +5642,6 @@ mod tests {
             let (res, _) = Evaluator::new(&ctx).evaluate(&expr_idx).unwrap();
             assert_eq!(*res.data, ValueData::Number(expected_num.into()));
         }
-
         let expr_str_idx = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6202,7 +5659,6 @@ mod tests {
                 .to_string()
                 .contains("matrix index must be an integer")
         );
-
         let expr_m_eq_num = Expression::BinaryOp(
             BinaryOp::Eq,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6211,7 +5667,6 @@ mod tests {
         );
         let (res_m_eq_num, _) = Evaluator::new(&ctx).evaluate(&expr_m_eq_num).unwrap();
         assert_eq!(*res_m_eq_num.data, ValueData::Bool(false));
-
         let other_capsule = Value::capsule_with_ops(
             "other_capsule",
             Arc::new(CapsuleOps::new(
@@ -6230,11 +5685,8 @@ mod tests {
         );
         let (res_other, _) = Evaluator::new(&ctx).evaluate(&expr_m_eq_other).unwrap();
         assert_eq!(*res_other.data, ValueData::Bool(false));
-
         let corrupt_matrix = Value::new(m1_val.ty().clone(), ValueData::Capsule(Arc::new(999_i32)));
         assert_ne!(m1_val.unmark().0, corrupt_matrix.unmark().0);
-
-        // 6. Direct calls to evaluate_binary_op and evaluate_unary_op
         let mut eval = Evaluator::new(&ctx);
         let res_dir_bin = eval.evaluate_binary_op(
             BinaryOp::Add,
@@ -6246,7 +5698,6 @@ mod tests {
             res_dir_bin.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(6, 8, 10, 12))
         );
-
         let res_dir_un = eval.evaluate_unary_op(
             UnaryOp::Neg,
             &Expression::Variable("m1".to_string(), empty_span()),
@@ -6256,9 +5707,6 @@ mod tests {
             res_dir_un.downcast_ref::<Matrix2x2>(),
             Some(&Matrix2x2(-1, -2, -3, -4))
         );
-
-        // 7. Error cases & diagnostics
-        // Matrix division by singular/zero matrix
         let m_zero = Value::capsule_with_ops("matrix2x2", ops.clone(), Matrix2x2(0, 0, 0, 0));
         ctx.set_variable("m_zero", m_zero);
         let expr_bad_div = Expression::BinaryOp(
@@ -6274,7 +5722,6 @@ mod tests {
                 .to_string()
                 .contains("matrix division by singular matrix")
         );
-
         let m_div_d0 = Value::capsule_with_ops("matrix2x2", ops.clone(), Matrix2x2(1, 0, 0, 0));
         ctx.set_variable("m_div_d0", m_div_d0);
         let expr_div_d0 = Expression::BinaryOp(
@@ -6290,8 +5737,6 @@ mod tests {
                 .to_string()
                 .contains("matrix division by singular matrix")
         );
-
-        // Matrix modulo by zero
         let expr_bad_mod = Expression::BinaryOp(
             BinaryOp::Mod,
             Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6305,8 +5750,6 @@ mod tests {
                 .to_string()
                 .contains("matrix modulo by zero")
         );
-
-        // Bad attribute
         let expr_bad_attr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6324,8 +5767,6 @@ mod tests {
                 .to_string()
                 .contains("unknown matrix field 'unknown_field'")
         );
-
-        // Index out of bounds
         let expr_bad_idx = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("m1".to_string(), empty_span())),
@@ -6343,8 +5784,6 @@ mod tests {
                 .to_string()
                 .contains("matrix index out of bounds")
         );
-
-        // Unsupported hooks on basic capsule
         let basic_ops = Arc::new(CapsuleOps::new(
             "bare_capsule",
             Arc::new(|_, _| false),
@@ -6352,8 +5791,6 @@ mod tests {
         ));
         let bare = Value::capsule_with_ops("bare_capsule", basic_ops, 42_i32);
         ctx.set_variable("bare", bare);
-
-        // Bare negation
         let expr_bare_neg = Expression::UnaryOp(
             UnaryOp::Neg,
             Box::new(Expression::Variable("bare".to_string(), empty_span())),
@@ -6366,8 +5803,6 @@ mod tests {
                 .to_string()
                 .contains("does not support unary negation")
         );
-
-        // Bare attr get
         let expr_bare_attr = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("bare".to_string(), empty_span())),
@@ -6388,8 +5823,6 @@ mod tests {
                 .to_string()
                 .contains("does not support attribute access")
         );
-
-        // Bare index get
         let expr_bare_idx = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("bare".to_string(), empty_span())),
@@ -6407,8 +5840,6 @@ mod tests {
                 .to_string()
                 .contains("does not support indexing")
         );
-
-        // Bare legacy index get
         let expr_bare_legacy = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("bare".to_string(), empty_span())),
@@ -6426,11 +5857,8 @@ mod tests {
                 .to_string()
                 .contains("does not support indexing")
         );
-
-        // 8. Unknown capsule propagation
         let unk_cap = Value::unknown(m1_val.ty().clone());
         ctx.set_variable("unk_cap", unk_cap);
-
         let expr_unk_add = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("unk_cap".to_string(), empty_span())),
@@ -6440,7 +5868,6 @@ mod tests {
         let (res_unk_add, _) = Evaluator::new(&ctx).evaluate(&expr_unk_add).unwrap();
         assert!(res_unk_add.is_unknown());
         assert_eq!(res_unk_add.ty(), m1_val.ty());
-
         let expr_unk_neg = Expression::UnaryOp(
             UnaryOp::Neg,
             Box::new(Expression::Variable("unk_cap".to_string(), empty_span())),
@@ -6449,8 +5876,6 @@ mod tests {
         let (res_unk_neg, _) = Evaluator::new(&ctx).evaluate(&expr_unk_neg).unwrap();
         assert!(res_unk_neg.is_unknown());
         assert_eq!(res_unk_neg.ty(), m1_val.ty());
-
-        // 9. Mark propagation
         let m1_marked = m1_val.mark(crate::types::val::ValueMark::Sensitive);
         ctx.set_variable("m1_marked", m1_marked);
         let expr_marked_add = Expression::BinaryOp(
@@ -6461,41 +5886,30 @@ mod tests {
         );
         let (res_marked_add, _) = Evaluator::new(&ctx).evaluate(&expr_marked_add).unwrap();
         assert!(res_marked_add.has_mark(&crate::types::val::ValueMark::Sensitive));
-
-        // 10. Direct closure error invocations (when downcast_ref fails on invalid payload)
         let invalid_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(12345_u32);
         let valid_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(Matrix2x2(1, 2, 3, 4));
-
         let add_fn = ops.add.as_ref().unwrap();
         assert!(add_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(add_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
-
         let sub_fn = ops.sub.as_ref().unwrap();
         assert!(sub_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(sub_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
-
         let mul_fn = ops.mul.as_ref().unwrap();
         assert!(mul_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(mul_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
-
         let div_fn = ops.div.as_ref().unwrap();
         assert!(div_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(div_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
-
         let mod_fn = ops.modulo.as_ref().unwrap();
         assert!(mod_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(mod_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
-
         let neg_fn = ops.neg.as_ref().unwrap();
         assert!(neg_fn(invalid_any.as_ref()).is_err());
-
         let cmp_fn = ops.cmp.as_ref().unwrap();
         assert!(cmp_fn(invalid_any.as_ref(), valid_any.as_ref()).is_err());
         assert!(cmp_fn(valid_any.as_ref(), invalid_any.as_ref()).is_err());
-
         let attr_fn = ops.attr_get.as_ref().unwrap();
         assert!(attr_fn(invalid_any.as_ref(), "a").is_err());
-
         let idx_fn = ops.index_get.as_ref().unwrap();
         assert!(
             idx_fn(
@@ -6505,15 +5919,12 @@ mod tests {
             .is_err()
         );
     }
-
     #[test]
     fn test_capsule_operator_error_branches_and_edge_cases() {
         use crate::types::ty::CapsuleOps;
         use std::sync::Arc;
-
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         struct FailableCapsule(i32);
-
         let ops = Arc::new(
             CapsuleOps::new(
                 "failable_capsule",
@@ -6566,19 +5977,15 @@ mod tests {
                 Ok(Value::new(Type::Number, ValueData::Number(x.into())))
             })),
         );
-
         let ok_val = Value::capsule_with_ops("failable_capsule", ops.clone(), FailableCapsule(1));
         let bad_val = Value::capsule_with_ops("failable_capsule", ops.clone(), FailableCapsule(99));
         let unk_val = Value::unknown(ok_val.ty().clone());
-
         let mut ctx = Context::new();
         ctx.set_variable("ok", ok_val.clone());
         ctx.set_variable("bad", bad_val.clone());
         ctx.set_variable("unk", unk_val.clone());
         ctx.set_variable("unk_num", Value::unknown(Type::Number));
         ctx.set_variable("num", Value::new(Type::Number, ValueData::Number(5.into())));
-
-        // 1. Add error
         let expr_bad_add = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("bad".to_string(), empty_span())),
@@ -6592,8 +5999,6 @@ mod tests {
                 .to_string()
                 .contains("add failure triggered")
         );
-
-        // 2. Cmp error
         let expr_bad_cmp = Expression::BinaryOp(
             BinaryOp::Less,
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
@@ -6607,7 +6012,6 @@ mod tests {
                 .to_string()
                 .contains("cmp failure triggered")
         );
-
         let expr_bad_cmp_left = Expression::BinaryOp(
             BinaryOp::Less,
             Box::new(Expression::Variable("bad".to_string(), empty_span())),
@@ -6624,8 +6028,6 @@ mod tests {
                 .to_string()
                 .contains("cmp failure triggered")
         );
-
-        // 3. Neg error
         let expr_bad_neg = Expression::UnaryOp(
             UnaryOp::Neg,
             Box::new(Expression::Variable("bad".to_string(), empty_span())),
@@ -6638,8 +6040,6 @@ mod tests {
                 .to_string()
                 .contains("neg failure triggered")
         );
-
-        // 4. Legacy index error
         let expr_bad_legacy = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("bad".to_string(), empty_span())),
@@ -6657,8 +6057,6 @@ mod tests {
                 .to_string()
                 .contains("index_get failure triggered")
         );
-
-        // 5. Right-hand side unknown capsule
         let expr_rhs_unk_add = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
@@ -6668,7 +6066,6 @@ mod tests {
         let (res_rhs_unk_add, _) = Evaluator::new(&ctx).evaluate(&expr_rhs_unk_add).unwrap();
         assert!(res_rhs_unk_add.is_unknown());
         assert_eq!(res_rhs_unk_add.ty(), ok_val.ty());
-
         let expr_rhs_unk_sub = Expression::BinaryOp(
             BinaryOp::Sub,
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
@@ -6678,7 +6075,6 @@ mod tests {
         let (res_rhs_unk_sub, _) = Evaluator::new(&ctx).evaluate(&expr_rhs_unk_sub).unwrap();
         assert!(res_rhs_unk_sub.is_unknown());
         assert_eq!(res_rhs_unk_sub.ty(), ok_val.ty());
-
         let expr_left_unk_sub = Expression::BinaryOp(
             BinaryOp::Sub,
             Box::new(Expression::Variable("unk".to_string(), empty_span())),
@@ -6688,8 +6084,6 @@ mod tests {
         let (res_left_unk_sub, _) = Evaluator::new(&ctx).evaluate(&expr_left_unk_sub).unwrap();
         assert!(res_left_unk_sub.is_unknown());
         assert_eq!(res_left_unk_sub.ty(), ok_val.ty());
-
-        // Unknown number on left with capsule on right
         let expr_unk_num_add = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("unk_num".to_string(), empty_span())),
@@ -6699,7 +6093,6 @@ mod tests {
         let (res_unk_num_add, _) = Evaluator::new(&ctx).evaluate(&expr_unk_num_add).unwrap();
         assert!(res_unk_num_add.is_unknown());
         assert_eq!(res_unk_num_add.ty(), ok_val.ty());
-
         let expr_unk_num_sub = Expression::BinaryOp(
             BinaryOp::Sub,
             Box::new(Expression::Variable("unk_num".to_string(), empty_span())),
@@ -6709,8 +6102,6 @@ mod tests {
         let (res_unk_num_sub, _) = Evaluator::new(&ctx).evaluate(&expr_unk_num_sub).unwrap();
         assert!(res_unk_num_sub.is_unknown());
         assert_eq!(res_unk_num_sub.ty(), ok_val.ty());
-
-        // 6. Right-hand side capsule with non-capsule on left: num + ok
         let expr_rhs_cap = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("num".to_string(), empty_span())),
@@ -6722,8 +6113,6 @@ mod tests {
             res_rhs_cap.downcast_ref::<FailableCapsule>(),
             Some(&FailableCapsule(1))
         );
-
-        // Capsule equality and downcast failure
         let val1 = Value::capsule_with_ops("failable_capsule", ops.clone(), FailableCapsule(10));
         let val2 = Value::capsule_with_ops("failable_capsule", ops.clone(), FailableCapsule(20));
         assert_ne!(val1.unmark().0, val2.unmark().0);
@@ -6734,7 +6123,6 @@ mod tests {
                 .unmark()
                 .0
         );
-
         let other_capsule = Value::capsule_with_ops(
             "other_capsule",
             Arc::new(CapsuleOps::new(
@@ -6753,11 +6141,8 @@ mod tests {
         );
         let (res_co, _) = Evaluator::new(&ctx).evaluate(&expr_cap_other).unwrap();
         assert_eq!(*res_co.data, ValueData::Bool(false));
-
         let corrupt_failable = Value::new(val1.ty().clone(), ValueData::Capsule(Arc::new(999_i32)));
         assert_ne!(val1.unmark().0, corrupt_failable.unmark().0);
-
-        // Add with bad on right (tests y == 99)
         let expr_add_right_bad = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
@@ -6774,8 +6159,6 @@ mod tests {
                 .to_string()
                 .contains("add failure triggered")
         );
-
-        // Add success
         let expr_add_ok = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
@@ -6787,8 +6170,6 @@ mod tests {
             res_add_ok.downcast_ref::<FailableCapsule>(),
             Some(&FailableCapsule(2))
         );
-
-        // Comparison successes
         for (cmp_op, expected) in [
             (BinaryOp::Less, false),
             (BinaryOp::LessEq, true),
@@ -6804,8 +6185,6 @@ mod tests {
             let (res_cmp_ok, _) = Evaluator::new(&ctx).evaluate(&expr_cmp_ok).unwrap();
             assert_eq!(*res_cmp_ok.data, ValueData::Bool(expected));
         }
-
-        // Negation success
         let expr_neg_ok = Expression::UnaryOp(
             UnaryOp::Neg,
             Box::new(Expression::Variable("ok".to_string(), empty_span())),
@@ -6816,8 +6195,6 @@ mod tests {
             res_neg_ok.downcast_ref::<FailableCapsule>(),
             Some(&FailableCapsule(-1))
         );
-
-        // Index success
         let expr_idx_ok = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("ok".to_string(), empty_span())),
@@ -6827,7 +6204,6 @@ mod tests {
         );
         let (res_idx_ok, _) = Evaluator::new(&ctx).evaluate(&expr_idx_ok).unwrap();
         assert_eq!(*res_idx_ok.data, ValueData::Number(1.into()));
-
         let expr_bad_idx = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Variable("bad".to_string(), empty_span())),
@@ -6842,8 +6218,6 @@ mod tests {
                 .to_string()
                 .contains("index_get failure triggered")
         );
-
-        // All arithmetic ops with non-capsule on left and capsule with all ops on right
         let all_ops = Arc::new(
             CapsuleOps::new("full_capsule", Arc::new(|_, _| false), Arc::new(|_| 0))
                 .with_add(Arc::new(|_, _| Ok(Box::new(100_i32))))
@@ -6855,7 +6229,6 @@ mod tests {
         );
         let full_val = Value::capsule_with_ops("full_capsule", all_ops, 1_i32);
         ctx.set_variable("full", full_val.clone());
-
         for (bin_op, exp_val) in [
             (BinaryOp::Add, 100_i32),
             (BinaryOp::Sub, 101_i32),
@@ -6872,8 +6245,6 @@ mod tests {
             let (res, _) = Evaluator::new(&ctx).evaluate(&expr_mixed).unwrap();
             assert_eq!(res.downcast_ref::<i32>(), Some(&exp_val));
         }
-
-        // Comparison with non-capsule on left and capsule on right
         let expr_cmp_left_non_cap = Expression::BinaryOp(
             BinaryOp::LessEq,
             Box::new(Expression::Variable("num".to_string(), empty_span())),
@@ -6884,8 +6255,6 @@ mod tests {
             .evaluate(&expr_cmp_left_non_cap)
             .unwrap();
         assert_eq!(*res_cmp_left.data, ValueData::Bool(true));
-
-        // Comparison with capsule on left and non-capsule on right
         let expr_cmp_right_non_cap = Expression::BinaryOp(
             BinaryOp::GreaterEq,
             Box::new(Expression::Variable("full".to_string(), empty_span())),
@@ -6896,8 +6265,6 @@ mod tests {
             .evaluate(&expr_cmp_right_non_cap)
             .unwrap();
         assert_eq!(*res_cmp_right.data, ValueData::Bool(true));
-
-        // Arithmetic with capsule on left and non-capsule on right
         let expr_arith_rnc = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("full".to_string(), empty_span())),
@@ -6906,25 +6273,19 @@ mod tests {
         );
         let (res_arnc, _) = Evaluator::new(&ctx).evaluate(&expr_arith_rnc).unwrap();
         assert_eq!(res_arnc.downcast_ref::<i32>(), Some(&100));
-
-        // 7. Value::cmp ordering check with ops.cmp
         let val1 = Value::capsule_with_ops("failable_capsule", ops.clone(), FailableCapsule(10));
         let val2 = Value::capsule_with_ops("failable_capsule", ops.clone(), FailableCapsule(20));
         assert_eq!(val1.cmp(&val2), std::cmp::Ordering::Less);
         assert_eq!(val2.cmp(&val1), std::cmp::Ordering::Greater);
         assert_eq!(val1.cmp(&val1), std::cmp::Ordering::Equal);
     }
-
     /// Tests edge-case branch conditions in Evaluator including variable naming prefixes,
     /// typos, string arithmetic coercion, logical OR, and function signature validation.
     #[test]
     fn test_evaluator_remaining_branch_coverage() {
         use crate::eval::func::{Function, FunctionParamSpec, FunctionSignature};
         use std::sync::Arc;
-
         let mut ctx = Context::with_stdlib();
-
-        // 1. Variable starting with var. and local.
         ctx.set_variable(
             "var.x",
             Value::new(Type::String, ValueData::String("val1".to_string())),
@@ -6936,7 +6297,6 @@ mod tests {
             val_var,
             Value::new(Type::String, ValueData::String("val1".to_string()))
         );
-
         ctx.set_variable(
             "local.y",
             Value::new(Type::String, ValueData::String("val2".to_string())),
@@ -6948,8 +6308,6 @@ mod tests {
             val_loc,
             Value::new(Type::String, ValueData::String("val2".to_string()))
         );
-
-        // 2. Variable typo suggestion
         ctx.set_variable(
             "var.configuration_option",
             Value::new(Type::String, ValueData::String("cfg".to_string())),
@@ -6968,8 +6326,6 @@ mod tests {
                 .unwrap_or("")
                 .contains("Did you mean var.configuration_option?")
         );
-
-        // 3. Function typo suggestion
         ctx.set_function(
             "target_function",
             Function::new(
@@ -6996,7 +6352,6 @@ mod tests {
                 .unwrap_or("")
                 .contains("target_function")
         );
-
         let expr_valid_func = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "target_function".into(),
@@ -7007,8 +6362,6 @@ mod tests {
         );
         let (res_valid_fn, _) = Evaluator::new(&ctx).evaluate(&expr_valid_func).unwrap();
         assert_eq!(*res_valid_fn.data, ValueData::Number(1.into()));
-
-        // 4. String addition where left can coerce to number ("123") but right cannot ("abc")
         let expr_str_num_add = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::String("123".to_string(), empty_span())),
@@ -7020,8 +6373,6 @@ mod tests {
             res_str_add,
             Value::new(Type::String, ValueData::String("123abc".to_string()))
         );
-
-        // 5. Logical OR where left is false and right is true
         let expr_or = Expression::BinaryOp(
             BinaryOp::Or,
             Box::new(Expression::Bool(false, empty_span())),
@@ -7030,8 +6381,6 @@ mod tests {
         );
         let (res_or, _) = Evaluator::new(&ctx).evaluate(&expr_or).unwrap();
         assert_eq!(*res_or.data, ValueData::Bool(true));
-
-        // 6. Function with signature and variadic param where args.len() < expected_fixed
         let sig_var = FunctionSignature::with_static_return_type(
             vec![
                 FunctionParamSpec::new("p1", Type::String),
@@ -7061,7 +6410,6 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx_fn).evaluate(&expr_too_few).is_err());
-
         let expr_valid_var = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "fn_var".into(),
@@ -7075,8 +6423,6 @@ mod tests {
         );
         let (res_fn_var, _) = Evaluator::new(&ctx_fn).evaluate(&expr_valid_var).unwrap();
         assert_eq!(*res_fn_var.data, ValueData::String("ok".to_string()));
-
-        // 7. Template with unknown interpolation
         ctx.set_variable("unk_str", Value::unknown(Type::String));
         let expr_template_unk = Expression::Template(
             vec![
@@ -7091,8 +6437,6 @@ mod tests {
         );
         let (res_tpl_unk, _) = Evaluator::new(&ctx).evaluate(&expr_template_unk).unwrap();
         assert!(res_tpl_unk.is_unknown());
-
-        // 8. Built-in special functions try, can, nonsensitive, issensitive
         let expr_try_empty = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "try".into(),
@@ -7102,7 +6446,6 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_try_empty).is_err());
-
         let expr_can_two = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "can".into(),
@@ -7115,7 +6458,6 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_can_two).is_err());
-
         let expr_can_unk = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "can".into(),
@@ -7126,7 +6468,6 @@ mod tests {
         );
         let (res_can_unk, _) = Evaluator::new(&ctx).evaluate(&expr_can_unk).unwrap();
         assert!(res_can_unk.is_unknown());
-
         let expr_nonsens = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "nonsensitive".into(),
@@ -7137,7 +6478,6 @@ mod tests {
         );
         let (res_nonsens, _) = Evaluator::new(&ctx).evaluate(&expr_nonsens).unwrap();
         assert_eq!(*res_nonsens.data, ValueData::String("secret".to_string()));
-
         let expr_issens = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "issensitive".into(),
@@ -7148,8 +6488,6 @@ mod tests {
         );
         let (res_issens, _) = Evaluator::new(&ctx).evaluate(&expr_issens).unwrap();
         assert_eq!(*res_issens.data, ValueData::Bool(false));
-
-        // 9. expand_final edge cases
         let expr_exp_empty = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "min".into(),
@@ -7160,7 +6498,6 @@ mod tests {
         );
         let (res_exp_empty, _) = Evaluator::new(&ctx).evaluate(&expr_exp_empty).unwrap();
         assert!(res_exp_empty.is_unknown());
-
         let expr_exp_unk = Expression::FuncCall(
             Box::new(crate::ast::expr::FuncCall {
                 name: "min".into(),
@@ -7171,8 +6508,6 @@ mod tests {
         );
         let (res_exp_unk, _) = Evaluator::new(&ctx).evaluate(&expr_exp_unk).unwrap();
         assert!(res_exp_unk.is_unknown());
-
-        // 10. Div and Mod by zero
         let expr_div_zero = Expression::BinaryOp(
             BinaryOp::Div,
             Box::new(Expression::Number(1.into(), empty_span())),
@@ -7180,7 +6515,6 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_div_zero).is_err());
-
         let expr_mod_zero = Expression::BinaryOp(
             BinaryOp::Mod,
             Box::new(Expression::Number(1.into(), empty_span())),
@@ -7188,16 +6522,12 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_mod_zero).is_err());
-
-        // 11. push_diagnostic with pre-existing callouts
         let mut eval_diag = Evaluator::new(&ctx);
         let mut pre_diag = Diagnostic::error("existing callouts", "", empty_span());
         pre_diag
             .eval_callouts
             .push(crate::diagnostic::EvalCallout::new(empty_span(), "p", "v"));
         eval_diag.push_diagnostic(pre_diag);
-
-        // 12. Traversal with empty operators
         let expr_empty_trav = Expression::Traversal(
             Box::new(crate::ast::expr::Traversal {
                 expr: Box::new(Expression::Number(1.into(), empty_span())),
@@ -7207,8 +6537,6 @@ mod tests {
         );
         let (res_et, _) = Evaluator::new(&ctx).evaluate(&expr_empty_trav).unwrap();
         assert_eq!(*res_et.data, ValueData::Number(1.into()));
-
-        // 13. Functions with allow_null and Dynamic parameters
         let sig_null = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("p", Type::String).with_allow_null(true)],
             Type::String,
@@ -7239,7 +6567,6 @@ mod tests {
         );
         let (res_null, _) = Evaluator::new(&ctx_null).evaluate(&expr_call_null).unwrap();
         assert_eq!(*res_null.data, ValueData::String("ok".to_string()));
-
         let sig_dyn = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("p", Type::Dynamic)],
             Type::String,
@@ -7270,8 +6597,6 @@ mod tests {
         ctx_null.set_variable("dyn_arg", Value::unknown(Type::Dynamic));
         let (res_dyn, _) = Evaluator::new(&ctx_null).evaluate(&expr_call_dyn).unwrap();
         assert_eq!(*res_dyn.data, ValueData::String("ok".to_string()));
-
-        // 14. Dynamic return type calculation branches
         let sig_calc = FunctionSignature::with_static_return_type(vec![], Type::Dynamic)
             .with_value_return_type(Arc::new(|_| Ok(Type::Dynamic)));
         let fn_calc = Function::new(
@@ -7290,7 +6615,6 @@ mod tests {
         );
         let (res_calc, _) = Evaluator::new(&ctx_null).evaluate(&expr_calc).unwrap();
         assert_eq!(*res_calc.data, ValueData::Number(10.into()));
-
         let sig_calc_err = FunctionSignature::with_static_return_type(vec![], Type::Dynamic)
             .with_value_return_type(Arc::new(|_| Err("failed".to_string())));
         let fn_calc_err = Function::new(
@@ -7309,8 +6633,6 @@ mod tests {
         );
         let (res_calc_err, _) = Evaluator::new(&ctx_null).evaluate(&expr_calc_err).unwrap();
         assert_eq!(*res_calc_err.data, ValueData::Number(10.into()));
-
-        // 15. Non-string on right with string on left in Add
         let expr_str_num_bad = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::String("hello".to_string(), empty_span())),
@@ -7319,16 +6641,12 @@ mod tests {
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_str_num_bad).is_err());
     }
-
     #[test]
     fn test_evaluator_missing_branch_coverage() {
         use crate::ast::expr::Traversal;
         use crate::eval::func::{Function, FunctionParamSpec, FunctionSignature};
         use std::sync::Arc;
-
         let mut ctx = Context::new();
-
-        // 1. Line 576: unknown string + unknown bool in Add
         let ref_alpha = crate::types::refinement::Refinement::new().with_prefix("abc");
         let unk_str_alpha = Value::unknown_refined(Type::String, ref_alpha);
         ctx.set_variable("unk_str", unk_str_alpha);
@@ -7341,8 +6659,6 @@ mod tests {
         );
         let eval_res = Evaluator::new(&ctx).evaluate(&expr_add);
         assert!(eval_res.is_ok());
-
-        // 2. Line 1277: while loop termination on null.*.foo
         ctx.set_variable("null_var", Value::null(Type::Dynamic));
         let splat_trav = Traversal {
             expr: Box::new(Expression::Variable("null_var".into(), empty_span())),
@@ -7354,8 +6670,6 @@ mod tests {
         let expr_trav = Expression::Traversal(Box::new(splat_trav), empty_span());
         let splat_res = Evaluator::new(&ctx).evaluate(&expr_trav);
         assert!(splat_res.is_ok());
-
-        // 3. Line 362: allow_null is true and arg is null
         let sig_allow_null = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("arg", Type::Dynamic).with_allow_null(true)],
             Type::Dynamic,
@@ -7376,8 +6690,6 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_null_arg).is_ok());
-
-        // 4. Line 371: param_type is not Dynamic, and arg is Dynamic
         let sig_typed_param = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("str_arg", Type::String)],
             Type::Dynamic,
@@ -7398,8 +6710,6 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_dyn_arg).is_ok());
-
-        // 5. Line 395: v.ty() == expected_ty (v.ty() != expected_ty is false)
         let sig_match_ret = FunctionSignature::with_static_return_type(vec![], Type::Dynamic)
             .with_value_return_type(Arc::new(|_| Ok(Type::Number)));
         let fn_match_ret = Function::new(
@@ -7417,8 +6727,6 @@ mod tests {
             empty_span(),
         );
         assert!(Evaluator::new(&ctx).evaluate(&expr_match_ret).is_ok());
-
-        // 6. Line 397: v cannot be coerced to expected_ty
         let sig_uncoercible_ret = FunctionSignature::with_static_return_type(vec![], Type::Dynamic)
             .with_value_return_type(Arc::new(|_| Ok(Type::Number)));
         let fn_uncoercible_ret = Function::new(

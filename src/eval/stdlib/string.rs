@@ -1,12 +1,10 @@
 //! String standard library functions.
-
 use crate::eval::func::{Function, FunctionParamSpec, FunctionSignature};
 use crate::types::{Type, Value, ValueData};
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
-
 /// Return all string standard library functions.
 #[must_use]
 pub fn functions() -> Vec<Function> {
@@ -37,7 +35,6 @@ pub fn functions() -> Vec<Function> {
         formatlist_func(),
     ]
 }
-
 fn regex_replace_func() -> Function {
     Function {
         name: "regex_replace".to_string(),
@@ -53,7 +50,6 @@ fn regex_replace_func() -> Function {
             let string = coerce_to_string(&args[0], "regex_replace")?;
             let pattern = coerce_to_string(&args[1], "regex_replace")?;
             let replacement = coerce_to_string(&args[2], "regex_replace")?;
-
             let re = Regex::new(&pattern).map_err(|e| format!("invalid regex pattern: {e}"))?;
             let result = re.replace_all(&string, replacement.as_str()).to_string();
             Ok(Value::new(Type::String, ValueData::String(result)))
@@ -71,7 +67,6 @@ fn regex_replace_func() -> Function {
         ),
     }
 }
-
 fn coerce_to_string(arg: &Value, name: &str) -> Result<String, String> {
     let coerced = arg
         .clone()
@@ -83,7 +78,6 @@ fn coerce_to_string(arg: &Value, name: &str) -> Result<String, String> {
         Err(format!("{name} requires a string"))
     }
 }
-
 fn chomp_func() -> Function {
     Function {
         name: "chomp".to_string(),
@@ -97,7 +91,6 @@ fn chomp_func() -> Function {
             if args[0].is_null() {
                 return Err("chomp cannot be called with null".to_string());
             }
-
             let s = coerce_to_string(&args[0], "chomp")?;
             let mut res = s.clone();
             while res.ends_with('\n') || res.ends_with('\r') {
@@ -108,7 +101,6 @@ fn chomp_func() -> Function {
         signature: None,
     }
 }
-
 fn endswith_func() -> Function {
     Function {
         name: "endswith".to_string(),
@@ -129,7 +121,6 @@ fn endswith_func() -> Function {
         signature: None,
     }
 }
-
 fn startswith_func() -> Function {
     Function {
         name: "startswith".to_string(),
@@ -153,7 +144,6 @@ fn startswith_func() -> Function {
         signature: None,
     }
 }
-
 fn strcontains_func() -> Function {
     Function {
         name: "strcontains".to_string(),
@@ -174,7 +164,6 @@ fn strcontains_func() -> Function {
         signature: None,
     }
 }
-
 fn urlencode(s: &str) -> String {
     let mut out = String::new();
     for byte in s.as_bytes() {
@@ -192,7 +181,6 @@ fn urlencode(s: &str) -> String {
     }
     out
 }
-
 fn urlencode_func() -> Function {
     Function {
         name: "urlencode".to_string(),
@@ -209,7 +197,6 @@ fn urlencode_func() -> Function {
         signature: None,
     }
 }
-
 fn indent_func() -> Function {
     Function {
         name: "indent".to_string(),
@@ -223,7 +210,6 @@ fn indent_func() -> Function {
             if args[0].is_null() || args[1].is_null() {
                 return Err("indent cannot be called with null".to_string());
             }
-
             let spaces_val = args[0]
                 .clone()
                 .coerce(&Type::Number)
@@ -236,18 +222,15 @@ fn indent_func() -> Function {
                 }
                 _ => return Err("indent first argument must be a number".to_string()),
             };
-
             let s = coerce_to_string(&args[1], "indent")?;
             if s.is_empty() {
                 return Ok(Value::new(Type::String, ValueData::String(s)));
             }
-
             let indent_str = " ".repeat(spaces);
             let mut res = String::new();
             let mut is_first = true;
             for line in s.split('\n') {
                 if is_first {
-                    // HCL indent does not indent the first line
                     res.push_str(line);
                     is_first = false;
                 } else {
@@ -263,7 +246,6 @@ fn indent_func() -> Function {
         signature: None,
     }
 }
-
 fn join_func() -> Function {
     Function {
         name: "join".to_string(),
@@ -274,9 +256,7 @@ fn join_func() -> Function {
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
-
             let sep = coerce_to_string(&args[0], "join separator")?;
-
             let mut parts = Vec::new();
             if args[1].ty().is_collection() || args[1].ty().is_structural() {
                 match &*args[1].data {
@@ -285,8 +265,8 @@ fn join_func() -> Function {
                             parts.push(coerce_to_string(item, "join element")?);
                         }
                     }
-                    ValueData::Set(set) => {
-                        for item in set {
+                    ValueData::Set(s) => {
+                        for item in s {
                             parts.push(coerce_to_string(item, "join element")?);
                         }
                     }
@@ -296,7 +276,6 @@ fn join_func() -> Function {
             } else {
                 return Err("join requires a list or set".to_string());
             }
-
             Ok(Value::new(
                 Type::String,
                 ValueData::String(parts.join(&sep)),
@@ -305,7 +284,6 @@ fn join_func() -> Function {
         signature: None,
     }
 }
-
 fn lower_func() -> Function {
     Function {
         name: "lower".to_string(),
@@ -319,7 +297,6 @@ fn lower_func() -> Function {
             if args[0].is_null() {
                 return Err("lower cannot be called with null".to_string());
             }
-
             let s = coerce_to_string(&args[0], "lower")?;
             Ok(Value::new(
                 Type::String,
@@ -329,7 +306,6 @@ fn lower_func() -> Function {
         signature: None,
     }
 }
-
 fn upper_func() -> Function {
     Function {
         name: "upper".to_string(),
@@ -343,7 +319,6 @@ fn upper_func() -> Function {
             if args[0].is_null() {
                 return Err("upper cannot be called with null".to_string());
             }
-
             let s = coerce_to_string(&args[0], "upper")?;
             Ok(Value::new(
                 Type::String,
@@ -353,7 +328,6 @@ fn upper_func() -> Function {
         signature: None,
     }
 }
-
 fn replace_func() -> Function {
     Function {
         name: "replace".to_string(),
@@ -364,19 +338,30 @@ fn replace_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "replace str")?;
             let substr = coerce_to_string(&args[1], "replace substr")?;
             let rep = coerce_to_string(&args[2], "replace replacement")?;
-
-            if substr.starts_with('/') && substr.ends_with('/') && substr.len() >= 2 {
-                let re_str = &substr[1..substr.len() - 1];
-                let re = Regex::new(re_str).map_err(|e| format!("invalid regex: {e}"))?;
-                // HCL regex replace uses $1 instead of , Rust regex uses $1
-                Ok(Value::new(
-                    Type::String,
-                    ValueData::String(re.replace_all(&s, rep.as_str()).to_string()),
-                ))
+            if substr.starts_with('/') {
+                if substr.ends_with('/') {
+                    if substr.len() >= 2 {
+                        let re_str = &substr[1..substr.len() - 1];
+                        let re = Regex::new(re_str).map_err(|e| format!("invalid regex: {e}"))?;
+                        Ok(Value::new(
+                            Type::String,
+                            ValueData::String(re.replace_all(&s, rep.as_str()).to_string()),
+                        ))
+                    } else {
+                        Ok(Value::new(
+                            Type::String,
+                            ValueData::String(s.replace(&substr, &rep)),
+                        ))
+                    }
+                } else {
+                    Ok(Value::new(
+                        Type::String,
+                        ValueData::String(s.replace(&substr, &rep)),
+                    ))
+                }
             } else {
                 Ok(Value::new(
                     Type::String,
@@ -387,7 +372,6 @@ fn replace_func() -> Function {
         signature: None,
     }
 }
-
 fn split_func() -> Function {
     Function {
         name: "split".to_string(),
@@ -398,10 +382,8 @@ fn split_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
-
             let sep = coerce_to_string(&args[0], "split sep")?;
             let s = coerce_to_string(&args[1], "split str")?;
-
             let parts: Vec<Value> = s
                 .split(&sep)
                 .map(|p| Value::new(Type::String, ValueData::String(p.to_string())))
@@ -414,7 +396,6 @@ fn split_func() -> Function {
         signature: None,
     }
 }
-
 fn strrev_func() -> Function {
     Function {
         name: "strrev".to_string(),
@@ -425,7 +406,6 @@ fn strrev_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "strrev")?;
             Ok(Value::new(
                 Type::String,
@@ -435,7 +415,6 @@ fn strrev_func() -> Function {
         signature: None,
     }
 }
-
 /// Computes an updated refined [`Value`] for a `substr` call on an unknown string if possible.
 fn infer_substr_refinement(str_val: &Value, off_val: &Value, len_val: &Value) -> Option<Value> {
     if !str_val.is_unknown() || off_val.is_unknown() || len_val.is_unknown() {
@@ -465,7 +444,6 @@ fn infer_substr_refinement(str_val: &Value, off_val: &Value, len_val: &Value) ->
             return Some(Value::new(Type::String, ValueData::String(res)));
         }
     }
-
     let mut new_r = crate::types::refinement::Refinement::not_null();
     if let Some(p) = r.string_prefix.as_ref().filter(|_| off_u == 0) {
         new_r = new_r.with_prefix(p.clone());
@@ -480,7 +458,6 @@ fn infer_substr_refinement(str_val: &Value, off_val: &Value, len_val: &Value) ->
     }
     Some(Value::unknown_refined(Type::String, new_r))
 }
-
 fn substr_func() -> Function {
     Function {
         name: "substr".to_string(),
@@ -494,7 +471,6 @@ fn substr_func() -> Function {
                 }
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "substr string")?;
             let offset_val = args[1]
                 .clone()
@@ -504,7 +480,6 @@ fn substr_func() -> Function {
                 .clone()
                 .coerce(&Type::Number)
                 .map_err(|_| "substr length must be number".to_string())?;
-
             let mut offset = match *offset_val.data {
                 ValueData::Number(n) => {
                     use bigdecimal::num_traits::ToPrimitive;
@@ -513,7 +488,6 @@ fn substr_func() -> Function {
                 }
                 _ => return Err("substr offset must be number".to_string()),
             };
-
             let length = match *length_val.data {
                 ValueData::Number(n) => {
                     use bigdecimal::num_traits::ToPrimitive;
@@ -522,10 +496,8 @@ fn substr_func() -> Function {
                 }
                 _ => return Err("substr length must be number".to_string()),
             };
-
             let graphemes: Vec<&str> = s.graphemes(true).collect();
             let grapheme_len = graphemes.len() as isize;
-
             if offset < 0 {
                 offset += grapheme_len;
             }
@@ -535,20 +507,17 @@ fn substr_func() -> Function {
             if offset > grapheme_len {
                 offset = grapheme_len;
             }
-
             let end = if length < 0 {
                 grapheme_len
             } else {
                 std::cmp::min(offset + length, grapheme_len)
             };
-
             let res_str: String = graphemes[offset as usize..end as usize].concat();
             Ok(Value::new(Type::String, ValueData::String(res_str)))
         }),
         signature: None,
     }
 }
-
 fn capitalize_func() -> Function {
     Function {
         name: "capitalize".to_string(),
@@ -559,7 +528,6 @@ fn capitalize_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "capitalize")?;
             let mut chars = s.chars();
             let res = match chars.next() {
@@ -576,7 +544,6 @@ fn capitalize_func() -> Function {
         signature: None,
     }
 }
-
 fn title_func() -> Function {
     Function {
         name: "title".to_string(),
@@ -587,7 +554,6 @@ fn title_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "title")?;
             let mut res = String::new();
             let mut capitalize_next = true;
@@ -609,7 +575,6 @@ fn title_func() -> Function {
         signature: None,
     }
 }
-
 fn trim_func() -> Function {
     Function {
         name: "trim".to_string(),
@@ -620,17 +585,14 @@ fn trim_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "trim string")?;
             let cutset = coerce_to_string(&args[1], "trim cutset")?;
-
             let res = s.trim_matches(|c| cutset.contains(c)).to_string();
             Ok(Value::new(Type::String, ValueData::String(res)))
         }),
         signature: None,
     }
 }
-
 fn trimprefix_func() -> Function {
     Function {
         name: "trimprefix".to_string(),
@@ -644,10 +606,8 @@ fn trimprefix_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "trimprefix string")?;
             let prefix = coerce_to_string(&args[1], "trimprefix prefix")?;
-
             let res = if s.starts_with(&prefix) {
                 s[prefix.len()..].to_string()
             } else {
@@ -658,7 +618,6 @@ fn trimprefix_func() -> Function {
         signature: None,
     }
 }
-
 fn trimsuffix_func() -> Function {
     Function {
         name: "trimsuffix".to_string(),
@@ -672,10 +631,8 @@ fn trimsuffix_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "trimsuffix string")?;
             let suffix = coerce_to_string(&args[1], "trimsuffix suffix")?;
-
             let res = if s.ends_with(&suffix) {
                 s[..s.len() - suffix.len()].to_string()
             } else {
@@ -686,7 +643,6 @@ fn trimsuffix_func() -> Function {
         signature: None,
     }
 }
-
 fn trimspace_func() -> Function {
     Function {
         name: "trimspace".to_string(),
@@ -697,7 +653,6 @@ fn trimspace_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
-
             let s = coerce_to_string(&args[0], "trimspace")?;
             Ok(Value::new(
                 Type::String,
@@ -707,7 +662,6 @@ fn trimspace_func() -> Function {
         signature: None,
     }
 }
-
 fn regex_func() -> Function {
     Function {
         name: "regex".to_string(),
@@ -722,24 +676,18 @@ fn regex_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::Dynamic).with_marks(marks));
             }
-
             let re_str = coerce_to_string(&args[0], "regex pattern")?;
             let s = coerce_to_string(&args[1], "regex string")?;
-
             let re = Regex::new(&re_str).map_err(|e| format!("invalid regex: {e}"))?;
-
             let names: Vec<Option<&str>> = re.capture_names().skip(1).collect();
             let has_named = names.iter().any(Option::is_some);
             let has_unnamed = names.iter().any(Option::is_none);
-
             if has_named && has_unnamed {
                 return Err("regex pattern cannot mix named and unnamed capture groups".to_string());
             }
-
             let captures = re
                 .captures(&s)
                 .ok_or_else(|| "no regex match".to_string())?;
-
             if names.is_empty() {
                 let matched_str = captures.get(0).map_or("", |m| m.as_str()).to_string();
                 return Ok(Value::new_with_marks(
@@ -748,7 +696,6 @@ fn regex_func() -> Function {
                     marks,
                 ));
             }
-
             if has_named {
                 let mut obj = BTreeMap::new();
                 let mut obj_types = BTreeMap::new();
@@ -795,7 +742,6 @@ fn regex_func() -> Function {
         signature: None,
     }
 }
-
 fn regexall_func() -> Function {
     Function {
         name: "regexall".to_string(),
@@ -810,22 +756,17 @@ fn regexall_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))).with_marks(marks));
             }
-
             let re_str = coerce_to_string(&args[0], "regexall pattern")?;
             let s = coerce_to_string(&args[1], "regexall string")?;
-
             let re = Regex::new(&re_str).map_err(|e| format!("invalid regex: {e}"))?;
-
             let names: Vec<Option<&str>> = re.capture_names().skip(1).collect();
             let has_named = names.iter().any(Option::is_some);
             let has_unnamed = names.iter().any(Option::is_none);
-
             if has_named && has_unnamed {
                 return Err(
                     "regexall pattern cannot mix named and unnamed capture groups".to_string(),
                 );
             }
-
             let elem_ty = if names.is_empty() {
                 Type::String
             } else if has_named {
@@ -837,7 +778,6 @@ fn regexall_func() -> Function {
             } else {
                 Type::List(Box::new(Type::String))
             };
-
             let mut results = Vec::new();
             for captures in re.captures_iter(&s) {
                 if names.is_empty() {
@@ -879,7 +819,6 @@ fn regexall_func() -> Function {
                     ));
                 }
             }
-
             Ok(Value::new_with_marks(
                 Type::List(Box::new(elem_ty)),
                 ValueData::Array(results),
@@ -889,7 +828,6 @@ fn regexall_func() -> Function {
         signature: None,
     }
 }
-
 fn format_func() -> Function {
     Function {
         name: "format".to_string(),
@@ -901,13 +839,9 @@ fn format_func() -> Function {
                 return Ok(Value::unknown(Type::String));
             }
             let fmt_str = coerce_to_string(&args[0], "format string")?;
-
-            // Basic mock format. Replaces %s, %d, %v sequentially.
-            // Full go-cty format is highly complex (sprintf).
             let mut res = String::new();
             let mut chars = fmt_str.chars().peekable();
             let mut arg_idx = 1;
-
             while let Some(c) = chars.next() {
                 if c == '%' {
                     if let Some(&next_c) = chars.peek() {
@@ -916,26 +850,21 @@ fn format_func() -> Function {
                             chars.next();
                             continue;
                         }
-
-                        // Parse format verb (very simplified)
                         let verb = next_c;
-                        chars.next(); // consume
-
+                        chars.next();
                         if arg_idx >= args.len() {
                             return Err("not enough arguments for format string".to_string());
                         }
                         let val = &args[arg_idx];
                         arg_idx += 1;
-
                         if val.is_unknown() {
                             return Ok(Value::unknown(Type::String));
                         }
-
                         match verb {
                             's' => res.push_str(&coerce_to_string(val, "format %s")?),
                             'd' => res.push_str(&coerce_to_string(val, "format %d")?),
                             'v' => res.push_str(&coerce_to_string(val, "format %v")?),
-                            _ => res.push_str(&coerce_to_string(val, "format arg")?), // fallback
+                            _ => res.push_str(&coerce_to_string(val, "format arg")?),
                         }
                     } else {
                         res.push('%');
@@ -952,7 +881,6 @@ fn format_func() -> Function {
         signature: None,
     }
 }
-
 fn formatlist_func() -> Function {
     Function {
         name: "formatlist".to_string(),
@@ -963,15 +891,10 @@ fn formatlist_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
-
             let _fmt_str = coerce_to_string(&args[0], "formatlist string")?;
-
-            // Simplified formatlist: we expect lists and scalars.
-            // We find the max length among all list arguments.
             let mut max_len = 0;
             let mut list_args: Vec<Option<&[Value]>> = Vec::with_capacity(args.len());
-            list_args.push(None); // for args[0] (format string)
-
+            list_args.push(None);
             let mut has_list = false;
             for arg in &args[1..] {
                 if let ValueData::Array(arr) = &*arg.data {
@@ -982,7 +905,6 @@ fn formatlist_func() -> Function {
                     list_args.push(None);
                 }
             }
-
             let mut results = Vec::new();
             let format_func_ctx = format_func();
             for i in 0..max_len {
@@ -1000,19 +922,13 @@ fn formatlist_func() -> Function {
                         current_args.push(arg.clone());
                     }
                 }
-
                 let val = (format_func_ctx.func)(&current_args)?;
                 results.push(val);
             }
-
-            if max_len == 0 {
-                // If no lists were provided, formatlist returns a list of 1 element.
-                if !has_list {
-                    let val = (format_func_ctx.func)(args)?;
-                    results.push(val);
-                }
+            if max_len == 0 && !has_list {
+                let val = (format_func_ctx.func)(args)?;
+                results.push(val);
             }
-
             Ok(Value::new(
                 Type::List(Box::new(Type::String)),
                 ValueData::Array(results),
@@ -1021,7 +937,6 @@ fn formatlist_func() -> Function {
         signature: None,
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -1032,7 +947,6 @@ mod tests {
         clippy::nursery,
         clippy::collection_is_never_read
     )]
-
     #[test]
     fn test_capitalize_multi_char_uppercase() {
         assert_eq!(
@@ -1043,52 +957,41 @@ mod tests {
             &ValueData::String("SS".to_string())
         );
     }
-
     use super::*;
-
     use crate::number::Number;
     use bigdecimal::BigDecimal;
     use std::str::FromStr;
-
     fn get_func(name: &str) -> Function {
         functions().into_iter().find(|f| f.name == name).unwrap()
     }
-
     fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
         let f = get_func(name);
         (f.func)(args)
     }
-
     fn str_val(s: &str) -> Value {
         Value::new(Type::String, ValueData::String(s.to_string()))
     }
-
     fn num_val(s: &str) -> Value {
         Value::new(
             Type::Number,
             ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
         )
     }
-
     fn unk_val() -> Value {
         Value::unknown(Type::String)
     }
-
     fn null_val() -> Value {
         Value::new(Type::Dynamic, ValueData::Null)
     }
-
     fn list_val(vals: Vec<Value>) -> Value {
         Value::new(Type::List(Box::new(Type::Dynamic)), ValueData::Array(vals))
     }
-
     #[test]
     fn test_coerce_to_string() {
         assert!(coerce_to_string(&str_val("123"), "test").is_ok());
         let unk = Value::unknown(Type::object(std::collections::BTreeMap::new()));
         assert!(coerce_to_string(&unk, "test").is_err());
     }
-
     #[test]
     fn test_chomp() {
         assert_eq!(
@@ -1102,7 +1005,6 @@ mod tests {
         assert!(eval_func("chomp", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("chomp", &[null_val()]).is_err());
     }
-
     #[test]
     fn test_indent() {
         assert_eq!(
@@ -1119,10 +1021,9 @@ mod tests {
                 .is_unknown()
         );
         assert!(eval_func("indent", &[num_val("2"), null_val()]).is_err());
-        assert!(eval_func("indent", &[str_val("bad"), str_val("foo")]).is_err()); // spaces not int
-        assert!(eval_func("indent", &[num_val("2"), str_val("")]).is_ok()); // empty string
+        assert!(eval_func("indent", &[str_val("bad"), str_val("foo")]).is_err());
+        assert!(eval_func("indent", &[num_val("2"), str_val("")]).is_ok());
     }
-
     #[test]
     fn test_join() {
         assert!(
@@ -1133,7 +1034,6 @@ mod tests {
             .is_err()
         );
         assert!(eval_func("join", &[str_val(","), str_val("not a list")]).is_err());
-
         assert_eq!(
             eval_func(
                 "join",
@@ -1144,28 +1044,23 @@ mod tests {
             .as_ref(),
             &ValueData::String("a,b".to_string())
         );
-        // join on tuple instead of list
         let tup = Value::new(
             Type::Tuple(vec![Type::String, Type::String]),
             ValueData::Array(vec![str_val("a"), str_val("b")]),
         );
         assert!(eval_func("join", &[str_val(","), tup]).is_ok());
-
         assert!(eval_func("join", &[]).is_err());
         assert!(
             eval_func("join", &[unk_val(), list_val(vec![])])
                 .unwrap()
                 .is_unknown()
         );
-        assert!(eval_func("join", &[str_val(","), null_val()]).is_err()); // neither tuple nor list
-
-        // join on Set
+        assert!(eval_func("join", &[str_val(","), null_val()]).is_err());
         let mut set = std::collections::BTreeSet::new();
         set.insert(str_val("a"));
         let set_val = Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set));
         assert!(eval_func("join", &[str_val(","), set_val]).is_ok());
     }
-
     #[test]
     fn test_lower_upper() {
         assert_eq!(
@@ -1177,7 +1072,6 @@ mod tests {
         );
         assert!(eval_func("lower", &[]).is_err());
         assert!(eval_func("lower", &[unk_val()]).unwrap().is_unknown());
-
         assert_eq!(
             eval_func("upper", &[str_val("HeLlo")])
                 .unwrap()
@@ -1188,7 +1082,6 @@ mod tests {
         assert!(eval_func("upper", &[]).is_err());
         assert!(eval_func("upper", &[unk_val()]).unwrap().is_unknown());
     }
-
     #[test]
     fn test_replace() {
         assert_eq!(
@@ -1198,7 +1091,6 @@ mod tests {
                 .as_ref(),
             &ValueData::String("hexxo".to_string())
         );
-        // regex replace
         assert_eq!(
             eval_func(
                 "replace",
@@ -1209,22 +1101,20 @@ mod tests {
             .as_ref(),
             &ValueData::String("hexo".to_string())
         );
-        // bad regex replace
         assert!(
             eval_func(
                 "replace",
                 &[str_val("hello"), str_val("/l+/"), str_val("$9")]
             )
             .is_ok()
-        ); // capture group 9 missing but replace succeeds
+        );
         assert!(
             eval_func(
                 "replace",
                 &[str_val("hello"), str_val("/[a-/"), str_val("x")]
             )
             .is_err()
-        ); // regex invalid
-
+        );
         assert!(eval_func("replace", &[]).is_err());
         assert!(
             eval_func("replace", &[unk_val(), str_val("l"), str_val("x")])
@@ -1232,7 +1122,6 @@ mod tests {
                 .is_unknown()
         );
     }
-
     #[test]
     fn test_split() {
         let res = eval_func("split", &[str_val(","), str_val("a,b,c")]).unwrap();
@@ -1240,15 +1129,11 @@ mod tests {
             *res.data,
             ValueData::Array(vec![str_val("a"), str_val("b"), str_val("c")])
         );
-
-        // empty separator
         let res_empty = eval_func("split", &[str_val(""), str_val("abc")]).unwrap();
-        // string.split("") has length 5 in rust: "", "a", "b", "c", "" or similar, let's just assert is_ok
         assert_eq!(
             std::mem::discriminant(&*res_empty.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
-
         assert!(eval_func("split", &[]).is_err());
         assert!(
             eval_func("split", &[unk_val(), str_val("abc")])
@@ -1256,7 +1141,6 @@ mod tests {
                 .is_unknown()
         );
     }
-
     #[test]
     fn test_strrev() {
         assert_eq!(
@@ -1269,7 +1153,6 @@ mod tests {
         assert!(eval_func("strrev", &[]).is_err());
         assert!(eval_func("strrev", &[unk_val()]).unwrap().is_unknown());
     }
-
     #[test]
     fn test_substr() {
         assert_eq!(
@@ -1293,8 +1176,6 @@ mod tests {
                 .as_ref(),
             &ValueData::String("ello".to_string())
         );
-
-        // offset out of bounds
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("10"), num_val("1")])
                 .unwrap()
@@ -1302,8 +1183,6 @@ mod tests {
                 .as_ref(),
             &ValueData::String(String::new())
         );
-
-        // length out of bounds
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("1"), num_val("10")])
                 .unwrap()
@@ -1311,8 +1190,6 @@ mod tests {
                 .as_ref(),
             &ValueData::String("ello".to_string())
         );
-
-        // negative offset larger than len
         assert_eq!(
             eval_func("substr", &[str_val("hello"), num_val("-10"), num_val("2")])
                 .unwrap()
@@ -1320,7 +1197,6 @@ mod tests {
                 .as_ref(),
             &ValueData::String("he".to_string())
         );
-
         assert!(eval_func("substr", &[]).is_err());
         assert!(
             eval_func("substr", &[unk_val(), num_val("1"), num_val("1")])
@@ -1329,7 +1205,6 @@ mod tests {
         );
         assert!(eval_func("substr", &[str_val("hello"), str_val("bad"), num_val("1")]).is_err());
     }
-
     #[test]
     fn test_title() {
         assert_eq!(
@@ -1342,7 +1217,6 @@ mod tests {
         assert!(eval_func("title", &[]).is_err());
         assert!(eval_func("title", &[unk_val()]).unwrap().is_unknown());
     }
-
     #[test]
     fn test_capitalize() {
         assert_eq!(
@@ -1363,7 +1237,6 @@ mod tests {
         assert!(eval_func("capitalize", &[str_val("a"), str_val("b")]).is_err());
         assert!(eval_func("capitalize", &[unk_val()]).unwrap().is_unknown());
     }
-
     #[test]
     fn test_trim_functions() {
         assert_eq!(
@@ -1379,7 +1252,6 @@ mod tests {
                 .unwrap()
                 .is_unknown()
         );
-
         assert_eq!(
             eval_func("trimprefix", &[str_val("!hello!"), str_val("!")])
                 .unwrap()
@@ -1393,7 +1265,6 @@ mod tests {
                 .unwrap()
                 .is_unknown()
         );
-
         assert_eq!(
             eval_func("trimsuffix", &[str_val("!hello!"), str_val("!")])
                 .unwrap()
@@ -1407,7 +1278,6 @@ mod tests {
                 .unwrap()
                 .is_unknown()
         );
-
         assert_eq!(
             eval_func("trimspace", &[str_val("  hello  ")])
                 .unwrap()
@@ -1418,10 +1288,8 @@ mod tests {
         assert!(eval_func("trimspace", &[]).is_err());
         assert!(eval_func("trimspace", &[unk_val()]).unwrap().is_unknown());
     }
-
     #[test]
     fn test_regex() {
-        // no capture groups
         assert_eq!(
             eval_func("regex", &[str_val("a+"), str_val("aa")])
                 .unwrap()
@@ -1429,25 +1297,16 @@ mod tests {
                 .as_ref(),
             &ValueData::String("aa".to_string())
         );
-        // optional empty capture group
         assert!(eval_func("regex", &[str_val("(a+)(b*)"), str_val("aa")]).is_ok());
-
         assert!(eval_func("regex", &[str_val("^(a+)(b+)$"), str_val("aabb")]).is_ok());
-
-        // No match
         assert!(eval_func("regex", &[str_val("x"), str_val("aabb")]).is_err());
-
-        // Invalid regex
         assert!(eval_func("regex", &[str_val("[x"), str_val("aabb")]).is_err());
-
         assert!(eval_func("regex", &[]).is_err());
         assert!(
             eval_func("regex", &[unk_val(), str_val("aabb")])
                 .unwrap()
                 .is_unknown()
         );
-
-        // Named capture groups with unmatched optional group (lines 731-733)
         let res_opt = eval_func(
             "regex",
             &[
@@ -1460,15 +1319,12 @@ mod tests {
         expected_map.insert("first".to_string(), str_val("hello"));
         expected_map.insert("second".to_string(), Value::null(Type::String));
         assert_eq!(*res_opt.data, ValueData::Object(expected_map));
-
-        // regex_replace wrong arg length and unknown arg (lines 44, 48)
         assert!(eval_func("regex_replace", &[]).is_err());
         assert!(
             eval_func("regex_replace", &[unk_val(), str_val("a"), str_val("b")])
                 .unwrap()
                 .is_unknown()
         );
-
         let non_str = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         assert!(
             eval_func(
@@ -1498,8 +1354,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(res_replace.to_string(), "\"hello rust\"");
-
-        // Mixed named and unnamed capture groups error
         assert!(
             eval_func(
                 "regex",
@@ -1508,10 +1362,8 @@ mod tests {
             .is_err()
         );
     }
-
     #[test]
     fn test_regexall() {
-        // Mixed named and unnamed capture groups error
         assert!(
             eval_func(
                 "regexall",
@@ -1519,21 +1371,16 @@ mod tests {
             )
             .is_err()
         );
-
         let res = eval_func("regexall", &[str_val("a+"), str_val("aabb aa")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
-
-        // capture groups
         let res_cap = eval_func("regexall", &[str_val("(a+)(b*)"), str_val("aabb aa")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res_cap.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
-
-        // Named capture groups with unmatched optional group (lines 826-828)
         let res_all_opt = eval_func(
             "regexall",
             &[
@@ -1557,14 +1404,9 @@ mod tests {
             Value::new(elem_ty, ValueData::Object(m2)),
         ];
         assert_eq!(*res_all_opt.data, ValueData::Array(expected_arr));
-
-        // No match
         let res_no = eval_func("regexall", &[str_val("x"), str_val("aabb")]).unwrap();
         assert_eq!(*res_no.data, ValueData::Array(vec![]));
-
-        // Invalid regex
         assert!(eval_func("regexall", &[str_val("[x"), str_val("aabb")]).is_err());
-
         assert!(eval_func("regexall", &[]).is_err());
         assert!(
             eval_func("regexall", &[unk_val(), str_val("aabb")])
@@ -1572,7 +1414,6 @@ mod tests {
                 .is_unknown()
         );
     }
-
     #[test]
     fn test_format() {
         assert_eq!(
@@ -1585,15 +1426,11 @@ mod tests {
             .as_ref(),
             &ValueData::String("hello world 123".to_string())
         );
-        // sprintf crate might not support %.1f same way for bigdecimal.
-        // We just ensure we cover the code paths.
         assert!(eval_func("format", &[str_val("%s"), num_val("1.23")]).is_ok());
-        // %%
         assert_eq!(
             eval_func("format", &[str_val("%%")]).unwrap().data.as_ref(),
             &ValueData::String("%".to_string())
         );
-        // %v and trailing %
         assert_eq!(
             eval_func("format", &[str_val("%v %"), str_val("val")])
                 .unwrap()
@@ -1601,18 +1438,14 @@ mod tests {
                 .as_ref(),
             &ValueData::String("val %".to_string())
         );
-        // too few args
         assert!(eval_func("format", &[str_val("%s %s"), str_val("a")]).is_err());
-        // unknown arg
         assert!(
             eval_func("format", &[str_val("%s"), unk_val()])
                 .unwrap()
                 .is_unknown()
         );
-
         assert!(eval_func("format", &[]).is_err());
         assert!(eval_func("format", &[str_val("%s %s"), str_val("a")]).is_err());
-
         assert!(
             eval_func("format", &[unk_val(), str_val("a")])
                 .unwrap()
@@ -1624,10 +1457,8 @@ mod tests {
                 .is_unknown()
         );
     }
-
     #[test]
     fn test_formatlist() {
-        // scalar mixed with list
         assert!(
             eval_func(
                 "formatlist",
@@ -1635,7 +1466,6 @@ mod tests {
             )
             .is_ok()
         );
-
         let res = eval_func(
             "formatlist",
             &[
@@ -1651,7 +1481,6 @@ mod tests {
                 Value::new(Type::String, ValueData::String("hello b".to_string())),
             ])
         );
-
         let res2 = eval_func("formatlist", &[str_val("hello %s"), str_val("a")]).unwrap();
         assert_eq!(
             *res2.data,
@@ -1660,13 +1489,9 @@ mod tests {
                 ValueData::String("hello a".to_string())
             ),])
         );
-
         let res_empty = eval_func("formatlist", &[str_val("hello %s"), list_val(vec![])]).unwrap();
         assert_eq!(*res_empty.data, ValueData::Array(vec![]));
-
         assert!(eval_func("formatlist", &[]).is_err());
-
-        // mismatched list lengths
         assert!(
             eval_func(
                 "formatlist",
@@ -1684,17 +1509,12 @@ mod tests {
                 .is_unknown()
         );
     }
-
     #[test]
     fn test_string_coverage_comprehensive() {
         let non_val = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         let null_str = Value::new(Type::String, ValueData::Null);
-
-        // 1. coerce_to_string error with non-string and null string
         assert!(eval_func("chomp", std::slice::from_ref(&non_val)).is_err());
         assert!(eval_func("chomp", std::slice::from_ref(&null_str)).is_err());
-
-        // 2. chomp with unknown, null, and carriage return
         assert!(eval_func("chomp", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("chomp", &[null_val()]).is_err());
         assert_eq!(
@@ -1705,8 +1525,6 @@ mod tests {
             *eval_func("chomp", &[str_val("hello\r")]).unwrap().data,
             ValueData::String("hello".to_string())
         );
-
-        // 3. indent error and unknown paths
         assert!(
             eval_func("indent", &[num_val("2"), unk_val()])
                 .unwrap()
@@ -1730,8 +1548,6 @@ mod tests {
                 .data,
             ValueData::String("a\n\n  b".to_string())
         );
-
-        // 4. join errors and unknown paths
         assert!(
             eval_func("join", &[str_val(","), unk_val()])
                 .unwrap()
@@ -1746,12 +1562,8 @@ mod tests {
             ValueData::Object(std::collections::BTreeMap::new()),
         );
         assert!(eval_func("join", &[str_val(","), obj_struct]).is_err());
-
-        // 5. lower and upper null errors
         assert!(eval_func("lower", &[null_val()]).is_err());
         assert!(eval_func("upper", &[null_val()]).is_err());
-
-        // 6. substr unknowns, large numbers, dynamic errors, and arg coercion errors
         assert!(
             eval_func("substr", &[str_val("hello"), num_val("0"), unk_val()])
                 .unwrap()
@@ -1800,8 +1612,6 @@ mod tests {
         );
         assert!(eval_func("substr", &[str_val("hello"), non_val.clone(), num_val("2")]).is_err());
         assert!(eval_func("substr", &[str_val("hello"), num_val("0"), non_val.clone()]).is_err());
-
-        // 7. trimprefix and trimsuffix when pattern does not match, and replace pattern edge cases
         assert_eq!(
             *eval_func("trimprefix", &[str_val("hello"), str_val("xyz")])
                 .unwrap()
@@ -1829,8 +1639,6 @@ mod tests {
                 .data,
             ValueData::String("hello".to_string())
         );
-
-        // 8. regex and regexall optional capture groups returning null
         let res_re = eval_func("regex", &[str_val("(a)|(b)"), str_val("a")]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*res_re.data),
@@ -1841,8 +1649,6 @@ mod tests {
             std::mem::discriminant(&*res_reall.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
-
-        // 9. format extra paths: fallback format verb and too many arguments
         assert_eq!(
             *eval_func("format", &[str_val("hex: %x"), num_val("10")])
                 .unwrap()
@@ -1856,8 +1662,6 @@ mod tests {
             )
             .is_err()
         );
-
-        // 10. formatlist mismatched lengths and scalar error propagation
         assert!(
             eval_func(
                 "formatlist",
@@ -1870,8 +1674,6 @@ mod tests {
             .is_err()
         );
         assert!(eval_func("formatlist", &[str_val("%s %s"), str_val("only_one")]).is_err());
-
-        // 11. urlencode, startswith, endswith, strcontains
         assert_eq!(
             *eval_func("urlencode", &[str_val("hello world/foo?bar=1&baz=2")])
                 .unwrap()
@@ -1880,7 +1682,6 @@ mod tests {
         );
         assert!(eval_func("urlencode", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("urlencode", &[]).is_err());
-
         assert_eq!(
             *eval_func("startswith", &[str_val("hello world"), str_val("hello")])
                 .unwrap()
@@ -1899,7 +1700,6 @@ mod tests {
                 .is_unknown()
         );
         assert!(eval_func("startswith", &[str_val("s")]).is_err());
-
         assert_eq!(
             *eval_func("endswith", &[str_val("hello world"), str_val("world")])
                 .unwrap()
@@ -1918,7 +1718,6 @@ mod tests {
                 .is_unknown()
         );
         assert!(eval_func("endswith", &[str_val("s")]).is_err());
-
         assert_eq!(
             *eval_func("strcontains", &[str_val("hello world"), str_val("lo wo")])
                 .unwrap()
@@ -1938,23 +1737,17 @@ mod tests {
         );
         assert!(eval_func("strcontains", &[str_val("s")]).is_err());
     }
-
     #[test]
     fn test_string_functions_coercion_error_paths() {
         let non_str = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
-
         assert!(eval_func("endswith", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("endswith", &[str_val("a"), non_str.clone()]).is_err());
-
         assert!(eval_func("startswith", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("startswith", &[str_val("a"), non_str.clone()]).is_err());
-
         assert!(eval_func("strcontains", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("strcontains", &[str_val("a"), non_str.clone()]).is_err());
-
         assert!(eval_func("chomp", std::slice::from_ref(&non_str)).is_err());
         assert!(eval_func("indent", &[num_val("2"), non_str.clone()]).is_err());
-
         assert!(eval_func("join", &[non_str.clone(), list_val(vec![str_val("a")])]).is_err());
         assert!(eval_func("join", &[str_val(","), num_val("42")]).is_err());
         assert!(eval_func("join", &[str_val(","), list_val(vec![non_str.clone()])]).is_err());
@@ -1963,44 +1756,32 @@ mod tests {
             ValueData::Set(std::collections::BTreeSet::from([non_str.clone()])),
         );
         assert!(eval_func("join", &[str_val(","), set_with_non_str]).is_err());
-
         assert!(eval_func("lower", std::slice::from_ref(&non_str)).is_err());
         assert!(eval_func("upper", std::slice::from_ref(&non_str)).is_err());
-
         assert!(eval_func("replace", &[non_str.clone(), str_val("a"), str_val("b")]).is_err());
         assert!(eval_func("replace", &[str_val("s"), non_str.clone(), str_val("b")]).is_err());
         assert!(eval_func("replace", &[str_val("s"), str_val("a"), non_str.clone()]).is_err());
-
         assert!(eval_func("split", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("split", &[str_val("s"), non_str.clone()]).is_err());
-
         assert!(eval_func("strrev", std::slice::from_ref(&non_str)).is_err());
         assert!(eval_func("title", std::slice::from_ref(&non_str)).is_err());
         assert!(eval_func("trimspace", std::slice::from_ref(&non_str)).is_err());
-
         assert!(eval_func("trim", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("trim", &[str_val("s"), non_str.clone()]).is_err());
-
         assert!(eval_func("trimprefix", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("trimprefix", &[str_val("s"), non_str.clone()]).is_err());
-
         assert!(eval_func("trimsuffix", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("trimsuffix", &[str_val("s"), non_str.clone()]).is_err());
-
         assert!(eval_func("regex", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("regex", &[str_val("a"), non_str.clone()]).is_err());
-
         assert!(eval_func("regexall", &[non_str.clone(), str_val("a")]).is_err());
         assert!(eval_func("regexall", &[str_val("a"), non_str.clone()]).is_err());
-
         assert!(eval_func("urlencode", std::slice::from_ref(&non_str)).is_err());
-
         assert!(eval_func("format", std::slice::from_ref(&non_str)).is_err());
         assert!(eval_func("format", &[str_val("%s"), non_str.clone()]).is_err());
         assert!(eval_func("format", &[str_val("%d"), non_str.clone()]).is_err());
         assert!(eval_func("format", &[str_val("%v"), non_str.clone()]).is_err());
         assert!(eval_func("format", &[str_val("%z"), non_str.clone()]).is_err());
-
         assert!(eval_func("formatlist", std::slice::from_ref(&non_str)).is_err());
         assert!(
             eval_func(
@@ -2009,54 +1790,39 @@ mod tests {
             )
             .is_err()
         );
-
         assert!(eval_func("substr", &[non_str.clone(), num_val("0"), num_val("1")]).is_err());
         assert!(eval_func("substr", &[str_val("s"), non_str.clone(), num_val("1")]).is_err());
         assert!(eval_func("substr", &[str_val("s"), num_val("0"), non_str]).is_err());
     }
-
     #[test]
     fn test_substr_refinement_coverage() {
         use crate::types::refinement::Refinement;
-
-        // Prefix longer than offset + len
         let r_prefix = Refinement::not_null().with_prefix("hello_world");
         let unk_prefix = Value::unknown_refined(Type::String, r_prefix);
         let res1 = eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("5")]).unwrap();
         assert_eq!(*res1.data, ValueData::String("hello".to_string()));
-
-        // Prefix shorter than offset + len, offset == 0
         let res2 = eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("20")]).unwrap();
         assert!(res2.is_unknown());
-
-        // Prefix with offset > 0
         let res3 = eval_func("substr", &[unk_prefix.clone(), num_val("6"), num_val("5")]).unwrap();
         assert_eq!(*res3.data, ValueData::String("world".to_string()));
-
-        // Negative offset or negative len
         let res_neg_off =
             eval_func("substr", &[unk_prefix.clone(), num_val("-1"), num_val("5")]).unwrap();
         assert!(res_neg_off.is_unknown());
         let res_neg_len =
             eval_func("substr", &[unk_prefix.clone(), num_val("0"), num_val("-1")]).unwrap();
         assert!(res_neg_len.is_unknown());
-
-        // Length min and max refinements
         let mut r_min_max = Refinement::not_null();
         r_min_max.string_length_min = Some(10);
         r_min_max.string_length_max = Some(20);
         let unk_min_max = Value::unknown_refined(Type::String, r_min_max);
         let res_min_max = eval_func("substr", &[unk_min_max, num_val("2"), num_val("5")]).unwrap();
         assert!(res_min_max.is_unknown());
-
         let mut r_min_small = Refinement::not_null();
         r_min_small.string_length_min = Some(1);
         let unk_min_small = Value::unknown_refined(Type::String, r_min_small);
         let res_min_small =
             eval_func("substr", &[unk_min_small, num_val("5"), num_val("3")]).unwrap();
         assert!(res_min_small.is_unknown());
-
-        // Uncoercible off_val and len_val
         let non_str = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         assert!(
             eval_func(
@@ -2071,8 +1837,6 @@ mod tests {
                 .unwrap()
                 .is_unknown()
         );
-
-        // Out-of-bounds isize numbers
         assert!(
             eval_func(
                 "substr",
@@ -2089,15 +1853,11 @@ mod tests {
             .unwrap()
             .is_unknown()
         );
-
-        // Unrefined unknown
         assert!(
             eval_func("substr", &[unk_val(), num_val("0"), num_val("5")])
                 .unwrap()
                 .is_unknown()
         );
-
-        // Known string with unknown offset / length
         assert!(
             eval_func("substr", &[str_val("hello"), unk_val(), num_val("5")])
                 .unwrap()
@@ -2108,8 +1868,6 @@ mod tests {
                 .unwrap()
                 .is_unknown()
         );
-
-        // Corrupted value with Type::Number but non-Number data
         let corrupted_num = Value::new(Type::Number, ValueData::Bool(true));
         assert!(
             eval_func(
@@ -2125,19 +1883,13 @@ mod tests {
                 .is_unknown()
         );
     }
-
     /// Tests edge cases and uncovered branches across string helper functions.
     #[test]
     fn test_string_branch_coverage_gaps() {
-        // upper branch coverage
         assert!(eval_func("upper", &[]).is_err());
         assert!(eval_func("upper", &[unk_val()]).unwrap().is_unknown());
         assert!(eval_func("upper", &[null_val()]).is_err());
-
-        // coerce_to_string on unknown value
         assert!(coerce_to_string(&Value::unknown(Type::String), "test").is_err());
-
-        // endswith, startswith, strcontains with known first arg and unknown second arg
         assert!(
             eval_func("endswith", &[str_val("abc"), unk_val()])
                 .unwrap()
@@ -2153,11 +1905,7 @@ mod tests {
                 .unwrap()
                 .is_unknown()
         );
-
-        // urlencode characters `-`, `_`, `.`, `~`
         assert_eq!(urlencode("a-b_c.d~e"), "a-b_c.d~e");
-
-        // infer_substr_refinement with unknown offset or length
         assert!(
             eval_func("substr", &[unk_val(), unk_val(), num_val("5")])
                 .unwrap()

@@ -1,7 +1,6 @@
 //! The core HCL-RS crate.
 //!
 //! Provides parsing, evaluation, and serialization of the `HashiCorp` Configuration Language.
-
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::derive_partial_eq_without_eq)]
 #![allow(clippy::equatable_if_let)]
@@ -22,12 +21,10 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::iter_on_single_items)]
-#![allow(clippy::coerce_container_to_any)]
 #![allow(clippy::trivial_regex)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::assert_is_empty)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
@@ -37,7 +34,6 @@
 #![allow(clippy::items_after_statements)]
 #![deny(missing_docs)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 pub mod analysis;
 pub mod api;
 pub mod ast;

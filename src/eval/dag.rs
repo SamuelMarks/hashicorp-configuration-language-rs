@@ -3,7 +3,6 @@
 //! Resolves interdependent `variable` default values, CLI overrides, and `locals`
 //! definitions in deterministic topological dependency order, detecting circular
 //! dependency cycles and evaluating variable validation blocks.
-
 use crate::ast::deps::{DependencyGraph, extract_static_references};
 use crate::ast::expr::Expression;
 use crate::ast::structure::{Body, ValidationBlock};
@@ -14,7 +13,6 @@ use crate::eval::validation::{evaluate_postcondition, evaluate_precondition};
 use crate::span::Span;
 use crate::types::Value;
 use std::collections::HashMap;
-
 /// Metadata for a declared variable.
 #[derive(Debug, Clone)]
 struct VarDeclaration {
@@ -23,28 +21,24 @@ struct VarDeclaration {
     /// Validation blocks associated with this variable.
     validations: Vec<ValidationBlock>,
 }
-
 /// Metadata for a declared local value.
 #[derive(Debug, Clone)]
 struct LocalDeclaration {
     /// Expression computing the local value.
     expr: Expression,
 }
-
 /// Topological DAG dependency resolver for configuration definitions.
 #[derive(Debug, Default, Clone)]
 pub struct DagResolver {
     /// Explicit variable overrides (e.g. from CLI `-var` or `-var-file`).
     pub var_overrides: HashMap<String, Value>,
 }
-
 impl DagResolver {
     /// Creates a new `DagResolver` with no initial overrides.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Sets explicit variable overrides.
     ///
     /// # Arguments
@@ -54,7 +48,6 @@ impl DagResolver {
         self.var_overrides = overrides;
         self
     }
-
     /// Resolves all `variable` and `locals` declarations from `body` into `ctx`.
     ///
     /// Performs static dependency analysis, builds a directed acyclic graph (DAG),
@@ -72,8 +65,6 @@ impl DagResolver {
         let mut var_decls: HashMap<String, VarDeclaration> = HashMap::new();
         let mut local_decls: HashMap<String, LocalDeclaration> = HashMap::new();
         let mut node_spans: HashMap<String, Span> = HashMap::new();
-
-        // 1. Collect variable blocks
         for block in &body.blocks {
             if block.block_type == "variable" {
                 if let Some(var_name) = block.labels.first() {
@@ -102,39 +93,31 @@ impl DagResolver {
                 }
             }
         }
-
-        // 2. Build Dependency Graph
         let mut dag = DependencyGraph::new();
-
-        // Add all nodes
         for var_name in var_decls.keys() {
             dag.add_node(format!("var.{var_name}"));
         }
         for local_name in local_decls.keys() {
             dag.add_node(format!("local.{local_name}"));
         }
-
-        // Add edges for variables
         for (var_name, decl) in &var_decls {
             let from_node = format!("var.{var_name}");
-            if !self.var_overrides.contains_key(var_name)
-                && let Some(ref expr) = decl.default_expr
-            {
-                let refs = extract_static_references(expr).unwrap_or_default();
-                for r in refs {
-                    let ref_str = r.to_string();
-                    if let Some(dep_var) = ref_str.strip_prefix("var.") {
-                        let dep_name = dep_var.split('.').next().unwrap_or(dep_var);
-                        dag.add_edge(&from_node, format!("var.{dep_name}"));
-                    } else if let Some(dep_local) = ref_str.strip_prefix("local.") {
-                        let dep_name = dep_local.split('.').next().unwrap_or(dep_local);
-                        dag.add_edge(&from_node, format!("local.{dep_name}"));
+            if !self.var_overrides.contains_key(var_name) {
+                if let Some(ref expr) = decl.default_expr {
+                    let refs = extract_static_references(expr).unwrap_or_default();
+                    for r in refs {
+                        let ref_str = r.to_string();
+                        if let Some(dep_var) = ref_str.strip_prefix("var.") {
+                            let dep_name = dep_var.split('.').next().unwrap_or(dep_var);
+                            dag.add_edge(&from_node, format!("var.{dep_name}"));
+                        } else if let Some(dep_local) = ref_str.strip_prefix("local.") {
+                            let dep_name = dep_local.split('.').next().unwrap_or(dep_local);
+                            dag.add_edge(&from_node, format!("local.{dep_name}"));
+                        }
                     }
                 }
             }
         }
-
-        // Add edges for locals
         for (local_name, decl) in &local_decls {
             let from_node = format!("local.{local_name}");
             let refs = extract_static_references(&decl.expr).unwrap_or_default();
@@ -149,8 +132,6 @@ impl DagResolver {
                 }
             }
         }
-
-        // 3. Topological Sort with Cycle Detection
         let Ok(sorted_nodes) = dag.topological_sort() else {
             let cycle = dag.detect_cycles().unwrap_or_default();
             let cycle_path = cycle.join(" -> ");
@@ -159,7 +140,6 @@ impl DagResolver {
                 .and_then(|node| node_spans.get(node))
                 .cloned()
                 .unwrap_or(Span::new(0, 0, 1, 1, 1, 1));
-
             let mut diags = Diagnostics::new();
             diags.push(
                 Diagnostic::error(
@@ -173,10 +153,7 @@ impl DagResolver {
             );
             return Err(diags);
         };
-
         let mut diags = Diagnostics::new();
-
-        // 4. Evaluate in Topological Order
         for node in sorted_nodes {
             if let Some(var_name) = node.strip_prefix("var.") {
                 if let Some(decl) = var_decls.get(var_name) {
@@ -198,11 +175,7 @@ impl DagResolver {
                     } else {
                         Value::unknown(crate::types::Type::Dynamic)
                     };
-
-                    // Populate var.<name> into context before validation
                     ctx.set_var(var_name, evaluated_val);
-
-                    // Evaluate validation blocks
                     for val_block in &decl.validations {
                         let eval = Evaluator::new(ctx);
                         match eval.evaluate(&val_block.condition) {
@@ -222,7 +195,6 @@ impl DagResolver {
                                                 "Variable validation assertion failed".to_string()
                                             }
                                         };
-
                                     diags.push(
                                         Diagnostic::error(
                                             format!("Validation failed for variable '{var_name}'"),
@@ -255,20 +227,16 @@ impl DagResolver {
                 }
             }
         }
-
-        // 5. Precondition and Postcondition evaluation
         for pre in &body.preconditions {
             if let Err(pre_diags) = evaluate_precondition(pre, ctx) {
                 diags.extend(pre_diags);
             }
         }
-
         for post in &body.postconditions {
             if let Err(post_diags) = evaluate_postcondition(post, ctx) {
                 diags.extend(post_diags);
             }
         }
-
         if diags.has_errors() {
             Err(diags)
         } else {
@@ -276,7 +244,6 @@ impl DagResolver {
         }
     }
 }
-
 /// Convenience function to resolve `variable` and `locals` definitions from `body` into `ctx`.
 ///
 /// # Arguments
@@ -288,7 +255,6 @@ impl DagResolver {
 pub fn resolve_definitions(body: &Body, ctx: &mut Context<'_>) -> Result<(), Diagnostics> {
     DagResolver::new().resolve(body, ctx)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -298,10 +264,8 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::api::parse;
-
     #[test]
     fn test_dag_resolver_acyclic_and_overrides() {
         let src = r#"
@@ -331,21 +295,14 @@ mod tests {
                 default = "${local.name_prefix}.internal"
             }
         "#;
-
         let body = parse(src).unwrap();
         let mut ctx = Context::new();
         ctx.stdlib_enabled = true;
-
         resolve_definitions(&body, &mut ctx).unwrap();
-
-        // Check context variables
         let var_obj = ctx.get_variable("var").unwrap();
         let local_obj = ctx.get_variable("local").unwrap();
-
         assert!(var_obj.to_string().contains("us-east-1"));
         assert!(local_obj.to_string().contains("my-cluster-us-east-1"));
-
-        // Test with CLI override
         let mut overrides = HashMap::new();
         overrides.insert(
             "region".to_string(),
@@ -354,18 +311,14 @@ mod tests {
                 crate::types::ValueData::String("eu-west-1".to_string()),
             ),
         );
-
         let mut ctx2 = Context::new();
         ctx2.stdlib_enabled = true;
         DagResolver::new()
             .with_var_overrides(overrides)
             .resolve(&body, &mut ctx2)
             .unwrap();
-
         let local_obj2 = ctx2.get_variable("local").unwrap();
         assert!(local_obj2.to_string().contains("my-cluster-eu-west-1"));
-
-        // Test bad variable default evaluation error
         let bad_src = r#"
             variable "bad_default" {
                 default = 10 / 0
@@ -375,7 +328,6 @@ mod tests {
         let mut bad_ctx = Context::new();
         assert!(resolve_definitions(&bad_body, &mut bad_ctx).is_err());
     }
-
     #[test]
     fn test_dag_resolver_circular_dependency() {
         let src = r"
@@ -384,18 +336,15 @@ mod tests {
                 b = local.a + 1
             }
         ";
-
         let body = parse(src).unwrap();
         let mut ctx = Context::new();
         let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
-
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
         assert!(diag.error.to_string().contains("Circular dependency"));
         assert!(diag.detail.as_deref().unwrap_or("").contains("local.a"));
         assert!(diag.detail.as_deref().unwrap_or("").contains("local.b"));
     }
-
     #[test]
     fn test_dag_resolver_validation_failure() {
         let src = r#"
@@ -407,11 +356,9 @@ mod tests {
                 }
             }
         "#;
-
         let body = parse(src).unwrap();
         let mut ctx = Context::new();
         let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
-
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
         assert!(
@@ -427,7 +374,6 @@ mod tests {
                 .contains("Port must be non-privileged")
         );
     }
-
     #[test]
     fn test_dag_resolver_undefined_and_errors() {
         let src = r#"
@@ -452,16 +398,13 @@ mod tests {
                 error_message = "postcondition failed"
             }
         "#;
-
         let body = parse(src).unwrap();
         let mut ctx = Context::new();
         let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
-
         assert!(errs.has_errors());
         let var_val = ctx.get_variable("var").unwrap();
         assert!(var_val.to_string().contains("no_default"));
     }
-
     #[test]
     fn test_dag_resolver_validation_non_bool_and_msg_error() {
         let src = r#"
@@ -473,20 +416,13 @@ mod tests {
                 }
             }
         "#;
-
         let body = parse(src).unwrap();
         let mut ctx = Context::new();
         let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
         assert!(errs.has_errors());
     }
-
     #[test]
     fn test_dag_resolver_coverage_gaps() {
-        // 1. Blocks that are not variable or locals (e.g. output, resource),
-        //    variable block without labels,
-        //    non-var and non-local references in default and locals,
-        //    subscript/attribute references like var.settings.timeout and local.cfg.mode,
-        //    successful preconditions and postconditions.
         let src = r#"
             output "out1" {
                 value = "hello"
@@ -532,9 +468,7 @@ mod tests {
                 error_message = "should not fail"
             }
         "#;
-
         let mut body = parse(src).unwrap();
-        // Add a variable block with NO labels to hit block.labels.first() == None branch
         body.blocks.push(crate::ast::structure::Block {
             block_type: "variable".to_string(),
             labels: Vec::new(),
@@ -547,14 +481,11 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         });
-
         let mut ctx = Context::new();
         ctx.stdlib_enabled = true;
         ctx.set_path_scopes("/root", "/cwd");
         let res = resolve_definitions(&body, &mut ctx);
         assert!(res.is_ok());
-
-        // 2. Validation block condition evaluation error (e.g. division by zero in condition)
         let cond_err_src = r#"
             variable "validated_err" {
                 default = 5
@@ -568,14 +499,11 @@ mod tests {
         let mut cond_err_ctx = Context::new();
         let cond_err_res = resolve_definitions(&cond_err_body, &mut cond_err_ctx);
         assert!(cond_err_res.is_err());
-
-        // 3. Clone and Debug on DagResolver
         let resolver = DagResolver::new();
         let cloned_resolver = resolver.clone();
         let debug_str = format!("{cloned_resolver:?}");
         assert!(debug_str.contains("DagResolver"));
     }
-
     #[test]
     fn test_dag_resolver_missing_references() {
         let src = r#"

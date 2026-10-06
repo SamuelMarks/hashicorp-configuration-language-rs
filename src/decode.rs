@@ -1,20 +1,16 @@
 //! Decode module.
-
 //! Structural Decoding (`gohcl` Equivalent)
 //!
 //! Provides the `DecodeBody` trait and related functionality for mapping HCL AST nodes
 //! directly into strongly-typed Rust structures.
-
 use crate::ast::structure::Body;
 use crate::diagnostic::{Diagnostic, Diagnostics};
+pub use crate::encode::{EncodeBody, EncodeValue};
 use crate::eval::context::Context;
 use crate::span::Span;
 use crate::types::val::{Value, ValueData};
-use std::collections::HashMap;
-
-pub use crate::encode::{EncodeBody, EncodeValue};
 pub use hcl_macros::{DecodeBody, DecodeValue};
-
+use std::collections::HashMap;
 /// Trait for decoding an HCL Body into a Rust struct.
 pub trait DecodeBody: Sized {
     /// Decode the body into the struct, evaluating expressions using the given context.
@@ -23,7 +19,6 @@ pub trait DecodeBody: Sized {
     /// Returns diagnostics if decoding fails.
     fn decode_body(body: &Body, labels: &[String], ctx: &mut Context) -> Result<Self, Diagnostics>;
 }
-
 impl DecodeBody for Body {
     fn decode_body(
         body: &Body,
@@ -33,7 +28,6 @@ impl DecodeBody for Body {
         Ok(body.clone())
     }
 }
-
 /// Trait for decoding an HCL Expression (resolved to a `Value`) into a Rust type.
 pub trait DecodeValue: Sized {
     /// Decode a value into this Rust type.
@@ -42,56 +36,31 @@ pub trait DecodeValue: Sized {
     /// Returns diagnostics if decoding fails.
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics>;
 }
-
 use bigdecimal::ToPrimitive;
-
 macro_rules! impl_decode_value_int {
     ($($t:ty => $method:ident),*) => {
-        $(
-            impl DecodeValue for $t {
-                fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
-                    if let ValueData::Number(n) = &*value.data {
-                        if let Some(v) = n.0.$method() {
-                            return Ok(v);
-                        }
-                    }
-                    Err(Diagnostics::from(Diagnostic::error(
-                        "Type Mismatch",
-                        format!("Expected number, got {}", value.ty()),
-                        span,
-                    )))
-                }
-            }
-        )*
+        $(impl DecodeValue for $t { fn decode_value(value : & Value, span : Span) ->
+        Result < Self, Diagnostics > { if let ValueData::Number(n) = &* value.data { if
+        let Some(v) = n.0. $method () { return Ok(v); } }
+        Err(Diagnostics::from(Diagnostic::error("Type Mismatch",
+        format!("Expected number, got {}", value.ty()), span,))) } })*
     };
 }
-
 impl_decode_value_int!(
-    i8 => to_i8, i16 => to_i16, i32 => to_i32, i64 => to_i64, i128 => to_i128, isize => to_isize,
-    u8 => to_u8, u16 => to_u16, u32 => to_u32, u64 => to_u64, u128 => to_u128, usize => to_usize
+    i8 => to_i8, i16 => to_i16, i32 => to_i32, i64 => to_i64, i128 => to_i128, isize =>
+    to_isize, u8 => to_u8, u16 => to_u16, u32 => to_u32, u64 => to_u64, u128 => to_u128,
+    usize => to_usize
 );
-
 macro_rules! impl_decode_value_float {
     ($($t:ty => $method:ident),*) => {
-        $(
-            impl DecodeValue for $t {
-                fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
-                    if let ValueData::Number(n) = &*value.data {
-                        return Ok(n.0.$method().unwrap_or_default());
-                    }
-                    Err(Diagnostics::from(Diagnostic::error(
-                        "Type Mismatch",
-                        format!("Expected number, got {}", value.ty()),
-                        span,
-                    )))
-                }
-            }
-        )*
+        $(impl DecodeValue for $t { fn decode_value(value : & Value, span : Span) ->
+        Result < Self, Diagnostics > { if let ValueData::Number(n) = &* value.data {
+        return Ok(n.0. $method ().unwrap_or_default()); }
+        Err(Diagnostics::from(Diagnostic::error("Type Mismatch",
+        format!("Expected number, got {}", value.ty()), span,))) } })*
     };
 }
-
 impl_decode_value_float!(f32 => to_f32, f64 => to_f64);
-
 impl DecodeValue for bool {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         if let ValueData::Bool(b) = &*value.data {
@@ -105,7 +74,6 @@ impl DecodeValue for bool {
         }
     }
 }
-
 impl DecodeValue for String {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         if let ValueData::String(s) = &*value.data {
@@ -119,7 +87,6 @@ impl DecodeValue for String {
         }
     }
 }
-
 impl<T: DecodeValue> DecodeValue for Vec<T> {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         match &*value.data {
@@ -161,7 +128,6 @@ impl<T: DecodeValue> DecodeValue for Vec<T> {
         }
     }
 }
-
 impl<T: DecodeValue, S: std::hash::BuildHasher + Default> DecodeValue for HashMap<String, T, S> {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         match &*value.data {
@@ -190,13 +156,11 @@ impl<T: DecodeValue, S: std::hash::BuildHasher + Default> DecodeValue for HashMa
         }
     }
 }
-
 impl DecodeValue for Value {
     fn decode_value(value: &Value, _span: Span) -> Result<Self, Diagnostics> {
         Ok(value.clone())
     }
 }
-
 impl<T: DecodeValue> DecodeValue for std::collections::BTreeMap<String, T> {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         match &*value.data {
@@ -225,7 +189,6 @@ impl<T: DecodeValue> DecodeValue for std::collections::BTreeMap<String, T> {
         }
     }
 }
-
 impl<T: DecodeValue> DecodeValue for Option<T> {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         if let ValueData::Null = &*value.data {
@@ -237,7 +200,6 @@ impl<T: DecodeValue> DecodeValue for Option<T> {
         }
     }
 }
-
 /// Decodes an HCL [`crate::ast::expr::Expression`] into a strongly-typed Rust value by evaluating
 /// the expression with the provided [`Context`].
 ///
@@ -259,7 +221,6 @@ pub fn decode_expression<T: DecodeValue>(
     })?;
     Ok(res)
 }
-
 /// Decodes an evaluated [`Value`] into a strongly-typed Rust value using context information.
 ///
 /// # Arguments
@@ -276,5 +237,4 @@ pub fn decode_value_with_context<T: DecodeValue>(
 ) -> Result<T, Diagnostics> {
     T::decode_value(val, span)
 }
-
 mod decode_tests;

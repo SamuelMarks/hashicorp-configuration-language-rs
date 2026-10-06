@@ -6,7 +6,6 @@
     clippy::pedantic,
     clippy::nursery
 )]
-
 /// Entry point for `grounding` binary.
 fn main() {
     let mut parser =
@@ -14,12 +13,9 @@ fn main() {
     let body = parser.parse_body();
     println!("Body attributes: {}", body.attributes.len());
 }
-
 #[cfg(test)]
 mod tests {
-
     use super::*;
-
     #[test]
     fn test_main() {
         main();

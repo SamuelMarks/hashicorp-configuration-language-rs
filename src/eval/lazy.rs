@@ -1,5 +1,4 @@
 //! Lazy evaluation of HCL bodies on demand with memoization.
-
 use crate::ast::structure::{Block, Body};
 use crate::diagnostic::Diagnostics;
 use crate::eval::context::Context;
@@ -7,13 +6,10 @@ use crate::eval::evaluator::Evaluator;
 use crate::types::{Type, Value, ValueData};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
-
 /// Result of evaluating an attribute, returning the value and warnings on success, or errors.
 pub type LazyAttrResult = Result<(Value, Diagnostics), Diagnostics>;
-
 /// Internal memoization cache mapping attribute names to their evaluation results.
 type LazyAttrCache = HashMap<String, LazyAttrResult>;
-
 /// A lazy, on-demand evaluator wrapping an unevaluated AST [`Body`] and an evaluation [`Context`].
 ///
 /// Attributes and child blocks are evaluated only when explicitly accessed. Evaluated values are
@@ -24,7 +20,6 @@ pub struct LazyBody<'a> {
     ctx: &'a Context<'a>,
     attr_cache: Mutex<LazyAttrCache>,
 }
-
 impl std::fmt::Debug for LazyBody<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LazyBody")
@@ -32,7 +27,6 @@ impl std::fmt::Debug for LazyBody<'_> {
             .finish_non_exhaustive()
     }
 }
-
 impl<'a> LazyBody<'a> {
     /// Creates a new `LazyBody` wrapping the provided AST [`Body`] and [`Context`].
     ///
@@ -50,7 +44,6 @@ impl<'a> LazyBody<'a> {
             attr_cache: Mutex::new(HashMap::new()),
         }
     }
-
     /// Helper to safely acquire the cache mutex lock even if poisoned.
     fn lock_cache(&self) -> std::sync::MutexGuard<'_, LazyAttrCache> {
         match self.attr_cache.lock() {
@@ -58,7 +51,6 @@ impl<'a> LazyBody<'a> {
             Err(poisoned) => poisoned.into_inner(),
         }
     }
-
     /// Returns a reference to the wrapped AST [`Body`].
     ///
     /// # Returns
@@ -67,7 +59,6 @@ impl<'a> LazyBody<'a> {
     pub fn body(&self) -> &'a Body {
         self.body
     }
-
     /// Returns a reference to the evaluation [`Context`].
     ///
     /// # Returns
@@ -76,7 +67,6 @@ impl<'a> LazyBody<'a> {
     pub fn context(&self) -> &'a Context<'a> {
         self.ctx
     }
-
     /// Checks if an attribute with the given name exists in the body without evaluating it.
     ///
     /// # Arguments
@@ -88,7 +78,6 @@ impl<'a> LazyBody<'a> {
     pub fn has_attribute(&self, name: &str) -> bool {
         self.body.attributes.contains_key(name)
     }
-
     /// Returns the names of all attributes declared in the body without evaluating them.
     ///
     /// # Returns
@@ -97,7 +86,6 @@ impl<'a> LazyBody<'a> {
     pub fn attribute_names(&self) -> Vec<&str> {
         self.body.attributes.keys().map(String::as_str).collect()
     }
-
     /// Checks whether an attribute has already been evaluated and cached.
     ///
     /// # Arguments
@@ -110,7 +98,6 @@ impl<'a> LazyBody<'a> {
         let cache = self.lock_cache();
         cache.contains_key(name)
     }
-
     /// Returns the count of currently memoized evaluated attributes.
     ///
     /// # Returns
@@ -120,13 +107,11 @@ impl<'a> LazyBody<'a> {
         let cache = self.lock_cache();
         cache.len()
     }
-
     /// Clears the memoized evaluation cache.
     pub fn clear_cache(&self) {
         let mut cache = self.lock_cache();
         cache.clear();
     }
-
     /// Evaluates a single attribute AST node on-demand, checking and updating the cache.
     ///
     /// # Arguments
@@ -146,15 +131,12 @@ impl<'a> LazyBody<'a> {
                 return cached.clone();
             }
         }
-
         let eval = Evaluator::new(self.ctx);
         let res = eval.evaluate(&attr.expr);
-
         let mut cache = self.lock_cache();
         cache.insert(name.to_string(), res.clone());
         res
     }
-
     /// Evaluates a single attribute on-demand by name.
     ///
     /// If the attribute was already evaluated, the memoized result is returned without re-evaluating.
@@ -170,7 +152,6 @@ impl<'a> LazyBody<'a> {
         let attr = self.body.attributes.get(name)?;
         Some(self.evaluate_attribute_internal(name, attr))
     }
-
     /// Evaluates all attributes declared in the body and stores them in the cache.
     ///
     /// # Returns
@@ -182,7 +163,6 @@ impl<'a> LazyBody<'a> {
         }
         results
     }
-
     /// Evaluates all attributes into an HCL Object [`Value`].
     ///
     /// # Returns
@@ -193,7 +173,6 @@ impl<'a> LazyBody<'a> {
     pub fn to_object_value(&self) -> Result<(Value, Diagnostics), Diagnostics> {
         let mut map = BTreeMap::new();
         let mut all_diags = Diagnostics::new();
-
         for (name, attr) in &self.body.attributes {
             match self.evaluate_attribute_internal(name, attr) {
                 Ok((val, diags)) => {
@@ -207,13 +186,11 @@ impl<'a> LazyBody<'a> {
                 }
             }
         }
-
         Ok((
             Value::new(Type::object(BTreeMap::new()), ValueData::Object(map)),
             all_diags,
         ))
     }
-
     /// Returns a slice of all AST [`Block`] items contained in this body.
     ///
     /// # Returns
@@ -222,7 +199,6 @@ impl<'a> LazyBody<'a> {
     pub fn blocks(&self) -> &'a [Block] {
         &self.body.blocks
     }
-
     /// Returns lazy child body wrappers for all blocks matching the specified block type.
     ///
     /// # Arguments
@@ -239,7 +215,6 @@ impl<'a> LazyBody<'a> {
             .map(|b| LazyBody::new(&b.body, self.ctx))
             .collect()
     }
-
     /// Returns a lazy child body wrapper for the first block matching the type and labels.
     ///
     /// # Arguments
@@ -260,7 +235,6 @@ impl<'a> LazyBody<'a> {
             })
             .map(|b| LazyBody::new(&b.body, self.ctx))
     }
-
     /// Returns a lazy child body wrapper for the block at the given index.
     ///
     /// # Arguments
@@ -276,7 +250,6 @@ impl<'a> LazyBody<'a> {
             .map(|b| LazyBody::new(&b.body, self.ctx))
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -286,10 +259,8 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::api::parse;
-
     #[test]
     fn test_lazy_body_on_demand_and_memoization() {
         let src = r#"
@@ -299,21 +270,16 @@ mod tests {
             err_attr = 10 / 0
             err_ref = undefined_var + 1
         "#;
-
         let body = parse(src).unwrap();
         let ctx = Context::new();
         let lazy = LazyBody::new(&body, &ctx);
-
         assert_eq!(lazy.evaluated_attribute_count(), 0);
         assert!(lazy.has_attribute("valid_num"));
         assert!(lazy.has_attribute("err_attr"));
         assert!(!lazy.has_attribute("nonexistent"));
-
         let names = lazy.attribute_names();
         assert!(names.contains(&"valid_num"));
         assert!(names.contains(&"expensive_val"));
-
-        // 1. Evaluate valid_num on demand
         assert!(!lazy.is_attribute_evaluated("valid_num"));
         let res_num = lazy.evaluate_attribute("valid_num").unwrap().unwrap();
         assert_eq!(
@@ -322,20 +288,12 @@ mod tests {
         );
         assert!(lazy.is_attribute_evaluated("valid_num"));
         assert_eq!(lazy.evaluated_attribute_count(), 1);
-
-        // 2. Second access uses memoized cache
         let res_num_cached = lazy.evaluate_attribute("valid_num").unwrap().unwrap();
         assert_eq!(res_num_cached.0, res_num.0);
         assert_eq!(lazy.evaluated_attribute_count(), 1);
-
-        // 3. Ensure err_attr and err_ref were NEVER evaluated
         assert!(!lazy.is_attribute_evaluated("err_attr"));
         assert!(!lazy.is_attribute_evaluated("err_ref"));
-
-        // 4. Accessing nonexistent returns None
         assert!(lazy.evaluate_attribute("nonexistent").is_none());
-
-        // 5. Evaluate err_attr explicitly triggers error on demand
         let err_res = lazy.evaluate_attribute("err_attr").unwrap().err().unwrap();
         assert!(
             err_res.errors()[0]
@@ -345,13 +303,10 @@ mod tests {
         );
         assert!(lazy.is_attribute_evaluated("err_attr"));
         assert_eq!(lazy.evaluated_attribute_count(), 2);
-
-        // 6. Clear cache
         lazy.clear_cache();
         assert_eq!(lazy.evaluated_attribute_count(), 0);
         assert!(!lazy.is_attribute_evaluated("valid_num"));
     }
-
     #[test]
     fn test_lazy_body_blocks_and_object_conversion() {
         let src = r#"
@@ -372,39 +327,28 @@ mod tests {
                 host = "localhost"
             }
         "#;
-
         let body = parse(src).unwrap();
         let ctx = Context::new();
         let lazy = LazyBody::new(&body, &ctx);
-
         assert_eq!(lazy.blocks().len(), 3);
         assert_eq!(lazy.get_blocks("server").len(), 2);
         assert_eq!(lazy.get_blocks("database").len(), 1);
         assert_eq!(lazy.get_blocks("nonexistent").len(), 0);
-
-        // Block by label
         let web_pri = lazy.get_block("server", &["web", "primary"]).unwrap();
         let listen = web_pri.evaluate_attribute("listen").unwrap().unwrap();
         assert_eq!(
             listen.0,
             Value::new(Type::String, ValueData::String("0.0.0.0".into()))
         );
-
         assert!(lazy.get_block("server", &["web", "other"]).is_none());
         assert!(lazy.get_block("server", &["web"]).is_none());
-
-        // Block by index
         let b0 = lazy.get_block_by_index(0).unwrap();
         assert_eq!(b0.body().span, web_pri.body().span);
         assert!(lazy.get_block_by_index(99).is_none());
-
-        // Evaluate all attributes
         let all_attrs = lazy.evaluate_all_attributes();
         assert_eq!(all_attrs.len(), 2);
         assert!(all_attrs.contains_key("name"));
         assert!(all_attrs.contains_key("port"));
-
-        // to_object_value with warning propagation
         let mut warn_diags = Diagnostics::new();
         warn_diags.push(crate::diagnostic::Diagnostic::warning(
             "deprecated attr",
@@ -418,7 +362,6 @@ mod tests {
                 warn_diags,
             )),
         );
-
         let (obj_val, diags) = lazy.to_object_value().unwrap();
         assert_eq!(diags.errors().len(), 1);
         let mut expected_map = BTreeMap::new();
@@ -435,19 +378,13 @@ mod tests {
             ValueData::Object(expected_map),
         );
         assert_eq!(obj_val, expected_val);
-
-        // Debug format
         assert!(format!("{lazy:?}").contains("LazyBody"));
         assert_eq!(lazy.body().span, body.span);
         assert!(std::ptr::eq(lazy.context(), &raw const ctx));
-
-        // Error path in to_object_value
         let bad_src = "bad = 1 / 0";
         let bad_body = parse(bad_src).unwrap();
         let bad_lazy = LazyBody::new(&bad_body, &ctx);
         assert!(bad_lazy.to_object_value().is_err());
-
-        // Test lock_cache with poisoned mutex
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _guard = bad_lazy.attr_cache.lock();
             panic!("poison mutex");

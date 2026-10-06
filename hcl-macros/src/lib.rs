@@ -14,12 +14,10 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::iter_on_single_items)]
-#![allow(clippy::coerce_container_to_any)]
 #![allow(clippy::trivial_regex)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::assert_is_empty)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
@@ -633,15 +631,22 @@ fn handle_expr_field(
             if let Some(seg) = p.path.segments.last() {
                 if seg.ident == "Arc" {
                     true
-                } else if seg.ident == "Option"
-                    && let syn::PathArguments::AngleBracketed(ref args) = seg.arguments
-                    && let Some(syn::GenericArgument::Type(Type::Path(inner_p))) = args.args.first()
-                {
-                    inner_p
-                        .path
-                        .segments
-                        .last()
-                        .is_some_and(|s| s.ident == "Arc")
+                } else if seg.ident == "Option" {
+                    if let syn::PathArguments::AngleBracketed(ref args) = seg.arguments {
+                        if let Some(syn::GenericArgument::Type(Type::Path(inner_p))) =
+                            args.args.first()
+                        {
+                            inner_p
+                                .path
+                                .segments
+                                .last()
+                                .is_some_and(|s| s.ident == "Arc")
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 }
@@ -777,30 +782,30 @@ enum BlockTypeKind {
 /// # Arguments
 /// * `ty` - The syn syntax tree type of the field.
 fn inspect_block_type(ty: &Type) -> BlockTypeKind {
-    if let Type::Path(p) = ty
-        && let Some(segment) = p.path.segments.last()
-    {
-        let ident_str = segment.ident.to_string();
-        if ident_str == "Vec" {
-            return BlockTypeKind::Vec;
-        }
-        if ident_str == "Option" {
-            return BlockTypeKind::Option;
-        }
-        if (ident_str == "HashMap" || ident_str == "BTreeMap")
-            && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
-        {
-            let is_btreemap = ident_str == "BTreeMap";
-            let mut type_args = args.args.iter().filter_map(|arg| match arg {
-                syn::GenericArgument::Type(t) => Some(t),
-                _ => None,
-            });
-            let _key_ty = type_args.next();
-            if let Some(val_ty) = type_args.next() {
-                return BlockTypeKind::Map {
-                    is_btreemap,
-                    inner: Box::new(inspect_block_type(val_ty)),
-                };
+    if let Type::Path(p) = ty {
+        if let Some(segment) = p.path.segments.last() {
+            let ident_str = segment.ident.to_string();
+            if ident_str == "Vec" {
+                return BlockTypeKind::Vec;
+            }
+            if ident_str == "Option" {
+                return BlockTypeKind::Option;
+            }
+            if ident_str == "HashMap" || ident_str == "BTreeMap" {
+                if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                    let is_btreemap = ident_str == "BTreeMap";
+                    let mut type_args = args.args.iter().filter_map(|arg| match arg {
+                        syn::GenericArgument::Type(t) => Some(t),
+                        _ => None,
+                    });
+                    let _key_ty = type_args.next();
+                    if let Some(val_ty) = type_args.next() {
+                        return BlockTypeKind::Map {
+                            is_btreemap,
+                            inner: Box::new(inspect_block_type(val_ty)),
+                        };
+                    }
+                }
             }
         }
     }
@@ -1509,36 +1514,60 @@ fn parse_hcl_field_attrs(
                     attrs.is_flatten = true;
                 } else if meta.path.is_ident("body") {
                     attrs.is_body = true;
-                } else if meta.path.is_ident("with")
-                    && let Ok(val) = meta.value()
-                    && let Ok(lit) = val.parse::<syn::LitStr>()
-                {
-                    match syn::parse_str::<syn::Path>(&lit.value()) {
-                        Ok(p) => attrs.custom_decoder = Some(p),
-                        Err(e) => {
-                            return Err(meta.error(format!("invalid path for custom decoder: {e}")));
+                } else if meta.path.is_ident("with") {
+                    if let Ok(val) = meta.value() {
+                        if let Ok(lit) = val.parse::<syn::LitStr>() {
+                            match syn::parse_str::<syn::Path>(&lit.value()) {
+                                Ok(p) => attrs.custom_decoder = Some(p),
+                                Err(e) => {
+                                    return Err(
+                                        meta.error(format!("invalid path for custom decoder: {e}"))
+                                    );
+                                }
+                            }
+                        } else {
+                            return Err(meta.error("unsupported hcl attribute"));
                         }
+                    } else {
+                        return Err(meta.error("unsupported hcl attribute"));
                     }
-                } else if meta.path.is_ident("default_expr")
-                    && let Ok(val) = meta.value()
-                    && let Ok(lit) = val.parse::<syn::LitStr>()
-                {
-                    attrs.default_expr = Some(lit.value());
-                } else if meta.path.is_ident("default_fn")
-                    && let Ok(val) = meta.value()
-                    && let Ok(lit) = val.parse::<syn::LitStr>()
-                {
-                    match syn::parse_str::<syn::Path>(&lit.value()) {
-                        Ok(p) => attrs.default_fn = Some(p),
-                        Err(e) => {
-                            return Err(meta.error(format!("invalid path for default_fn: {e}")));
+                } else if meta.path.is_ident("default_expr") {
+                    if let Ok(val) = meta.value() {
+                        if let Ok(lit) = val.parse::<syn::LitStr>() {
+                            attrs.default_expr = Some(lit.value());
+                        } else {
+                            return Err(meta.error("unsupported hcl attribute"));
                         }
+                    } else {
+                        return Err(meta.error("unsupported hcl attribute"));
                     }
-                } else if meta.path.is_ident("name")
-                    && let Ok(val) = meta.value()
-                    && let Ok(lit) = val.parse::<syn::LitStr>()
-                {
-                    attrs.custom_name = Some(lit.value());
+                } else if meta.path.is_ident("default_fn") {
+                    if let Ok(val) = meta.value() {
+                        if let Ok(lit) = val.parse::<syn::LitStr>() {
+                            match syn::parse_str::<syn::Path>(&lit.value()) {
+                                Ok(p) => attrs.default_fn = Some(p),
+                                Err(e) => {
+                                    return Err(
+                                        meta.error(format!("invalid path for default_fn: {e}"))
+                                    );
+                                }
+                            }
+                        } else {
+                            return Err(meta.error("unsupported hcl attribute"));
+                        }
+                    } else {
+                        return Err(meta.error("unsupported hcl attribute"));
+                    }
+                } else if meta.path.is_ident("name") {
+                    if let Ok(val) = meta.value() {
+                        if let Ok(lit) = val.parse::<syn::LitStr>() {
+                            attrs.custom_name = Some(lit.value());
+                        } else {
+                            return Err(meta.error("unsupported hcl attribute"));
+                        }
+                    } else {
+                        return Err(meta.error("unsupported hcl attribute"));
+                    }
                 } else {
                     return Err(meta.error("unsupported hcl attribute"));
                 }
@@ -1803,28 +1832,29 @@ fn process_schema_field(
 /// # Arguments
 /// * `ty` - The syn syntax tree type to inspect.
 fn extract_generic_inner_type(ty: &Type) -> &Type {
-    if let Type::Path(p) = ty
-        && let Some(segment) = p.path.segments.last()
-    {
-        if (segment.ident == "Vec" || segment.ident == "Option")
-            && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
-            && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
-        {
-            return extract_generic_inner_type(inner);
-        }
-        if (segment.ident == "HashMap" || segment.ident == "BTreeMap")
-            && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
-        {
-            let mut type_args = args.args.iter().filter_map(|arg| {
-                if let syn::GenericArgument::Type(t) = arg {
-                    Some(t)
-                } else {
-                    None
+    if let Type::Path(p) = ty {
+        if let Some(segment) = p.path.segments.last() {
+            if segment.ident == "Vec" || segment.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return extract_generic_inner_type(inner);
+                    }
                 }
-            });
-            let _key = type_args.next();
-            if let Some(val) = type_args.next() {
-                return extract_generic_inner_type(val);
+            }
+            if segment.ident == "HashMap" || segment.ident == "BTreeMap" {
+                if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                    let mut type_args = args.args.iter().filter_map(|arg| {
+                        if let syn::GenericArgument::Type(t) = arg {
+                            Some(t)
+                        } else {
+                            None
+                        }
+                    });
+                    let _key = type_args.next();
+                    if let Some(val) = type_args.next() {
+                        return extract_generic_inner_type(val);
+                    }
+                }
             }
         }
     }

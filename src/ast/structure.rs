@@ -1,9 +1,7 @@
 //! AST structures for HCL bodies, attributes, blocks, and dynamic blocks.
-
 use crate::ast::expr::Expression;
 use crate::span::Span;
 use std::collections::HashMap;
-
 /// Represents an HCL Body, which contains a collection of attributes, blocks, and dynamic blocks.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Body {
@@ -24,7 +22,6 @@ pub struct Body {
     /// The source span for the entire body.
     pub span: Span,
 }
-
 impl Body {
     /// Create a new, empty Body.
     ///
@@ -43,7 +40,6 @@ impl Body {
             span,
         }
     }
-
     /// Recursively collects all [`ValidationBlock`] instances within this body and its nested blocks.
     #[must_use]
     pub fn collect_all_validations(&self) -> Vec<&ValidationBlock> {
@@ -56,7 +52,6 @@ impl Body {
         }
         result
     }
-
     /// Recursively collects all [`PreconditionBlock`] instances within this body and its nested blocks.
     #[must_use]
     pub fn collect_all_preconditions(&self) -> Vec<&PreconditionBlock> {
@@ -69,7 +64,6 @@ impl Body {
         }
         result
     }
-
     /// Recursively collects all [`PostconditionBlock`] instances within this body and its nested blocks.
     #[must_use]
     pub fn collect_all_postconditions(&self) -> Vec<&PostconditionBlock> {
@@ -82,7 +76,6 @@ impl Body {
         }
         result
     }
-
     /// Finds the innermost AST node at the given spatial coordinate [`Position`](crate::span::Position).
     ///
     /// Checks attributes (including nested sub-expressions), blocks (including nested blocks and headers),
@@ -96,7 +89,6 @@ impl Body {
         &self,
         pos: &crate::span::Position,
     ) -> Option<crate::span::AstNodeRef<'_>> {
-        // 1. Check attributes in this body
         for attr in self.attributes.values() {
             if attr.span.contains_position(pos) {
                 if let Some(inner_expr) = attr.expr.expr_at_position(pos) {
@@ -105,8 +97,6 @@ impl Body {
                 return Some(crate::span::AstNodeRef::Attribute(attr));
             }
         }
-
-        // 2. Check blocks in this body
         for block in &self.blocks {
             if block.span.contains_position(pos) {
                 if let Some(inner_node) = block.body.node_at_position(pos) {
@@ -115,10 +105,8 @@ impl Body {
                 return Some(crate::span::AstNodeRef::Block(block));
             }
         }
-
         None
     }
-
     /// Finds the innermost enclosing [`Block`] at the given coordinate [`Position`](crate::span::Position).
     ///
     /// Traverses recursively into nested blocks to find the most deeply nested block
@@ -138,7 +126,6 @@ impl Body {
         }
         None
     }
-
     /// Finds the [`Attribute`] located at the given coordinate [`Position`](crate::span::Position).
     ///
     /// Traverses through this body and recursively into nested blocks to locate the attribute.
@@ -152,19 +139,16 @@ impl Body {
                 return Some(attr);
             }
         }
-
         for block in &self.blocks {
-            if block.span.contains_position(pos)
-                && let Some(attr) = block.body.attribute_at(pos)
-            {
-                return Some(attr);
+            if block.span.contains_position(pos) {
+                if let Some(attr) = block.body.attribute_at(pos) {
+                    return Some(attr);
+                }
             }
         }
-
         None
     }
 }
-
 /// Represents an HCL Attribute (`name = expression`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {
@@ -183,7 +167,6 @@ pub struct Attribute {
     /// Trailing inline comment on the same line after the attribute.
     pub trailing_comment: Option<String>,
 }
-
 impl Attribute {
     /// Creates a new `Attribute`.
     ///
@@ -205,7 +188,6 @@ impl Attribute {
             trailing_comment: None,
         }
     }
-
     /// Attaches leading comments to this attribute.
     ///
     /// # Arguments
@@ -215,7 +197,6 @@ impl Attribute {
         self.leading_comments = comments;
         self
     }
-
     /// Attaches a trailing inline comment to this attribute.
     ///
     /// # Arguments
@@ -226,7 +207,6 @@ impl Attribute {
         self
     }
 }
-
 /// Represents an HCL Block (`type "label1" "label2" { body }`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
@@ -251,7 +231,6 @@ pub struct Block {
     /// Trailing inline comment on the same line after the block header or close brace.
     pub trailing_comment: Option<String>,
 }
-
 impl Block {
     /// Creates a new `Block`.
     ///
@@ -278,7 +257,6 @@ impl Block {
             trailing_comment: None,
         }
     }
-
     /// Attaches leading comments to this block.
     ///
     /// # Arguments
@@ -288,7 +266,6 @@ impl Block {
         self.leading_comments = comments;
         self
     }
-
     /// Attaches a trailing inline comment to this block.
     ///
     /// # Arguments
@@ -299,7 +276,6 @@ impl Block {
         self
     }
 }
-
 /// Represents an HCL dynamic block (`dynamic "type" { for_each = ... content { ... } }`).
 ///
 /// Dynamic blocks dynamically generate repeated nested blocks based on a collection.
@@ -320,7 +296,6 @@ pub struct DynamicBlock {
     /// The source span for the block type name.
     pub type_span: Span,
 }
-
 impl DynamicBlock {
     /// Creates a new `DynamicBlock`.
     ///
@@ -353,7 +328,6 @@ impl DynamicBlock {
         }
     }
 }
-
 /// Represents a declarative validation block (`validation { condition = ... error_message = ... }`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValidationBlock {
@@ -364,7 +338,6 @@ pub struct ValidationBlock {
     /// The source span for the entire validation block.
     pub span: Span,
 }
-
 impl ValidationBlock {
     /// Creates a new `ValidationBlock`.
     ///
@@ -381,7 +354,6 @@ impl ValidationBlock {
         }
     }
 }
-
 /// Represents a lifecycle precondition block (`precondition { condition = ... error_message = ... }`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreconditionBlock {
@@ -392,7 +364,6 @@ pub struct PreconditionBlock {
     /// The source span for the entire precondition block.
     pub span: Span,
 }
-
 impl PreconditionBlock {
     /// Creates a new `PreconditionBlock`.
     ///
@@ -408,7 +379,6 @@ impl PreconditionBlock {
             span,
         }
     }
-
     /// Converts this precondition into an equivalent [`ValidationBlock`].
     #[must_use]
     pub fn to_validation(&self) -> ValidationBlock {
@@ -419,13 +389,11 @@ impl PreconditionBlock {
         )
     }
 }
-
 impl From<PreconditionBlock> for ValidationBlock {
     fn from(pre: PreconditionBlock) -> Self {
         Self::new(pre.condition, pre.error_message, pre.span)
     }
 }
-
 /// Represents a lifecycle postcondition block (`postcondition { condition = ... error_message = ... }`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PostconditionBlock {
@@ -436,7 +404,6 @@ pub struct PostconditionBlock {
     /// The source span for the entire postcondition block.
     pub span: Span,
 }
-
 impl PostconditionBlock {
     /// Creates a new `PostconditionBlock`.
     ///
@@ -452,7 +419,6 @@ impl PostconditionBlock {
             span,
         }
     }
-
     /// Converts this postcondition into an equivalent [`ValidationBlock`].
     #[must_use]
     pub fn to_validation(&self) -> ValidationBlock {
@@ -463,13 +429,11 @@ impl PostconditionBlock {
         )
     }
 }
-
 impl From<PostconditionBlock> for ValidationBlock {
     fn from(post: PostconditionBlock) -> Self {
         Self::new(post.condition, post.error_message, post.span)
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -479,9 +443,7 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     #[test]
     fn test_body_and_dynamic_block() {
         let span = Span::new(0, 10, 1, 1, 1, 11);
@@ -497,7 +459,6 @@ mod tests {
         assert_eq!(body.preconditions, [] as [PreconditionBlock; 0]);
         assert_eq!(body.postconditions, [] as [PostconditionBlock; 0]);
         assert_eq!(body.span, span);
-
         let dyn_block = DynamicBlock::new(
             "setting".to_string(),
             Expression::Null(span.clone()),
@@ -511,11 +472,9 @@ mod tests {
         assert_eq!(dyn_block.iterator.as_deref(), Some("item"));
         assert!(dyn_block.labels.is_some());
         assert_eq!(dyn_block.span, span);
-
         body.dynamic_blocks.push(dyn_block.clone());
         assert_eq!(body.dynamic_blocks.len(), 1);
         assert_eq!(body.dynamic_blocks[0], dyn_block);
-
         let val_block = ValidationBlock::new(
             Expression::Null(span.clone()),
             Expression::Null(span.clone()),
@@ -525,7 +484,6 @@ mod tests {
         body.validations.push(val_block.clone());
         assert_eq!(body.validations.len(), 1);
         assert_eq!(body.validations[0], val_block);
-
         let pre_block = PreconditionBlock::new(
             Expression::Null(span.clone()),
             Expression::Null(span.clone()),
@@ -537,7 +495,6 @@ mod tests {
         body.preconditions.push(pre_block.clone());
         assert_eq!(body.preconditions.len(), 1);
         assert_eq!(body.preconditions[0], pre_block);
-
         let post_block = PostconditionBlock::new(
             Expression::Null(span.clone()),
             Expression::Null(span.clone()),
@@ -549,17 +506,13 @@ mod tests {
         body.postconditions.push(post_block.clone());
         assert_eq!(body.postconditions.len(), 1);
         assert_eq!(body.postconditions[0], post_block);
-
         assert_eq!(body.collect_all_validations(), vec![&val_block]);
         assert_eq!(body.collect_all_preconditions(), vec![&pre_block]);
         assert_eq!(body.collect_all_postconditions(), vec![&post_block]);
-
-        // Nested block collection
         let mut nested_body = Body::new(span.clone());
         nested_body.validations.push(val_block.clone());
         nested_body.preconditions.push(pre_block.clone());
         nested_body.postconditions.push(post_block.clone());
-
         let nested_block = Block {
             block_type: "resource".to_string(),
             labels: vec!["a".to_string()],
@@ -573,7 +526,6 @@ mod tests {
             trailing_comment: None,
         };
         body.blocks.push(nested_block);
-
         assert_eq!(body.collect_all_validations(), vec![&val_block, &val_block]);
         assert_eq!(
             body.collect_all_preconditions(),
@@ -584,15 +536,12 @@ mod tests {
             vec![&post_block, &post_block]
         );
     }
-
     #[test]
     fn test_body_spatial_queries() {
         use crate::span::{AstNodeRef, Position};
-
         let outer_span = Span::new(0, 100, 1, 1, 10, 1);
         let inner_span = Span::new(10, 90, 2, 1, 9, 1);
         let attr_span = Span::new(20, 40, 3, 1, 3, 20);
-
         let mut inner_body = Body::new(inner_span.clone());
         let attr = Attribute {
             name: "nested_attr".to_string(),
@@ -606,7 +555,6 @@ mod tests {
         inner_body
             .attributes
             .insert("nested_attr".to_string(), attr);
-
         let inner_block = Block {
             block_type: "inner".to_string(),
             labels: vec![],
@@ -619,10 +567,8 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         };
-
         let mut outer_body = Body::new(outer_span.clone());
         outer_body.blocks.push(inner_block);
-
         let outer_block = Block {
             block_type: "outer".to_string(),
             labels: vec![],
@@ -635,7 +581,6 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         };
-
         let mut root_body = Body::new(outer_span.clone());
         let unrelated_block = Block {
             block_type: "unrelated".to_string(),
@@ -651,17 +596,11 @@ mod tests {
         };
         root_body.blocks.push(unrelated_block.clone());
         root_body.blocks.push(outer_block);
-
         let attr_pos = Position::new(3, 5, 25);
-        // 1. attribute_at inside nested block (line 161)
         let found_attr = root_body.attribute_at(&attr_pos);
         assert_eq!(found_attr.map(|a| a.name.as_str()), Some("nested_attr"));
-
-        // 2. enclosing_block_at nested block (line 137)
         let enc_block = root_body.enclosing_block_at(&attr_pos);
         assert_eq!(enc_block.map(|b| b.block_type.as_str()), Some("inner"));
-
-        // 3. node_at_position returning Some(AstNodeRef::Block(block)) when inner body has no node (line 116)
         let empty_inner_block = Block {
             block_type: "empty_blk".to_string(),
             labels: vec![],
@@ -682,7 +621,6 @@ mod tests {
         assert_eq!(node, Some(AstNodeRef::Block(&empty_inner_block)));
         assert_eq!(b.attribute_at(&header_pos), None);
     }
-
     /// Tests builders and trivia mutation helpers for Attribute and Block.
     #[test]
     fn test_structure_builders_and_trivia() {
@@ -691,11 +629,9 @@ mod tests {
         let attr = Attribute::new("my_attr", expr, span.clone())
             .with_leading_comments(vec!["# leading".to_string()])
             .with_trailing_comment("// trailing");
-
         assert_eq!(attr.name, "my_attr");
         assert_eq!(attr.leading_comments, vec!["# leading".to_string()]);
         assert_eq!(attr.trailing_comment.as_deref(), Some("// trailing"));
-
         let blk = Block::new(
             "server",
             vec!["web".to_string()],
@@ -704,7 +640,6 @@ mod tests {
         )
         .with_leading_comments(vec!["# block leading".to_string()])
         .with_trailing_comment("// block trailing");
-
         assert_eq!(blk.block_type, "server");
         assert_eq!(blk.labels, vec!["web".to_string()]);
         assert_eq!(blk.leading_comments, vec!["# block leading".to_string()]);

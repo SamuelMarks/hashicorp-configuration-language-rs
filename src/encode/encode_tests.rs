@@ -7,7 +7,6 @@
 )]
 #[cfg(test)]
 mod tests {
-
     use crate::cst::builder::CstBody;
     use crate::decode::DecodeBody;
     use crate::diagnostic::Diagnostics;
@@ -16,14 +15,12 @@ mod tests {
     use crate::types::ty::Type;
     use crate::types::val::{Value, ValueData};
     use std::collections::{BTreeMap, HashMap};
-
     #[derive(Debug, Clone, PartialEq, DecodeBody, EncodeBody)]
     struct NestedConfig {
         #[hcl(label)]
         name: String,
         enabled: bool,
     }
-
     #[derive(Debug, Clone, PartialEq, DecodeBody, EncodeBody)]
     struct ServerConfig {
         #[hcl(label)]
@@ -37,7 +34,6 @@ mod tests {
         #[hcl(block)]
         services: Vec<NestedConfig>,
     }
-
     #[test]
     fn test_encode_value_primitives() {
         assert_eq!(true.encode_value().data.as_ref(), &ValueData::Bool(true));
@@ -49,7 +45,6 @@ mod tests {
             String::from("world").encode_value().data.as_ref(),
             &ValueData::String("world".into())
         );
-
         let signed_8: i8 = 42;
         assert_eq!(
             signed_8.encode_value().data.as_ref(),
@@ -80,7 +75,6 @@ mod tests {
             signed_128.encode_value().data.as_ref(),
             &ValueData::Number(128_i32.into())
         );
-
         let unsigned_8: u8 = 8;
         assert_eq!(
             unsigned_8.encode_value().data.as_ref(),
@@ -111,13 +105,11 @@ mod tests {
             unsigned_128.encode_value().data.as_ref(),
             &ValueData::Number(1280_i32.into())
         );
-
         let num = Number::from(123_i64);
         assert_eq!(
             num.encode_value().data.as_ref(),
             &ValueData::Number(num.clone())
         );
-
         let val_f32: f32 = 1.25;
         assert!(matches!(
             &*val_f32.encode_value().data,
@@ -128,7 +120,6 @@ mod tests {
             &*val_f64.encode_value().data,
             ValueData::Number(_)
         ));
-
         let nan_f32: f32 = f32::NAN;
         assert_eq!(
             nan_f32.encode_value().data.as_ref(),
@@ -139,7 +130,6 @@ mod tests {
             nan_f64.encode_value().data.as_ref(),
             &ValueData::Number(Number::from(0_i64))
         );
-
         let vec_i = vec![1, 2];
         let v_vec = vec_i.encode_value();
         assert!(matches!(&*v_vec.data, ValueData::Array(_)));
@@ -148,7 +138,6 @@ mod tests {
             &*empty_vec.encode_value().data,
             ValueData::Array(_)
         ));
-
         let opt_some: Option<i32> = Some(10);
         assert_eq!(
             opt_some.encode_value().data.as_ref(),
@@ -156,7 +145,6 @@ mod tests {
         );
         let opt_none: Option<i32> = None;
         assert!(opt_none.encode_value().is_null());
-
         let mut hm = HashMap::new();
         hm.insert("k".to_string(), 1);
         assert!(matches!(&*hm.encode_value().data, ValueData::Object(_)));
@@ -165,7 +153,6 @@ mod tests {
             &*hash_empty.encode_value().data,
             ValueData::Object(_)
         ));
-
         let mut bm = BTreeMap::new();
         bm.insert("k".to_string(), 2);
         assert!(matches!(&*bm.encode_value().data, ValueData::Object(_)));
@@ -174,11 +161,9 @@ mod tests {
             &*btree_empty.encode_value().data,
             ValueData::Object(_)
         ));
-
         let val = Value::new(Type::Bool, ValueData::Bool(false));
         assert_eq!(val.encode_value(), val);
     }
-
     #[test]
     fn test_encode_body_and_roundtrip() {
         let original = ServerConfig {
@@ -201,17 +186,11 @@ mod tests {
                 },
             ],
         };
-
-        // 1. Encode into CstBody
         let mut body = CstBody::new();
         original.encode_into_body(&mut body).unwrap();
-
-        // Verify encoded attributes
         assert!(body.attributes().iter().any(|a| a.name == "host"));
         assert!(body.attributes().iter().any(|a| a.name == "port"));
         assert!(body.attributes().iter().any(|a| a.name == "custom_timeout"));
-
-        // Verify encoded blocks
         assert!(
             body.blocks()
                 .iter()
@@ -225,24 +204,17 @@ mod tests {
         assert_eq!(s_blocks.len(), 2);
         assert_eq!(s_blocks[0].labels, vec!["auth"]);
         assert_eq!(s_blocks[1].labels, vec!["metrics"]);
-
-        // 2. Render to string
         let mut hcl_str = String::new();
         body.render(&mut hcl_str);
         assert!(hcl_str.contains("host = \"0.0.0.0\""));
         assert!(hcl_str.contains("custom_timeout = 30"));
         assert!(hcl_str.contains("nested \"primary\" {"));
         assert!(hcl_str.contains("services \"auth\" {"));
-
-        // 3. Round-trip: Parse the generated HCL and decode back into ServerConfig!
         let parsed_body = crate::api::parse(&hcl_str).unwrap();
         let mut ctx = crate::eval::context::Context::new();
         let decoded =
             ServerConfig::decode_body(&parsed_body, &["production".to_string()], &mut ctx).unwrap();
-
         assert_eq!(decoded, original);
-
-        // 4. Test Option::None omission
         let no_timeout = ServerConfig {
             timeout: None,
             ..original.clone()
@@ -256,7 +228,6 @@ mod tests {
                 .any(|a| a.name == "custom_timeout")
         );
     }
-
     struct MaybeFailingEncode(bool);
     impl EncodeBody for MaybeFailingEncode {
         fn encode_into_body(&self, _body: &mut CstBody) -> Result<(), Diagnostics> {
@@ -271,7 +242,6 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn test_extract_labels_default() {
         let success = MaybeFailingEncode(false);
@@ -281,25 +251,21 @@ mod tests {
         let blk = success.encode_into_block("dummy", vec![]).unwrap();
         assert_eq!(blk.block_type, "dummy");
         assert!(encode_to_string(&success).is_ok());
-
         let failure = MaybeFailingEncode(true);
         assert!(failure.encode_into_block("fail", vec![]).is_err());
         assert!(encode_to_string(&failure).is_err());
     }
-
     #[derive(Debug, PartialEq, crate::decode::DecodeValue, crate::encode::EncodeValue)]
     enum TaskPriority {
         Low,
         #[hcl(name = "high_priority")]
         High,
     }
-
     #[derive(Debug, PartialEq, crate::decode::DecodeValue, crate::encode::EncodeValue)]
     struct TaskMeta {
         author: String,
         retries: u32,
     }
-
     #[derive(Debug, PartialEq, crate::decode::DecodeValue, crate::encode::EncodeValue)]
     struct TaskItem {
         #[hcl(name = "task_id")]
@@ -308,7 +274,6 @@ mod tests {
         description: Option<String>,
         meta: TaskMeta,
     }
-
     #[test]
     fn test_derive_encode_value_and_roundtrip() {
         let task = TaskItem {
@@ -320,19 +285,14 @@ mod tests {
                 retries: 3,
             },
         };
-
         let encoded = task.encode_value();
         assert!(matches!(encoded.ty(), Type::Object { .. }));
-
-        // Decode back using DecodeValue and check roundtrip
         let decoded: TaskItem = crate::decode::DecodeValue::decode_value(
             &encoded,
             crate::span::Span::new(0, 0, 0, 0, 0, 0),
         )
         .unwrap();
         assert_eq!(decoded, task);
-
-        // Test with Option::None
         let task_no_desc = TaskItem {
             id: "task-456".to_string(),
             priority: TaskPriority::Low,
@@ -349,28 +309,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(decoded_no_desc, task_no_desc);
-
-        // Test enum encode
         let low_val = TaskPriority::Low.encode_value();
         assert_eq!(low_val.to_string(), "\"Low\"");
         let high_val = TaskPriority::High.encode_value();
         assert_eq!(high_val.to_string(), "\"high_priority\"");
     }
-
     /// A leaf service definition with attributes.
     #[derive(Debug, Clone, PartialEq, DecodeBody, EncodeBody, hcl_macros::ImpliedBodySchema)]
     struct ComplexLeafService {
         port: u16,
         enabled: bool,
     }
-
     /// An embedded common configuration flattened into the parent block.
     #[derive(Debug, Clone, PartialEq, DecodeBody, EncodeBody, hcl_macros::ImpliedBodySchema)]
     struct ComplexCommonMeta {
         owner: String,
         region: String,
     }
-
     /// A middle-tier cluster configuration containing blocks, maps, and flattened structs.
     #[derive(Debug, Clone, PartialEq, DecodeBody, EncodeBody, hcl_macros::ImpliedBodySchema)]
     struct ComplexClusterConfig {
@@ -379,7 +334,6 @@ mod tests {
         #[hcl(block)]
         services: BTreeMap<String, ComplexLeafService>,
     }
-
     /// Root complex infrastructure definition testing complete round-trip fidelity.
     #[derive(Debug, Clone, PartialEq, DecodeBody, EncodeBody, hcl_macros::ImpliedBodySchema)]
     struct ComplexInfrastructure {
@@ -388,7 +342,6 @@ mod tests {
         #[hcl(block, name = "cluster")]
         clusters: HashMap<String, ComplexClusterConfig>,
     }
-
     /// Tests round-trip decode -> encode -> decode fidelity on complex nested structures.
     #[test]
     fn test_complex_nested_structure_roundtrip() {
@@ -407,7 +360,6 @@ mod tests {
                 enabled: false,
             },
         );
-
         let mut clusters = HashMap::new();
         clusters.insert(
             "prod".to_string(),
@@ -419,14 +371,11 @@ mod tests {
                 services,
             },
         );
-
         let infra = ComplexInfrastructure {
             project_name: "global-cloud".to_string(),
             version: 2,
             clusters,
         };
-
-        // 1. Encode into string
         let rendered = encode_to_string(&infra).unwrap();
         assert!(rendered.contains("project_name = \"global-cloud\""));
         assert!(rendered.contains("version = 2"));
@@ -436,14 +385,10 @@ mod tests {
         assert!(rendered.contains("services \"auth\" {"));
         assert!(rendered.contains("port = 8080"));
         assert!(rendered.contains("enabled = true"));
-
-        // 2. Decode string back into ComplexInfrastructure
         let mut parser = crate::parse::parser::Parser::new(&rendered);
         let body = parser.parse_body();
         let mut ctx = crate::eval::context::Context::new();
-
         let decoded = ComplexInfrastructure::decode_body(&body, &[], &mut ctx).unwrap();
-
         assert_eq!(decoded.project_name, infra.project_name);
         assert_eq!(decoded.version, infra.version);
         assert_eq!(decoded.clusters.len(), infra.clusters.len());
@@ -458,8 +403,6 @@ mod tests {
         assert_eq!(prod.services.len(), 2);
         assert_eq!(prod.services.get("auth").unwrap().port, 8080);
         assert_eq!(prod.services.get("payments").unwrap().port, 9000);
-
-        // 3. Second round-trip encode -> verify idempotence
         let second_rendered = encode_to_string(&decoded).unwrap();
         let mut second_parser = crate::parse::parser::Parser::new(&second_rendered);
         let second_body = second_parser.parse_body();
@@ -470,7 +413,6 @@ mod tests {
         assert_eq!(decoded.version, second_decoded.version);
         assert_eq!(decoded.clusters, second_decoded.clusters);
     }
-
     #[test]
     fn test_encode_body_with_block_trailing_comment() {
         let span = crate::span::Span::default();
@@ -484,7 +426,6 @@ mod tests {
         block.trailing_comment = Some("# inline comment".to_string());
         block.leading_comments = vec!["# leading comment".to_string()];
         body.blocks.push(block);
-
         let block2 = crate::ast::structure::Block::new(
             "worker",
             vec!["node1".to_string()],
@@ -492,7 +433,6 @@ mod tests {
             span,
         );
         body.blocks.push(block2);
-
         let mut cst_body = CstBody::default();
         body.encode_into_body(&mut cst_body).unwrap();
         assert_eq!(cst_body.blocks.len(), 2);

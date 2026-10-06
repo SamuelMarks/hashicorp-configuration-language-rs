@@ -2,11 +2,9 @@
 //!
 //! Handles tokenization of HCL 1.0 documents, including bare identifiers,
 //! legacy comment styles (`#`, `//`, `/* ... */`), and heredocs with `${}` interpolations.
-
 use crate::error::HclError;
 use crate::hcl1::token::{Hcl1Token, Hcl1TokenKind};
 use crate::span::Span;
-
 /// Lexer for tokenizing HCL 1.0 input streams.
 #[derive(Debug)]
 pub struct Hcl1Lexer<'a> {
@@ -16,7 +14,6 @@ pub struct Hcl1Lexer<'a> {
     line: usize,
     col: usize,
 }
-
 impl<'a> Hcl1Lexer<'a> {
     /// Creates a new [`Hcl1Lexer`] for the given input string.
     ///
@@ -33,15 +30,12 @@ impl<'a> Hcl1Lexer<'a> {
             col: 1,
         }
     }
-
     fn peek(&self) -> Option<char> {
         self.chars.get(self.cursor).map(|(_, c)| *c)
     }
-
     fn peek_next(&self) -> Option<char> {
         self.chars.get(self.cursor + 1).map(|(_, c)| *c)
     }
-
     fn advance(&mut self) -> Option<char> {
         if let Some(&(_, c)) = self.chars.get(self.cursor) {
             self.cursor += 1;
@@ -56,26 +50,21 @@ impl<'a> Hcl1Lexer<'a> {
             None
         }
     }
-
     fn current_byte(&self) -> usize {
         self.chars
             .get(self.cursor)
             .map_or(self.source.len(), |&(idx, _)| idx)
     }
-
     /// Tokenizes the entire input into a sequence of [`Hcl1Token`]s.
     ///
     /// # Errors
     /// Returns [`HclError::Lex`] if invalid or unclosed tokens are encountered.
     pub fn tokenize(&mut self) -> Result<Vec<Hcl1Token>, HclError> {
         let mut tokens = Vec::new();
-
         while let Some(c) = self.peek() {
             let start_byte = self.current_byte();
             let start_line = self.line;
             let start_col = self.col;
-
-            // 1. Whitespace
             if c == ' ' || c == '\x09' || c == '\x0d' {
                 let mut text = String::new();
                 while let Some(ch) = self.peek() {
@@ -93,8 +82,6 @@ impl<'a> Hcl1Lexer<'a> {
                 tokens.push(Hcl1Token::new(Hcl1TokenKind::Whitespace, text, span));
                 continue;
             }
-
-            // 2. Newline
             if c == '\x0a' {
                 self.advance();
                 let end_byte = self.current_byte();
@@ -104,8 +91,6 @@ impl<'a> Hcl1Lexer<'a> {
                 tokens.push(Hcl1Token::new(Hcl1TokenKind::Newline, "\n", span));
                 continue;
             }
-
-            // 3. Comments: #, //, /* ... */
             if c == '#' {
                 let mut text = String::new();
                 while let Some(ch) = self.peek() {
@@ -122,7 +107,6 @@ impl<'a> Hcl1Lexer<'a> {
                 tokens.push(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
                 continue;
             }
-
             if c == '/' && self.peek_next() == Some('/') {
                 let mut text = String::new();
                 while let Some(ch) = self.peek() {
@@ -139,7 +123,6 @@ impl<'a> Hcl1Lexer<'a> {
                 tokens.push(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
                 continue;
             }
-
             if c == '/' && self.peek_next() == Some('*') {
                 let mut text = String::new();
                 text.push(self.advance().unwrap_or('/'));
@@ -158,15 +141,11 @@ impl<'a> Hcl1Lexer<'a> {
                 tokens.push(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
                 continue;
             }
-
-            // 4. Heredoc: <<EOF ... EOF or <<-EOF ... EOF
             if c == '<' && self.peek_next() == Some('<') {
                 let token = self.lex_heredoc(start_byte, start_line, start_col)?;
                 tokens.push(token);
                 continue;
             }
-
-            // 5. Punctuation
             let punct = match c {
                 '=' => Some(Hcl1TokenKind::Assign),
                 ':' => Some(Hcl1TokenKind::Colon),
@@ -180,7 +159,6 @@ impl<'a> Hcl1Lexer<'a> {
                 ')' => Some(Hcl1TokenKind::CParen),
                 _ => None,
             };
-
             if let Some(kind) = punct {
                 self.advance();
                 let end_byte = self.current_byte();
@@ -190,15 +168,11 @@ impl<'a> Hcl1Lexer<'a> {
                 tokens.push(Hcl1Token::new(kind, c.to_string(), span));
                 continue;
             }
-
-            // 6. Quoted String
             if c == '"' {
                 let token = self.lex_string(start_byte, start_line, start_col)?;
                 tokens.push(token);
                 continue;
             }
-
-            // 7. Number
             if c.is_ascii_digit()
                 || (c == '-' && self.peek_next().is_some_and(|n| n.is_ascii_digit()))
             {
@@ -206,34 +180,27 @@ impl<'a> Hcl1Lexer<'a> {
                 tokens.push(token);
                 continue;
             }
-
-            // 8. Identifiers and Keywords
             if c.is_ascii_alphabetic() || c == '_' {
                 let token = self.lex_ident(start_byte, start_line, start_col);
                 tokens.push(token);
                 continue;
             }
-
-            // Unknown character
             let ch = self.advance().unwrap_or(c);
             return Err(HclError::Lex(format!(
                 "Unexpected character '{ch}' at line {start_line}, col {start_col}"
             )));
         }
-
         Ok(tokens)
     }
-
     fn lex_string(
         &mut self,
         start_byte: usize,
         start_line: usize,
         start_col: usize,
     ) -> Result<Hcl1Token, HclError> {
-        self.advance(); // consume opening quote
+        self.advance();
         let mut text = String::new();
         let mut closed = false;
-
         while let Some(ch) = self.advance() {
             if ch == '"' {
                 closed = true;
@@ -256,20 +223,17 @@ impl<'a> Hcl1Lexer<'a> {
                 text.push(ch);
             }
         }
-
         if !closed {
             return Err(HclError::Lex(format!(
                 "Unterminated string literal starting at line {start_line}, col {start_col}"
             )));
         }
-
         let end_byte = self.current_byte();
         let span = Span::new(
             start_byte, end_byte, start_line, start_col, self.line, self.col,
         );
         Ok(Hcl1Token::new(Hcl1TokenKind::String, text, span))
     }
-
     fn lex_number(&mut self, start_byte: usize, start_line: usize, start_col: usize) -> Hcl1Token {
         let mut text = String::new();
         if self.peek() == Some('-') {
@@ -290,7 +254,6 @@ impl<'a> Hcl1Lexer<'a> {
         );
         Hcl1Token::new(Hcl1TokenKind::Number, text, span)
     }
-
     fn lex_ident(&mut self, start_byte: usize, start_line: usize, start_col: usize) -> Hcl1Token {
         let mut text = String::new();
         while let Some(ch) = self.peek() {
@@ -301,33 +264,29 @@ impl<'a> Hcl1Lexer<'a> {
                 break;
             }
         }
-
         let kind = match text.as_str() {
             "true" | "false" => Hcl1TokenKind::Bool,
             "null" => Hcl1TokenKind::Null,
             _ => Hcl1TokenKind::Ident,
         };
-
         let end_byte = self.current_byte();
         let span = Span::new(
             start_byte, end_byte, start_line, start_col, self.line, self.col,
         );
         Hcl1Token::new(kind, text, span)
     }
-
     fn lex_heredoc(
         &mut self,
         start_byte: usize,
         start_line: usize,
         start_col: usize,
     ) -> Result<Hcl1Token, HclError> {
-        self.advance(); // '<'
-        self.advance(); // '<'
+        self.advance();
+        self.advance();
         let is_indented = self.peek() == Some('-');
         if is_indented {
             self.advance();
         }
-
         let mut marker = String::new();
         while let Some(ch) = self.peek() {
             if ch.is_ascii_alphanumeric() || ch == '_' {
@@ -337,24 +296,19 @@ impl<'a> Hcl1Lexer<'a> {
                 break;
             }
         }
-
         if marker.is_empty() {
             return Err(HclError::Lex(format!(
                 "Invalid heredoc delimiter at line {start_line}, col {start_col}"
             )));
         }
-
-        // Consume to newline
         while let Some(ch) = self.peek() {
             self.advance();
             if ch == '\x0a' {
                 break;
             }
         }
-
         let mut content = String::new();
         let mut closed = false;
-
         loop {
             let mut line = String::new();
             while let Some(ch) = self.advance() {
@@ -363,27 +317,22 @@ impl<'a> Hcl1Lexer<'a> {
                 }
                 line.push(ch);
             }
-
             let trimmed = if is_indented { line.trim() } else { &line };
             if trimmed == marker {
                 closed = true;
                 break;
             }
-
             content.push_str(&line);
             content.push('\x0a');
-
             if self.cursor >= self.chars.len() {
                 break;
             }
         }
-
         if !closed {
             return Err(HclError::Lex(format!(
                 "Unterminated heredoc `{marker}` starting at line {start_line}, col {start_col}"
             )));
         }
-
         let end_byte = self.current_byte();
         let span = Span::new(
             start_byte, end_byte, start_line, start_col, self.line, self.col,

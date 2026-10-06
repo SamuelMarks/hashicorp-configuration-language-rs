@@ -1,27 +1,20 @@
 //! HCL Parsing implementation.
-
-/// The main parser.
-pub mod parser;
-
-/// JSON parsing for HCL JSON profile.
-pub mod json;
-
-/// Type expression parsing.
-pub mod type_expr;
-
-/// Merging multiple parsed files.
-pub mod merge;
-
 /// Multi-file parser cache and file manager.
 pub mod file_manager;
-
+/// JSON parsing for HCL JSON profile.
+pub mod json;
+/// Merging multiple parsed files.
+pub mod merge;
+/// The main parser.
+pub mod parser;
+/// Type expression parsing.
+pub mod type_expr;
 pub use file_manager::{FileManager, HclParser};
 pub use merge::{
     MergeOptions, block_priority, merge_bodies, merge_bodies_with_options, merge_directory,
     merge_directory_with_options, merge_files,
 };
 pub use parser::{Parser, strip_heredoc_indentation};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Operator precedence
 pub enum Precedence {
@@ -48,7 +41,6 @@ pub enum Precedence {
     /// Primary precedence
     Primary,
 }
-
 impl Precedence {
     #[must_use]
     /// Determine precedence from a token kind
@@ -69,7 +61,6 @@ impl Precedence {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -79,10 +70,8 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::lex::token::TokenKind;
-
     #[test]
     fn test_precedence_from_token() {
         assert_eq!(
@@ -135,8 +124,6 @@ mod tests {
         assert_eq!(Precedence::from_token(&TokenKind::OParen), Precedence::Call);
         assert_eq!(Precedence::from_token(&TokenKind::OBrack), Precedence::Call);
         assert_eq!(Precedence::from_token(&TokenKind::Dot), Precedence::Call);
-
-        // Some unrelated token
         assert_eq!(
             Precedence::from_token(&TokenKind::Ident),
             Precedence::Lowest

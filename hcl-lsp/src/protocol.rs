@@ -1,7 +1,5 @@
 //! Language Server Protocol (LSP) 3.17 data types and JSON-RPC definitions.
-
 use serde::{Deserialize, Serialize};
-
 /// Standard JSON-RPC 2.0 error codes.
 pub mod error_codes {
     /// Invalid JSON was received by the server.
@@ -17,7 +15,6 @@ pub mod error_codes {
     /// The server received a request before `initialize` was completed.
     pub const SERVER_NOT_INITIALIZED: i64 = -32002;
 }
-
 /// A request identifier which may be an integer or a string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -27,7 +24,6 @@ pub enum RequestId {
     /// A string request identifier.
     String(String),
 }
-
 /// A standard JSON-RPC 2.0 request message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Request {
@@ -41,7 +37,6 @@ pub struct Request {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
 }
-
 /// A standard JSON-RPC 2.0 response message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Response {
@@ -57,7 +52,6 @@ pub struct Response {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ResponseError>,
 }
-
 impl Response {
     /// Creates a successful response.
     ///
@@ -73,7 +67,6 @@ impl Response {
             error: None,
         }
     }
-
     /// Creates an error response.
     ///
     /// # Arguments
@@ -94,7 +87,6 @@ impl Response {
         }
     }
 }
-
 /// A response error structure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResponseError {
@@ -106,7 +98,6 @@ pub struct ResponseError {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
-
 /// A standard JSON-RPC 2.0 notification message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Notification {
@@ -118,7 +109,6 @@ pub struct Notification {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
 }
-
 impl Notification {
     /// Creates a new notification.
     ///
@@ -134,7 +124,6 @@ impl Notification {
         }
     }
 }
-
 /// Position in a text document expressed as zero-based line and character offset.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Position {
@@ -143,7 +132,6 @@ pub struct Position {
     /// Zero-based character offset on a line.
     pub character: u32,
 }
-
 impl Position {
     /// Creates a new position.
     ///
@@ -155,7 +143,6 @@ impl Position {
         Self { line, character }
     }
 }
-
 /// A range in a text document expressed as start and end positions.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Range {
@@ -164,7 +151,6 @@ pub struct Range {
     /// The range's end position.
     pub end: Position,
 }
-
 impl Range {
     /// Creates a new range.
     ///
@@ -176,7 +162,6 @@ impl Range {
         Self { start, end }
     }
 }
-
 /// Represents a location inside a resource, such as a line inside a text file.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Location {
@@ -185,7 +170,6 @@ pub struct Location {
     /// The range inside the resource.
     pub range: Range,
 }
-
 /// An item to transfer a text document from the client to the server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextDocumentItem {
@@ -199,14 +183,12 @@ pub struct TextDocumentItem {
     /// The content of the opened text document.
     pub text: String,
 }
-
 /// Identifier for a text document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextDocumentIdentifier {
     /// The text document's URI.
     pub uri: String,
 }
-
 /// An identifier to denote a specific version of a text document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VersionedTextDocumentIdentifier {
@@ -215,7 +197,6 @@ pub struct VersionedTextDocumentIdentifier {
     /// The version number of this document.
     pub version: i32,
 }
-
 /// An event describing a change to a text document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextDocumentContentChangeEvent {
@@ -232,7 +213,6 @@ pub struct TextDocumentContentChangeEvent {
     /// The new text of the corresponding range or entire document.
     pub text: String,
 }
-
 /// Parameters for `textDocument/didOpen` notification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DidOpenTextDocumentParams {
@@ -240,7 +220,6 @@ pub struct DidOpenTextDocumentParams {
     #[serde(rename = "textDocument")]
     pub text_document: TextDocumentItem,
 }
-
 /// Parameters for `textDocument/didChange` notification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DidChangeTextDocumentParams {
@@ -251,7 +230,6 @@ pub struct DidChangeTextDocumentParams {
     #[serde(rename = "contentChanges")]
     pub content_changes: Vec<TextDocumentContentChangeEvent>,
 }
-
 /// Parameters for `textDocument/didClose` notification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DidCloseTextDocumentParams {
@@ -259,7 +237,6 @@ pub struct DidCloseTextDocumentParams {
     #[serde(rename = "textDocument")]
     pub text_document: TextDocumentIdentifier,
 }
-
 /// Parameters for `initialize` request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InitializeParams {
@@ -273,7 +250,6 @@ pub struct InitializeParams {
     #[serde(default)]
     pub capabilities: serde_json::Value,
 }
-
 /// Completion options advertised in server capabilities.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletionOptions {
@@ -288,7 +264,6 @@ pub struct CompletionOptions {
     )]
     pub trigger_characters: Option<Vec<String>>,
 }
-
 /// Semantic tokens options advertised in server capabilities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SemanticTokensOptions {
@@ -301,7 +276,6 @@ pub struct SemanticTokensOptions {
     #[serde(default)]
     pub range: Option<bool>,
 }
-
 /// Server capabilities returned in response to the `initialize` request.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerCapabilities {
@@ -335,14 +309,12 @@ pub struct ServerCapabilities {
     #[serde(rename = "referencesProvider", default)]
     pub references_provider: Option<bool>,
 }
-
 /// Result returned from `initialize` request.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InitializeResult {
     /// The capabilities the language server provides.
     pub capabilities: ServerCapabilities,
 }
-
 /// Represents programming constructs like variables, blocks, attributes, etc.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocumentSymbol {
@@ -362,10 +334,8 @@ pub struct DocumentSymbol {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<DocumentSymbol>>,
 }
-
 /// Standard symbol kinds matching LSP specification.
 pub struct SymbolKind;
-
 impl SymbolKind {
     /// A namespace symbol (used for blocks).
     pub const NAMESPACE: u32 = 3;
@@ -382,7 +352,6 @@ impl SymbolKind {
     /// A string symbol (used for block labels).
     pub const STRING: u32 = 15;
 }
-
 /// Content formatted with markup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MarkupContent {
@@ -391,7 +360,6 @@ pub struct MarkupContent {
     /// The content itself.
     pub value: String,
 }
-
 impl MarkupContent {
     /// Creates a new Markdown markup content object.
     ///
@@ -405,7 +373,6 @@ impl MarkupContent {
         }
     }
 }
-
 /// The result of a hover request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hover {
@@ -415,7 +382,6 @@ pub struct Hover {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub range: Option<Range>,
 }
-
 /// A completion item.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletionItem {
@@ -438,10 +404,8 @@ pub struct CompletionItem {
     )]
     pub insert_text: Option<String>,
 }
-
 /// Standard completion item kinds.
 pub struct CompletionItemKind;
-
 impl CompletionItemKind {
     /// Text completion.
     pub const TEXT: u32 = 1;
@@ -462,7 +426,6 @@ impl CompletionItemKind {
     /// Snippet completion.
     pub const SNIPPET: u32 = 15;
 }
-
 /// Represents a collection of completion items to be presented in the editor.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletionList {
@@ -472,7 +435,6 @@ pub struct CompletionList {
     /// The completion items.
     pub items: Vec<CompletionItem>,
 }
-
 /// The legend used to decode semantic tokens.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SemanticTokensLegend {
@@ -483,7 +445,6 @@ pub struct SemanticTokensLegend {
     #[serde(rename = "tokenModifiers")]
     pub token_modifiers: Vec<String>,
 }
-
 /// The result of a `textDocument/semanticTokens/full` or range request.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SemanticTokens {
@@ -493,7 +454,6 @@ pub struct SemanticTokens {
     /// The actual tokens encoded in delta format: [deltaLine, deltaStart, length, tokenType, tokenModifiers, ...]
     pub data: Vec<u32>,
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -503,9 +463,7 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     #[test]
     fn test_protocol_serialization_roundtrip() {
         let req = Request {
@@ -516,36 +474,29 @@ mod tests {
         };
         let s = serde_json::to_string(&req).unwrap();
         assert!(s.contains("\"method\":\"initialize\""));
-
         let resp = Response::ok(
             RequestId::Number(1),
-            serde_json::json!({"capabilities": {}}),
+            serde_json::json!({ "capabilities" : {} }),
         );
         assert!(resp.result.is_some());
-
         let err_resp = Response::error(
             Some(RequestId::Number(1)),
             error_codes::METHOD_NOT_FOUND,
             "not found",
         );
         assert!(err_resp.error.is_some());
-
         let notif = Notification::new("initialized", None);
         assert_eq!(notif.method, "initialized");
-
         let pos = Position::new(5, 10);
         assert_eq!(pos.line, 5);
         assert_eq!(pos.character, 10);
-
         let range = Range::new(pos, Position::new(5, 20));
         assert_eq!(range.end.character, 20);
-
         let loc = Location {
             uri: "file:///test.hcl".to_string(),
             range,
         };
         assert_eq!(loc.uri, "file:///test.hcl");
-
         let markup = MarkupContent::markdown("# Heading");
         assert_eq!(markup.kind, "markdown");
     }

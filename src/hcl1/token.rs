@@ -1,9 +1,7 @@
 //! Token model for legacy HCL 1.0 syntax.
 //!
 //! Defines token kinds and representations conforming to legacy HCL 1.0 lexing rules.
-
 use crate::span::Span;
-
 /// A lexical token kind in HCL 1.0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Hcl1TokenKind {
@@ -46,7 +44,6 @@ pub enum Hcl1TokenKind {
     /// A newline character (`\\n` or `\\r\\n`).
     Newline,
 }
-
 /// A spanned token in legacy HCL 1.0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hcl1Token {
@@ -57,7 +54,6 @@ pub struct Hcl1Token {
     /// The source span of the token.
     pub span: Span,
 }
-
 impl Hcl1Token {
     /// Creates a new [`Hcl1Token`].
     ///

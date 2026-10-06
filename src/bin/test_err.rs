@@ -8,12 +8,10 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::iter_on_single_items)]
-#![allow(clippy::coerce_container_to_any)]
 #![allow(clippy::trivial_regex)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::assert_is_empty)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
@@ -41,10 +39,8 @@
     clippy::pedantic,
     clippy::nursery
 )]
-
 use hashicorp_configuration_language_rs::serde::ser::to_string;
 use std::collections::BTreeMap;
-
 /// Entry point for `test-err` binary.
 fn main() {
     let mut bad = BTreeMap::new();
@@ -52,12 +48,9 @@ fn main() {
     let res = to_string(&bad);
     println!("{res:?}");
 }
-
 #[cfg(test)]
 mod tests {
-
     use super::*;
-
     #[test]
     fn test_main() {
         main();

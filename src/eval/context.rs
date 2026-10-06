@@ -1,6 +1,5 @@
 use crate::types::Value;
 use std::collections::HashMap;
-
 /// A context or scope for evaluating HCL expressions.
 ///
 /// Contains variables and functions that can be resolved during evaluation.
@@ -20,13 +19,11 @@ pub struct Context<'a> {
     /// Pluggable virtual filesystem implementation.
     pub fs: std::sync::Arc<dyn crate::eval::fs::FileSystem>,
 }
-
 impl Default for Context<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
-
 impl<'a> Context<'a> {
     /// Create a new, empty Context without standard library functions.
     #[must_use]
@@ -40,7 +37,6 @@ impl<'a> Context<'a> {
             fs: std::sync::Arc::new(crate::eval::fs::OsFileSystem),
         }
     }
-
     /// Create a new Context with all standard library functions enabled.
     #[must_use]
     pub fn with_stdlib() -> Self {
@@ -55,7 +51,6 @@ impl<'a> Context<'a> {
         ctx.register_filesystem_functions();
         ctx
     }
-
     /// Create a new Context with a parent, inheriting the parent's stdlib settings and filesystem.
     #[must_use]
     pub fn new_child(parent: &'a Context<'a>) -> Self {
@@ -68,7 +63,6 @@ impl<'a> Context<'a> {
             fs: parent.fs.clone(),
         }
     }
-
     /// Configures this context with a custom virtual filesystem implementation.
     ///
     /// # Arguments
@@ -79,13 +73,11 @@ impl<'a> Context<'a> {
         self.register_filesystem_functions();
         self
     }
-
     /// Returns a reference to the active virtual filesystem.
     #[must_use]
     pub fn filesystem(&self) -> &std::sync::Arc<dyn crate::eval::fs::FileSystem> {
         &self.fs
     }
-
     /// Enable standard library functions using builder style.
     #[must_use]
     pub fn enable_stdlib(mut self) -> Self {
@@ -93,150 +85,128 @@ impl<'a> Context<'a> {
         self.register_filesystem_functions();
         self
     }
-
     /// Enable standard library functions on this context in-place.
     pub fn register_stdlib(&mut self) {
         self.stdlib_enabled = true;
         self.register_filesystem_functions();
     }
-
     /// Enable collection functions on this context using builder style.
     #[must_use]
     pub fn with_collection_functions(mut self) -> Self {
         self.register_collection_functions();
         self
     }
-
     /// Register all collection standard library functions in this context.
     pub fn register_collection_functions(&mut self) {
         for func in crate::eval::stdlib::collection::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable conversion functions on this context using builder style.
     #[must_use]
     pub fn with_conversion_functions(mut self) -> Self {
         self.register_conversion_functions();
         self
     }
-
     /// Register all conversion standard library functions in this context.
     pub fn register_conversion_functions(&mut self) {
         for func in crate::eval::stdlib::conversion::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable crypto functions on this context using builder style.
     #[must_use]
     pub fn with_crypto_functions(mut self) -> Self {
         self.register_crypto_functions();
         self
     }
-
     /// Register all crypto standard library functions in this context.
     pub fn register_crypto_functions(&mut self) {
         for func in crate::eval::stdlib::crypto::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable datetime functions on this context using builder style.
     #[must_use]
     pub fn with_datetime_functions(mut self) -> Self {
         self.register_datetime_functions();
         self
     }
-
     /// Register all datetime standard library functions in this context.
     pub fn register_datetime_functions(&mut self) {
         for func in crate::eval::stdlib::datetime::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable encoding functions on this context using builder style.
     #[must_use]
     pub fn with_encoding_functions(mut self) -> Self {
         self.register_encoding_functions();
         self
     }
-
     /// Register all encoding standard library functions in this context.
     pub fn register_encoding_functions(&mut self) {
         for func in crate::eval::stdlib::encoding::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable filesystem and template functions on this context using builder style.
     #[must_use]
     pub fn with_filesystem_functions(mut self) -> Self {
         self.register_filesystem_functions();
         self
     }
-
     /// Register all filesystem and template standard library functions in this context.
     pub fn register_filesystem_functions(&mut self) {
         for func in crate::eval::stdlib::filesystem::functions_with_fs(self.fs.clone()) {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable network functions on this context using builder style.
     #[must_use]
     pub fn with_network_functions(mut self) -> Self {
         self.register_network_functions();
         self
     }
-
     /// Register all network standard library functions in this context.
     pub fn register_network_functions(&mut self) {
         for func in crate::eval::stdlib::network::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable numeric functions on this context using builder style.
     #[must_use]
     pub fn with_numeric_functions(mut self) -> Self {
         self.register_numeric_functions();
         self
     }
-
     /// Register all numeric standard library functions in this context.
     pub fn register_numeric_functions(&mut self) {
         for func in crate::eval::stdlib::numeric::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Enable math functions on this context (alias for numeric functions) using builder style.
     #[must_use]
     pub fn with_math_functions(self) -> Self {
         self.with_numeric_functions()
     }
-
     /// Register all math standard library functions in this context (alias for numeric functions).
     pub fn register_math_functions(&mut self) {
         self.register_numeric_functions();
     }
-
     /// Enable string functions on this context using builder style.
     #[must_use]
     pub fn with_string_functions(mut self) -> Self {
         self.register_string_functions();
         self
     }
-
     /// Register all string standard library functions in this context.
     pub fn register_string_functions(&mut self) {
         for func in crate::eval::stdlib::string::functions() {
             self.set_function(func.name.clone(), func);
         }
     }
-
     /// Retrieve a variable by name from this context or its parents.
     #[must_use]
     pub fn get_variable(&self, name: &str) -> Option<&Value> {
@@ -248,12 +218,10 @@ impl<'a> Context<'a> {
             None
         }
     }
-
     /// Set a variable in the current context.
     pub fn set_variable(&mut self, name: impl Into<String>, value: Value) {
         self.variables.insert(name.into(), value);
     }
-
     /// Sets a variable within a named namespace object (such as `"var"`, `"local"`, or `"path"`).
     ///
     /// If the namespace object does not exist in `variables`, a new object is initialized.
@@ -269,11 +237,11 @@ impl<'a> Context<'a> {
         value: Value,
     ) {
         let name_str = name.into();
-        if let Some(ns_val) = self.variables.get_mut(namespace)
-            && let crate::types::ValueData::Object(map) = &mut *ns_val.data
-        {
-            map.insert(name_str, value);
-            return;
+        if let Some(ns_val) = self.variables.get_mut(namespace) {
+            if let crate::types::ValueData::Object(map) = &mut *ns_val.data {
+                map.insert(name_str, value);
+                return;
+            }
         }
         let mut map = std::collections::BTreeMap::new();
         map.insert(name_str, value);
@@ -285,7 +253,6 @@ impl<'a> Context<'a> {
             ),
         );
     }
-
     /// Sets a variable in the `"var"` namespace scope (`var.<name>`).
     ///
     /// # Arguments
@@ -294,7 +261,6 @@ impl<'a> Context<'a> {
     pub fn set_var(&mut self, name: impl Into<String>, value: Value) {
         self.set_namespace_variable("var", name, value);
     }
-
     /// Sets a local variable in the `"local"` namespace scope (`local.<name>`).
     ///
     /// # Arguments
@@ -303,7 +269,6 @@ impl<'a> Context<'a> {
     pub fn set_local(&mut self, name: impl Into<String>, value: Value) {
         self.set_namespace_variable("local", name, value);
     }
-
     /// Configures the `"path"` namespace scope with standard filesystem paths (`path.root`, `path.cwd`).
     ///
     /// # Arguments
@@ -327,7 +292,6 @@ impl<'a> Context<'a> {
             ),
         );
     }
-
     /// Sets a deeply nested variable path (e.g. `["source", "qemu", "vm"]`).
     ///
     /// # Arguments
@@ -357,7 +321,6 @@ impl<'a> Context<'a> {
             self.variables.insert(root.to_string(), curr);
         }
     }
-
     /// Returns the names of all variables accessible from this context and its parents.
     #[must_use]
     pub fn variable_names(&self) -> Vec<String> {
@@ -368,7 +331,6 @@ impl<'a> Context<'a> {
         names.extend(self.variables.keys().cloned());
         names.into_iter().collect()
     }
-
     /// Retrieve a function by name from this context, its parents, or stdlib if enabled.
     ///
     /// If the name contains `::`, delegates to [`get_namespaced_func`](Self::get_namespaced_func).
@@ -391,7 +353,6 @@ impl<'a> Context<'a> {
             None
         }
     }
-
     /// Register a namespaced function within this context.
     ///
     /// # Arguments
@@ -425,7 +386,6 @@ impl<'a> Context<'a> {
         self.namespaced_functions
             .insert((ns, name.to_string()), func);
     }
-
     /// Retrieve a namespaced function from this context or parent scopes.
     ///
     /// If the identifier has no namespace segments, falls back to unqualified [`get_function`](Self::get_function).
@@ -440,7 +400,6 @@ impl<'a> Context<'a> {
         if ident.namespace.is_empty() {
             return self.get_function(&ident.name);
         }
-
         let key = (ident.namespace.clone(), ident.name.clone());
         if let Some(func) = self.namespaced_functions.get(&key) {
             Some(func)
@@ -450,7 +409,6 @@ impl<'a> Context<'a> {
             None
         }
     }
-
     /// Check whether a namespaced function is defined in this context or its parent scopes.
     ///
     /// # Arguments
@@ -465,13 +423,11 @@ impl<'a> Context<'a> {
         );
         self.get_namespaced_func(&ident).is_some()
     }
-
     /// Check whether a function is available in this context, its parents, or stdlib if enabled.
     #[must_use]
     pub fn has_function(&self, name: &str) -> bool {
         self.get_function(name).is_some()
     }
-
     /// Returns the names of all functions accessible from this context.
     #[must_use]
     pub fn function_names(&self) -> Vec<String> {
@@ -488,12 +444,10 @@ impl<'a> Context<'a> {
         }
         names.into_iter().collect()
     }
-
     /// Set a function in the current context.
     pub fn set_function(&mut self, name: impl Into<String>, func: crate::eval::func::Function) {
         self.functions.insert(name.into(), func);
     }
-
     /// Registers a user-defined function block in this evaluation context,
     /// supporting positional parameters, optional variadic parameter, and return type constraint.
     ///
@@ -505,7 +459,6 @@ impl<'a> Context<'a> {
         let variadic_param = fb.variadic_param.clone();
         let return_type = fb.return_type.clone();
         let body_expr = fb.body.clone();
-
         let func = crate::eval::func::Function {
             name: name.clone(),
             func: std::sync::Arc::new(move |args: &[Value]| -> Result<Value, String> {
@@ -523,10 +476,7 @@ impl<'a> Context<'a> {
                         args.len()
                     ));
                 }
-
                 let mut sub_ctx = Context::with_stdlib();
-
-                // Bind positional parameters and type check if type_expr is provided
                 for (i, param) in params.iter().enumerate() {
                     let arg = &args[i];
                     if let Some(ref te) = param.type_expr {
@@ -541,15 +491,12 @@ impl<'a> Context<'a> {
                     }
                     sub_ctx.set_variable(&param.name, arg.clone());
                 }
-
-                // Bind variadic parameter if present
                 if let Some(ref vp) = variadic_param {
                     let rest_args = if args.len() > min_args {
                         args[min_args..].to_vec()
                     } else {
                         Vec::new()
                     };
-
                     if let Some(ref te) = vp.type_expr {
                         let expected_ty = crate::eval::type_expr::eval_type_expr(te);
                         for arg in &rest_args {
@@ -562,7 +509,6 @@ impl<'a> Context<'a> {
                             }
                         }
                     }
-
                     let elem_types: Vec<crate::types::ty::Type> =
                         rest_args.iter().map(|v| v.ty().clone()).collect();
                     let variadic_val = Value::new(
@@ -571,11 +517,9 @@ impl<'a> Context<'a> {
                     );
                     sub_ctx.set_variable(&vp.name, variadic_val);
                 }
-
                 let (result_val, _diags) = crate::eval::evaluator::Evaluator::new(&sub_ctx)
                     .evaluate(&body_expr)
                     .map_err(|d| format!("Evaluation failed: {:?}", d.errors()))?;
-
                 if let Some(ref rt) = return_type {
                     let expected_return_ty = crate::eval::type_expr::eval_type_expr(rt);
                     result_val
@@ -587,11 +531,9 @@ impl<'a> Context<'a> {
             }),
             signature: None,
         };
-
         self.set_function(fb.name.clone(), func);
     }
 }
-
 fn merge_nested_values(dest: &mut Value, src: Value) {
     if let (crate::types::ValueData::Object(d_map), crate::types::ValueData::Object(s_map)) =
         (&mut *dest.data, &*src.data)
@@ -607,7 +549,6 @@ fn merge_nested_values(dest: &mut Value, src: Value) {
         *dest = src;
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -617,10 +558,8 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::types::{Type, ValueData};
-
     #[test]
     fn test_context_variables() {
         let mut ctx = Context::new();
@@ -629,37 +568,28 @@ mod tests {
             String::from("foo_str"),
             Value::new(Type::Bool, ValueData::Bool(true)),
         );
-
         assert!(ctx.get_variable("foo").is_some());
         assert!(ctx.get_variable("foo_str").is_some());
         assert!(ctx.get_variable("bar").is_none());
-
         let mut child = Context::new_child(&ctx);
         assert!(child.get_variable("foo").is_some());
-
         child.set_variable("bar", Value::new(Type::Bool, ValueData::Bool(false)));
         assert!(child.get_variable("bar").is_some());
         assert!(ctx.get_variable("bar").is_none());
-
-        // Shadowing
         child.set_variable("foo", Value::unknown(Type::String));
         let shadowed = child.get_variable("foo").unwrap();
         assert!(shadowed.is_unknown());
-
         let original = ctx.get_variable("foo").unwrap();
         assert!(!original.is_unknown());
     }
-
     #[test]
     fn test_context_variables_fallback() {
         let mut ctx = Context::new();
         assert_eq!(ctx.variable_names(), Vec::<String>::new());
         ctx.set_variable("foo", Value::new(Type::Bool, ValueData::Bool(true)));
         assert_eq!(ctx.variable_names(), vec!["foo".to_string()]);
-
         let child = Context::new_child(&ctx);
         assert_eq!(child.get_variable("missing_everywhere"), None);
-
         let mut child2 = Context::new_child(&child);
         assert!(child2.get_variable("foo").is_some());
         assert!(child2.get_variable("bar").is_none());
@@ -667,7 +597,6 @@ mod tests {
         child2.set_variable("bar", Value::new(Type::Bool, ValueData::Bool(false)));
         assert!(child2.get_variable("bar").is_some());
     }
-
     #[test]
     fn test_context_scoped_namespaces() {
         let mut ctx = Context::new();
@@ -681,23 +610,17 @@ mod tests {
             Value::new(Type::Number, ValueData::Number(42.into())),
         );
         ctx.set_path_scopes("/root/dir", "/cwd/dir");
-
         let var_val = ctx.get_variable("var").unwrap();
         assert!(var_val.to_string().contains("my_var"));
         assert!(var_val.to_string().contains("second_var"));
-
         let local_val = ctx.get_variable("local").unwrap();
         assert!(local_val.to_string().contains("my_local"));
-
         let path_val = ctx.get_variable("path").unwrap();
         assert!(path_val.to_string().contains("/root/dir"));
         assert!(path_val.to_string().contains("/cwd/dir"));
-
-        // Nested scopes
         ctx.set_nested_scope(&[], Value::new(Type::Bool, ValueData::Bool(false)));
         ctx.set_nested_scope(&["single"], Value::new(Type::Bool, ValueData::Bool(true)));
         assert!(ctx.get_variable("single").is_some());
-
         ctx.set_nested_scope(
             &["source", "qemu", "vm"],
             Value::new(Type::String, ValueData::String("qemu_img".into())),
@@ -709,8 +632,6 @@ mod tests {
         let source_val = ctx.get_variable("source").unwrap();
         assert!(source_val.to_string().contains("qemu_img"));
         assert!(source_val.to_string().contains("x86_64"));
-
-        // Overwrite non-object value with nested object
         ctx.set_nested_scope(
             &["overwrite_prim"],
             Value::new(Type::Number, ValueData::Number(10.into())),
@@ -721,8 +642,6 @@ mod tests {
         );
         let prim_obj = ctx.get_variable("overwrite_prim").unwrap();
         assert!(prim_obj.to_string().contains("child"));
-
-        // Overwrite a non-object namespace variable
         ctx.set_variable("scalar_ns", Value::new(Type::Bool, ValueData::Bool(true)));
         ctx.set_namespace_variable(
             "scalar_ns",
@@ -732,7 +651,6 @@ mod tests {
         let scalar_obj = ctx.get_variable("scalar_ns").unwrap();
         assert!(scalar_obj.to_string().contains("key"));
     }
-
     #[test]
     fn test_context_functions_fallback() {
         use crate::eval::func::Function;
@@ -744,7 +662,6 @@ mod tests {
             signature: None,
         };
         ctx.set_function("test_func", func);
-
         let child = Context::new_child(&ctx);
         let child2 = Context::new_child(&child);
         let found = child2.get_function("test_func").unwrap();
@@ -757,7 +674,6 @@ mod tests {
         no_stdlib_ctx.stdlib_enabled = false;
         assert!(no_stdlib_ctx.get_function("missing_func").is_none());
     }
-
     #[test]
     fn test_context_functions_call() {
         use crate::eval::func::Function;
@@ -769,10 +685,8 @@ mod tests {
             signature: None,
         };
         ctx.set_function("test_func", func);
-
         let f = ctx.get_function("test_func").unwrap();
         let _ = (f.func)(&[]);
-
         let func2 = Function {
             name: "other_func".to_string(),
             func: Arc::new(|_| Ok(Value::new(Type::String, ValueData::String("a".to_string())))),
@@ -782,7 +696,6 @@ mod tests {
         let f2 = ctx.get_function("other_func").unwrap();
         let _ = (f2.func)(&[]);
     }
-
     #[test]
     fn test_context_functions() {
         use crate::eval::func::Function;
@@ -794,36 +707,30 @@ mod tests {
             signature: None,
         };
         ctx.set_function("test_func", func);
-
         let func_str = Function {
             name: "test_func_str".to_string(),
             func: Arc::new(|_| Ok(Value::new(Type::Bool, ValueData::Bool(true)))),
             signature: None,
         };
         ctx.set_function(String::from("test_func_str"), func_str);
-
         let f = ctx.get_function("test_func").unwrap();
         assert!((f.func)(&[]).is_ok());
         let f_str = ctx.get_function("test_func_str").unwrap();
         assert!((f_str.func)(&[]).is_ok());
         assert!(ctx.get_function("other_func").is_none());
-
         let mut child = Context::new_child(&ctx);
         assert!(child.get_function("test_func").is_some());
         assert!(child.get_function("other_func").is_none());
-
         let func2 = Function {
             name: "other_func".to_string(),
             func: Arc::new(|_| Ok(Value::new(Type::String, ValueData::String("a".to_string())))),
             signature: None,
         };
         child.set_function("other_func", func2);
-
         let f2 = child.get_function("other_func").unwrap();
         assert!((f2.func)(&[]).is_ok());
         assert!(ctx.get_function("other_func").is_none());
     }
-
     #[test]
     fn test_context_with_stdlib() {
         let ctx = Context::with_stdlib();
@@ -832,13 +739,9 @@ mod tests {
         assert!(ctx.has_function("abs"));
         assert!(ctx.has_function("md5"));
         assert!(!ctx.has_function("nonexistent_fn_xyz"));
-
-        // Child inherits stdlib_enabled
         let child = Context::new_child(&ctx);
         assert!(child.stdlib_enabled);
         assert!(child.has_function("upper"));
-
-        // Child can shadow standard library function
         let mut child_shadow = Context::new_child(&ctx);
         use crate::eval::func::Function;
         use std::sync::Arc;
@@ -856,103 +759,78 @@ mod tests {
         let res = (custom_fn.func)(&[]).unwrap();
         assert_eq!(*res.data, ValueData::String("custom".into()));
     }
-
     #[test]
     fn test_context_enable_and_register_stdlib() {
         let mut ctx = Context::new();
         assert!(!ctx.stdlib_enabled);
         assert!(!ctx.has_function("lower"));
-
         ctx.register_stdlib();
         assert!(ctx.stdlib_enabled);
         assert!(ctx.has_function("lower"));
-
         let ctx2 = Context::new().enable_stdlib();
         assert!(ctx2.stdlib_enabled);
         assert!(ctx2.has_function("lower"));
     }
-
     #[test]
     fn test_context_category_loaders() {
         let c_coll = Context::new().with_collection_functions();
         assert!(c_coll.has_function("flatten"));
         assert!(!c_coll.has_function("md5"));
-
         let c_conv = Context::new().with_conversion_functions();
         assert!(c_conv.has_function("tostring"));
         assert!(!c_conv.has_function("flatten"));
-
         let c_crypto = Context::new().with_crypto_functions();
         assert!(c_crypto.has_function("md5"));
         assert!(!c_crypto.has_function("formatdate"));
-
         let c_dt = Context::new().with_datetime_functions();
         assert!(c_dt.has_function("formatdate"));
         assert!(!c_dt.has_function("md5"));
-
         let c_enc = Context::new().with_encoding_functions();
         assert!(c_enc.has_function("base64encode"));
         assert!(!c_enc.has_function("cidrhost"));
-
         let c_fs = Context::new().with_filesystem_functions();
         assert!(c_fs.has_function("file"));
         assert!(!c_fs.has_function("cidrhost"));
-
         let c_net = Context::new().with_network_functions();
         assert!(c_net.has_function("cidrhost"));
         assert!(!c_net.has_function("abs"));
-
         let c_num = Context::new().with_numeric_functions();
         assert!(c_num.has_function("abs"));
         assert!(!c_num.has_function("upper"));
-
         let c_math = Context::new().with_math_functions();
         assert!(c_math.has_function("abs"));
-
         let c_str = Context::new().with_string_functions();
         assert!(c_str.has_function("upper"));
         assert!(!c_str.has_function("abs"));
     }
-
     #[test]
     fn test_context_category_registers() {
         let mut ctx = Context::new();
         ctx.register_collection_functions();
         assert!(ctx.has_function("flatten"));
-
         ctx.register_conversion_functions();
         assert!(ctx.has_function("tostring"));
-
         ctx.register_crypto_functions();
         assert!(ctx.has_function("md5"));
-
         ctx.register_datetime_functions();
         assert!(ctx.has_function("formatdate"));
-
         ctx.register_encoding_functions();
         assert!(ctx.has_function("base64encode"));
-
         ctx.register_filesystem_functions();
         assert!(ctx.has_function("file"));
-
         ctx.register_network_functions();
         assert!(ctx.has_function("cidrhost"));
-
         ctx.register_numeric_functions();
         assert!(ctx.has_function("abs"));
-
         ctx.register_math_functions();
         assert!(ctx.has_function("ceil"));
-
         ctx.register_string_functions();
         assert!(ctx.has_function("lower"));
     }
-
     #[test]
     fn test_context_function_names() {
         let mut ctx = Context::new();
         assert_eq!(ctx.function_names(), Vec::<String>::new());
-
         use crate::eval::func::Function;
         use std::sync::Arc;
         ctx.set_function(
@@ -967,26 +845,20 @@ mod tests {
         assert!((f_my.func)(&[]).is_ok());
         let names = ctx.function_names();
         assert_eq!(names, vec!["my_fn".to_string()]);
-
         let child = Context::new_child(&ctx);
         let child_names = child.function_names();
         assert_eq!(child_names, vec!["my_fn".to_string()]);
-
         let stdlib_ctx = Context::with_stdlib();
         let all_names = stdlib_ctx.function_names();
         assert!(all_names.len() >= 70);
         assert!(all_names.contains(&"upper".to_string()));
     }
-
     #[test]
     fn test_register_function_block_coverage() {
         use crate::ast::expr::Expression;
         use crate::span::Span;
-
         let span = Span::new(0, 0, 1, 1, 1, 1);
         let mut ctx = Context::new();
-
-        // 1. Variadic function with 1 fixed param and variadic string param
         let fixed_param = crate::ast::user_func::FunctionParam {
             name: "prefix".to_string(),
             type_expr: Some(crate::ast::type_expr::TypeExpr::Primitive(
@@ -1017,26 +889,18 @@ mod tests {
         };
         ctx.register_function_block(&fb_variadic);
         let f = ctx.get_function("custom_var").unwrap();
-
-        // Error: fewer arguments than min_args
         assert!((f.func)(&[]).is_err());
-
-        // Exactly min_args (rest_args empty)
         let res_min = (f.func)(&[Value::new(Type::String, ValueData::String("p".into()))]);
         assert_eq!(
             res_min,
             Ok(Value::new(Type::String, ValueData::String("p".into())))
         );
-
-        // More args, but variadic param fails type coercion
         let bad_var = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         let res_bad_var = (f.func)(&[
             Value::new(Type::String, ValueData::String("p".into())),
             bad_var,
         ]);
         assert!(res_bad_var.is_err());
-
-        // 2. Return type mismatch
         let fb_ret_mismatch = crate::ast::user_func::FunctionBlock {
             name: "ret_mismatch".to_string(),
             params: vec![],
@@ -1051,10 +915,7 @@ mod tests {
         ctx.register_function_block(&fb_ret_mismatch);
         let f_mismatch = ctx.get_function("ret_mismatch").unwrap();
         assert!((f_mismatch.func)(&[]).is_err());
-        // Wrong argument count on non-variadic function
         assert!((f_mismatch.func)(&[Value::null(Type::Dynamic)]).is_err());
-
-        // 3. Body expression evaluation failure
         let fb_eval_fail = crate::ast::user_func::FunctionBlock {
             name: "eval_fail".to_string(),
             params: vec![],
@@ -1067,14 +928,10 @@ mod tests {
         let f_fail = ctx.get_function("eval_fail").unwrap();
         assert!((f_fail.func)(&[]).is_err());
     }
-
     #[test]
     fn test_context_coverage_gaps() {
-        // 1. Context::default()
         let ctx_def: Context = Context::default();
         assert_eq!(ctx_def.variable_names().len(), 0);
-
-        // 2. with_filesystem, filesystem, enable_stdlib
         let mem_fs: std::sync::Arc<dyn crate::eval::fs::FileSystem> =
             std::sync::Arc::new(crate::eval::fs::MemFileSystem::new());
         let ctx = Context::new()
@@ -1082,13 +939,9 @@ mod tests {
             .enable_stdlib();
         assert!(std::sync::Arc::ptr_eq(ctx.filesystem(), &mem_fs));
         assert!(ctx.has_function("upper"));
-
-        // 3. get_function fallback to None when stdlib disabled and no parent
         let bare_ctx = Context::new();
         assert!(!bare_ctx.has_function("nonexistent"));
         assert!(bare_ctx.get_function("nonexistent").is_none());
-
-        // 4. Namespaced functions
         let dummy_func = crate::eval::func::Function {
             name: "dummy".to_string(),
             func: std::sync::Arc::new(|_| Ok(Value::new(Type::Bool, ValueData::Bool(true)))),
@@ -1098,23 +951,17 @@ mod tests {
             (dummy_func.func)(&[]).ok(),
             Some(Value::new(Type::Bool, ValueData::Bool(true)))
         );
-
         let mut parent_ctx = Context::new();
         parent_ctx.set_variable("p_var", Value::new(Type::Bool, ValueData::Bool(true)));
         parent_ctx.set_namespaced_func(&["my", "ns"], "dummy", dummy_func.clone());
         assert!(parent_ctx.has_namespaced_func(&["my", "ns"], "dummy"));
         assert!(!parent_ctx.has_namespaced_func(&["my", "ns"], "missing"));
         assert!(!parent_ctx.has_namespaced_func(&["other"], "dummy"));
-
         let child_ctx = Context::new_child(&parent_ctx);
         assert!(child_ctx.variable_names().contains(&"p_var".to_string()));
-        // Look up namespaced func in parent via get_namespaced_func
         assert!(child_ctx.has_namespaced_func(&["my", "ns"], "dummy"));
-        // Look up via get_function with "::"
         assert!(child_ctx.get_function("my::ns::dummy").is_some());
         assert!(child_ctx.get_function("my::ns::missing").is_none());
-
-        // get_namespaced_func with empty namespace falls back to get_function
         let mut empty_ns_ctx = Context::new();
         empty_ns_ctx.set_function("plain_func", dummy_func);
         let empty_ns_ident = crate::ast::expr::NamespacedIdent::new(
@@ -1123,8 +970,6 @@ mod tests {
             crate::span::Span::new(0, 0, 0, 0, 0, 0),
         );
         assert!(empty_ns_ctx.get_namespaced_func(&empty_ns_ident).is_some());
-
-        // function_names() includes parent, stdlib, local, and namespaced functions
         let mut full_ctx = Context::new_child(&parent_ctx);
         full_ctx.register_stdlib();
         let local_fn = crate::eval::func::Function {

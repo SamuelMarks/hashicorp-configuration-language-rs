@@ -1,3 +1,9 @@
+#![allow(
+    clippy::needless_range_loop,
+    clippy::ifs_same_cond,
+    clippy::collapsible_if,
+    clippy::if_same_then_else
+)]
 //! Standalone command-line formatter for HCL files (`hclfmt`).
 //!
 //! Provides formatting, checking, listing, and diffing of `.hcl` and `.tf` files
@@ -20,12 +26,10 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::iter_on_single_items)]
-#![allow(clippy::coerce_container_to_any)]
 #![allow(clippy::trivial_regex)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::assert_is_empty)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
@@ -45,7 +49,6 @@
 #![allow(clippy::collection_is_never_read)]
 #![allow(clippy::literal_string_with_formatting_args)]
 #![allow(clippy::string_lit_as_bytes)]
-
 use hashicorp_configuration_language_rs::cst::format::format_str;
 use hashicorp_configuration_language_rs::diagnostic::Diagnostic;
 use hashicorp_configuration_language_rs::error::HclError;
@@ -54,7 +57,6 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
 /// Command-line configuration options for `hclfmt`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Options {
@@ -71,7 +73,6 @@ pub struct Options {
     /// Target file or directory paths to process (or `"-"` for standard input).
     pub targets: Vec<String>,
 }
-
 /// Parses command-line arguments into strongly-typed [`Options`].
 ///
 /// # Arguments
@@ -81,7 +82,6 @@ pub struct Options {
 /// Returns an error message if unknown flags or invalid arguments are encountered.
 pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Options, String> {
     let mut options = Options::default();
-
     for arg in args {
         match arg.as_str() {
             "-w" | "--write" => options.write = true,
@@ -98,14 +98,11 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Options, St
             target => options.targets.push(target.to_string()),
         }
     }
-
     if options.targets.is_empty() {
         options.targets.push("-".to_string());
     }
-
     Ok(options)
 }
-
 /// Recursively collects all target files from a path string.
 ///
 /// If `target` is `"-"`, returns `["-"]`.
@@ -128,33 +125,29 @@ pub fn collect_target_files(target: &str) -> Result<Vec<PathBuf>, String> {
     if path.is_file() {
         return Ok(vec![path.to_path_buf()]);
     }
-
     let mut files = Vec::new();
     walk_directory(path, &mut files)?;
     files.sort();
     Ok(files)
 }
-
 /// Recursively scans a directory for `.hcl` and `.tf` files.
 fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
     let entries = fs::read_dir(dir)
         .map_err(|e| format!("Failed to read directory '{}': {e}", dir.display()))?;
-
     for entry in entries.flatten() {
         let entry_path = entry.path();
         if entry_path.is_dir() {
             walk_directory(&entry_path, files)?;
-        } else if entry_path.is_file()
-            && let Some(ext) = entry_path.extension().and_then(|s| s.to_str())
-            && (ext == "hcl" || ext == "tf")
-        {
-            files.push(entry_path);
+        } else if entry_path.is_file() {
+            if let Some(ext) = entry_path.extension().and_then(|s| s.to_str()) {
+                if ext == "hcl" || ext == "tf" {
+                    files.push(entry_path);
+                }
+            }
         }
     }
-
     Ok(())
 }
-
 /// A line edit operation for diff generation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DiffOp<'a> {
@@ -165,7 +158,6 @@ enum DiffOp<'a> {
     /// Line was inserted into formatted text.
     Insert(&'a str),
 }
-
 /// Generates a pure-Rust unified diff between `original` and `formatted` text.
 ///
 /// Produces standard unified hunk headers (`@@ -line,count +line,count @@`).
@@ -180,13 +172,10 @@ pub fn generate_unified_diff(original: &str, formatted: &str, file_name: &str) -
     if original == formatted {
         return String::new();
     }
-
     let orig_lines: Vec<&str> = original.lines().collect();
     let form_lines: Vec<&str> = formatted.lines().collect();
-
     let m = orig_lines.len();
     let n = form_lines.len();
-
     let mut table = vec![vec![0usize; n + 1]; m + 1];
     for i in 0..m {
         for j in 0..n {
@@ -197,28 +186,56 @@ pub fn generate_unified_diff(original: &str, formatted: &str, file_name: &str) -
             }
         }
     }
-
     let mut ops = Vec::new();
     let mut i = m;
     let mut j = n;
     while i > 0 || j > 0 {
-        if i > 0 && j > 0 && orig_lines[i - 1] == form_lines[j - 1] {
-            ops.push(DiffOp::Equal(orig_lines[i - 1]));
-            i -= 1;
-            j -= 1;
-        } else if j > 0 && (i == 0 || table[i][j - 1] >= table[i - 1][j]) {
-            ops.push(DiffOp::Insert(form_lines[j - 1]));
-            j -= 1;
+        if i > 0 {
+            if j > 0 {
+                if orig_lines[i - 1] == form_lines[j - 1] {
+                    ops.push(DiffOp::Equal(orig_lines[i - 1]));
+                    i -= 1;
+                    j -= 1;
+                } else if j > 0 {
+                    if i == 0 || table[i][j - 1] >= table[i - 1][j] {
+                        ops.push(DiffOp::Insert(form_lines[j - 1]));
+                        j -= 1;
+                    } else {
+                        ops.push(DiffOp::Delete(orig_lines[i - 1]));
+                        i -= 1;
+                    }
+                } else {
+                    ops.push(DiffOp::Delete(orig_lines[i - 1]));
+                    i -= 1;
+                }
+            } else if j > 0 {
+                if i == 0 || table[i][j - 1] >= table[i - 1][j] {
+                    ops.push(DiffOp::Insert(form_lines[j - 1]));
+                    j -= 1;
+                } else {
+                    ops.push(DiffOp::Delete(orig_lines[i - 1]));
+                    i -= 1;
+                }
+            } else {
+                ops.push(DiffOp::Delete(orig_lines[i - 1]));
+                i -= 1;
+            }
+        } else if j > 0 {
+            if i == 0 || table[i][j - 1] >= table[i - 1][j] {
+                ops.push(DiffOp::Insert(form_lines[j - 1]));
+                j -= 1;
+            } else {
+                ops.push(DiffOp::Delete(orig_lines[i - 1]));
+                i -= 1;
+            }
         } else {
             ops.push(DiffOp::Delete(orig_lines[i - 1]));
             i -= 1;
         }
     }
     ops.reverse();
-
     format_unified_hunks(&ops, file_name)
 }
-
 /// Formats calculated diff operations into unified diff hunk format.
 fn format_unified_hunks(ops: &[DiffOp<'_>], file_name: &str) -> String {
     let mut out = format!(
@@ -226,16 +243,13 @@ fn format_unified_hunks(ops: &[DiffOp<'_>], file_name: &str) -> String {
 +++ {file_name}	(formatted)
 "
     );
-
     let context_size = 3;
     let mut hunk_ranges: Vec<(usize, usize)> = Vec::new();
-
     let mut idx = 0;
     while idx < ops.len() {
         if !matches!(ops[idx], DiffOp::Equal(_)) {
             let start = idx.saturating_sub(context_size);
             let mut end = std::cmp::min(ops.len(), idx + context_size + 1);
-
             let mut lookahead = idx + 1;
             while lookahead < ops.len() {
                 if !matches!(ops[lookahead], DiffOp::Equal(_)) {
@@ -248,16 +262,13 @@ fn format_unified_hunks(ops: &[DiffOp<'_>], file_name: &str) -> String {
                 }
                 lookahead += 1;
             }
-
             hunk_ranges.push((start, end));
         }
         idx += 1;
     }
-
     for (hunk_start, hunk_end) in hunk_ranges {
         let mut orig_line_no = 1;
         let mut form_line_no = 1;
-
         for op in &ops[..hunk_start] {
             match op {
                 DiffOp::Equal(_) => {
@@ -268,11 +279,9 @@ fn format_unified_hunks(ops: &[DiffOp<'_>], file_name: &str) -> String {
                 DiffOp::Insert(_) => form_line_no += 1,
             }
         }
-
         let mut orig_count = 0;
         let mut form_count = 0;
         let hunk_ops = &ops[hunk_start..hunk_end];
-
         for op in hunk_ops {
             match op {
                 DiffOp::Equal(_) => {
@@ -283,12 +292,10 @@ fn format_unified_hunks(ops: &[DiffOp<'_>], file_name: &str) -> String {
                 DiffOp::Insert(_) => form_count += 1,
             }
         }
-
         out.push_str(&format!(
             "@@ -{orig_line_no},{orig_count} +{form_line_no},{form_count} @@
 "
         ));
-
         for op in hunk_ops {
             match op {
                 DiffOp::Equal(line) => {
@@ -309,10 +316,8 @@ fn format_unified_hunks(ops: &[DiffOp<'_>], file_name: &str) -> String {
             }
         }
     }
-
     out
 }
-
 /// Executes formatting operations with the given options and streams.
 ///
 /// Returns the process exit code (`0` for success, non-zero for differences in check mode or errors).
@@ -332,15 +337,12 @@ pub fn run(
     stderr: &mut dyn Write,
 ) -> Result<i32, String> {
     let mut files_to_process = Vec::new();
-
     for target in &options.targets {
         let collected = collect_target_files(target)?;
         files_to_process.extend(collected);
     }
-
     let mut had_unformatted = false;
     let mut had_errors = false;
-
     for path in files_to_process {
         let is_stdin = path == Path::new("-");
         let (content, display_name) = if is_stdin {
@@ -354,7 +356,6 @@ pub fn run(
                 .map_err(|e| format!("Failed to read file '{}': {e}", path.display()))?;
             (buffer, path.display().to_string())
         };
-
         let formatted = match format_str(&content) {
             Ok(f) => f,
             Err(e) => {
@@ -380,39 +381,31 @@ pub fn run(
                 continue;
             }
         };
-
         let is_different = content != formatted;
-
         if is_different {
             had_unformatted = true;
-
             if options.list {
                 let _ = writeln!(stdout, "{display_name}");
             }
-
             if options.diff {
                 let diff_output = generate_unified_diff(&content, &formatted, &display_name);
                 let _ = write!(stdout, "{diff_output}");
             }
-
             if options.write && !is_stdin {
                 fs::write(&path, &formatted)
                     .map_err(|e| format!("Failed to write file '{}': {e}", path.display()))?;
             }
         }
-
         if !options.write && !options.list && !options.diff && !options.check {
             let _ = write!(stdout, "{formatted}");
         }
     }
-
     if had_errors || (options.check && had_unformatted) {
         Ok(1)
     } else {
         Ok(0)
     }
 }
-
 /// Helper entry point returning the exit code or command error.
 ///
 /// # Arguments
@@ -427,7 +420,6 @@ pub fn main_impl(args: Vec<String>) -> Result<i32, String> {
     let mut stderr = std::io::stderr();
     run(&options, &mut stdin, &mut stdout, &mut stderr)
 }
-
 /// Converts a formatting execution result into a process exit code.
 fn exit_code_from_result(res: Result<i32, String>) -> std::process::ExitCode {
     match res {
@@ -444,7 +436,6 @@ fn exit_code_from_result(res: Result<i32, String>) -> std::process::ExitCode {
         }
     }
 }
-
 /// Main entry point for the `hclfmt` CLI executable.
 fn main() -> std::process::ExitCode {
     #[cfg(not(test))]
@@ -453,12 +444,9 @@ fn main() -> std::process::ExitCode {
     let args = vec!["--help".to_string()];
     exit_code_from_result(main_impl(args))
 }
-
 #[cfg(test)]
 mod tests {
-
     use super::*;
-
     #[test]
     fn test_parse_args_all_flags() {
         let args = vec![
@@ -476,7 +464,6 @@ mod tests {
         assert!(opts.check);
         assert_eq!(opts.targets, vec!["main.hcl", "sub.tf"]);
     }
-
     #[test]
     fn test_parse_args_long_flags() {
         let args = vec![
@@ -492,21 +479,18 @@ mod tests {
         assert!(opts.check);
         assert_eq!(opts.targets, vec!["-"]);
     }
-
     #[test]
     fn test_parse_args_errors() {
         assert!(parse_args(vec!["--unknown".to_string()]).is_err());
         assert!(parse_args(vec!["-h".to_string()]).is_err());
         assert!(parse_args(vec!["--help".to_string()]).is_err());
     }
-
     #[test]
     fn test_diff_identical() {
         let src = "a = 1
 ";
         assert_eq!(generate_unified_diff(src, src, "test.hcl"), "");
     }
-
     #[test]
     fn test_diff_modified() {
         let orig = "a = 1
@@ -523,17 +507,13 @@ c = 3
         assert!(diff.contains("@@ -1,3 +1,3 @@"));
         assert!(diff.contains("-b = 2"));
         assert!(diff.contains("+b = 20"));
-
         let empty_to_new = generate_unified_diff("", "added\n", "add.hcl");
         assert!(empty_to_new.contains("+added"));
-
         let old_to_empty = generate_unified_diff("removed\n", "", "rem.hcl");
         assert!(old_to_empty.contains("-removed"));
-
         let del_from_start = generate_unified_diff("a\nb\nc\n", "b\nc\n", "del_start.hcl");
         assert!(del_from_start.contains("-a"));
     }
-
     #[test]
     fn test_run_stdin_default_and_check() {
         let unformatted = "a=1
@@ -542,7 +522,6 @@ c = 3
             targets: vec!["-".to_string()],
             ..Default::default()
         };
-
         let mut stdin = unformatted.as_bytes();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -554,7 +533,6 @@ c = 3
             "a = 1
 "
         );
-
         let opts_stdin_write = Options {
             write: true,
             targets: vec!["-".to_string()],
@@ -572,7 +550,6 @@ c = 3
             ),
             Ok(0)
         );
-
         let opts_check = Options {
             check: true,
             targets: vec!["-".to_string()],
@@ -589,7 +566,6 @@ c = 3
         )
         .unwrap();
         assert_eq!(code_check, 1);
-
         let mut stdin_formatted_check = "a = 1\n".as_bytes();
         let mut stdout_fc = Vec::new();
         let mut stderr_fc = Vec::new();
@@ -602,19 +578,16 @@ c = 3
         .unwrap();
         assert_eq!(code_fc, 0);
     }
-
     #[test]
     fn test_collect_target_files_nonexistent() {
         assert!(collect_target_files("nonexistent_path_definitely_not_here.hcl").is_err());
     }
-
     #[test]
     fn test_run_file_with_parse_error() {
         let dir = std::env::temp_dir().join(format!("hclfmt_err_test_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let bad_file = dir.join("bad.hcl");
         let _ = fs::write(&bad_file, "{ invalid syntax");
-
         let opts = Options {
             targets: vec![bad_file.to_string_lossy().to_string()],
             ..Default::default()
@@ -622,67 +595,52 @@ c = 3
         let mut stdin = std::io::empty();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-
         let code = run(&opts, &mut stdin, &mut stdout, &mut stderr).unwrap();
         assert_eq!(code, 1);
         let err_str = String::from_utf8(stderr).unwrap();
         assert!(err_str.contains("Error parsing"));
-
         let _ = fs::remove_dir_all(&dir);
     }
-
     #[test]
     fn test_main_impl_error() {
         assert!(main_impl(vec!["--unknown-flag".to_string()]).is_err());
     }
-
     #[test]
     fn test_walk_directory_and_collect_files_comprehensive() {
         let dir = std::env::temp_dir().join(format!("hclfmt_walk_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let sub_dir = dir.join("nested");
         let _ = fs::create_dir_all(&sub_dir);
-
         let f_hcl = dir.join("top.hcl");
         let f_tf = dir.join("top.tf");
         let f_txt = dir.join("readme.txt");
         let f_noext = dir.join("LICENSE");
         let f_sub_hcl = sub_dir.join("nested.hcl");
-
         let _ = fs::write(&f_hcl, "a = 1\n");
         let _ = fs::write(&f_tf, "b = 2\n");
         let _ = fs::write(&f_txt, "ignore\n");
         let _ = fs::write(&f_noext, "ignore\n");
         let _ = fs::write(&f_sub_hcl, "c = 3\n");
-
         let mut collected = Vec::new();
         let walk_res = walk_directory(&dir, &mut collected);
         assert!(walk_res.is_ok());
         collected.sort();
-
         assert_eq!(collected.len(), 3);
         assert!(collected.contains(&f_hcl));
         assert!(collected.contains(&f_tf));
         assert!(collected.contains(&f_sub_hcl));
-
-        // Test collecting a single file directly
         let f_hcl_str = f_hcl.to_string_lossy();
         let single_res = collect_target_files(&f_hcl_str);
         assert_eq!(single_res, Ok(vec![f_hcl.clone()]));
-
-        // Test collecting a directory directly (covers files.sort() and Ok(files))
         let dir_str = dir.to_string_lossy();
         let dir_res = collect_target_files(&dir_str);
         assert_eq!(
             dir_res,
             Ok(vec![f_sub_hcl.clone(), f_hcl.clone(), f_tf.clone()])
         );
-
-        // Test walk on nonexistent directory
         let bad_dir = dir.join("nonexistent_subdir");
         let mut bad_collected = Vec::new();
         assert!(walk_directory(&bad_dir, &mut bad_collected).is_err());
-
         #[cfg(unix)]
         {
             let broken_symlink = dir.join("broken_link");
@@ -690,14 +648,10 @@ c = 3
             let mut coll_link = Vec::new();
             assert!(walk_directory(&dir, &mut coll_link).is_ok());
         }
-
         let _ = fs::remove_dir_all(&dir);
     }
-
     #[test]
     fn test_format_unified_hunks_complex_cases() {
-        // Case 1: Two far-apart hunks with deletes and inserts to exercise
-        // lookahead break, second hunk insertion, and prior hunk line count accumulation.
         let ops = vec![
             DiffOp::Delete("old_1"),
             DiffOp::Insert("new_1"),
@@ -719,8 +673,6 @@ c = 3
         assert!(diff_out.contains("+new_1"));
         assert!(diff_out.contains("-old_2"));
         assert!(diff_out.contains("+new_2"));
-
-        // Case 2: Adjacent hunks within overlap range where start <= last.1
         let ops_overlap = vec![
             DiffOp::Delete("top"),
             DiffOp::Equal("mid_1"),
@@ -734,16 +686,13 @@ c = 3
         assert!(diff_overlap.contains("-top"));
         assert!(diff_overlap.contains("+bottom"));
     }
-
     /// Reader that simulates an IO error on standard input.
     struct FailingReader;
-
     impl Read for FailingReader {
         fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
             Err(std::io::Error::other("simulated stdin read error"))
         }
     }
-
     #[test]
     fn test_run_stdin_read_error() {
         let opts = Options {
@@ -756,17 +705,13 @@ c = 3
         let res = run(&opts, &mut stdin, &mut stdout, &mut stderr);
         assert!(res.is_err());
     }
-
     #[test]
     fn test_run_options_list_diff_write_success() {
         let dir = std::env::temp_dir().join(format!("hclfmt_run_opts_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let f_hcl = dir.join("unformatted.hcl");
         let _ = fs::write(&f_hcl, "a=1\n");
-
         let path_str = f_hcl.to_string_lossy();
-
-        // Test list option
         let opts_list = Options {
             list: true,
             targets: vec![path_str.to_string()],
@@ -778,8 +723,6 @@ c = 3
         let res_list = run(&opts_list, &mut stdin, &mut stdout, &mut stderr);
         assert_eq!(res_list, Ok(0));
         assert!(String::from_utf8_lossy(&stdout).contains(path_str.as_ref()));
-
-        // Test diff option
         let opts_diff = Options {
             diff: true,
             targets: vec![path_str.to_string()],
@@ -791,8 +734,6 @@ c = 3
         let res_diff = run(&opts_diff, &mut stdin, &mut stdout, &mut stderr);
         assert_eq!(res_diff, Ok(0));
         assert!(String::from_utf8_lossy(&stdout).contains("---"));
-
-        // Test write option (success case)
         let opts_write = Options {
             write: true,
             targets: vec![path_str.to_string()],
@@ -805,26 +746,19 @@ c = 3
         assert_eq!(res_write, Ok(0));
         let new_content = fs::read_to_string(&f_hcl).unwrap_or_default();
         assert_eq!(new_content, "a = 1\n");
-
         let _ = fs::remove_dir_all(&dir);
     }
-
     #[test]
     fn test_main_and_main_impl_comprehensive() {
         let dir = std::env::temp_dir().join(format!("hclfmt_main_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let f_hcl = dir.join("valid.hcl");
         let _ = fs::write(&f_hcl, "a = 1\n");
-
         let path_str = f_hcl.to_string_lossy();
         let res = main_impl(vec![path_str.to_string()]);
         assert_eq!(res, Ok(0));
-
-        // Test main_impl target collection failure
         let res_err = main_impl(vec!["definitely_missing_target_file.hcl".to_string()]);
         assert!(res_err.is_err());
-
-        // Test all branches of exit_code_from_result
         assert_eq!(
             exit_code_from_result(Ok(0)),
             std::process::ExitCode::SUCCESS
@@ -837,27 +771,19 @@ c = 3
             exit_code_from_result(Err("custom error".to_string())),
             std::process::ExitCode::FAILURE
         );
-
         let _ = main();
-
         let _ = fs::remove_dir_all(&dir);
     }
-
     #[cfg(unix)]
     #[test]
     fn test_io_and_permission_failures_unix() {
         use std::os::unix::fs::PermissionsExt;
-
         let dir = std::env::temp_dir().join(format!("hclfmt_perms_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-
-        // 1. Unreadable file: triggers read error in run()
         let unreadable_file = dir.join("unreadable.hcl");
         let _ = fs::write(&unreadable_file, "a=1\n");
         let _ = fs::set_permissions(&unreadable_file, fs::Permissions::from_mode(0o000));
-
         assert!(main_impl(vec![unreadable_file.to_string_lossy().to_string()]).is_err());
-
         let opts_unreadable = Options {
             targets: vec![unreadable_file.to_string_lossy().to_string()],
             ..Default::default()
@@ -867,12 +793,9 @@ c = 3
         let mut stderr = Vec::new();
         let res_unreadable = run(&opts_unreadable, &mut stdin, &mut stdout, &mut stderr);
         assert!(res_unreadable.is_err());
-
-        // 2. Read-only unformatted file with write mode: triggers write error in run()
         let readonly_file = dir.join("readonly.hcl");
         let _ = fs::write(&readonly_file, "a=1\n");
         let _ = fs::set_permissions(&readonly_file, fs::Permissions::from_mode(0o444));
-
         let opts_write = Options {
             write: true,
             targets: vec![readonly_file.to_string_lossy().to_string()],
@@ -883,15 +806,11 @@ c = 3
         let mut stderr = Vec::new();
         let res_write = run(&opts_write, &mut stdin, &mut stdout, &mut stderr);
         assert!(res_write.is_err());
-
-        // 3. Unreadable directory: triggers walk_directory error in collect_target_files()
         let unreadable_dir = dir.join("unreadable_dir");
         let _ = fs::create_dir_all(&unreadable_dir);
         let _ = fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o000));
         let res_collect = collect_target_files(&unreadable_dir.to_string_lossy());
         assert!(res_collect.is_err());
-
-        // 4. Nested unreadable directory: triggers recursive walk_directory error
         let parent_dir = dir.join("parent_walk");
         let child_dir = parent_dir.join("child_unreadable");
         let _ = fs::create_dir_all(&child_dir);
@@ -899,21 +818,16 @@ c = 3
         let mut files = Vec::new();
         let res_nested = walk_directory(&parent_dir, &mut files);
         assert!(res_nested.is_err());
-
-        // Restore permissions for cleanup
         let _ = fs::set_permissions(&unreadable_file, fs::Permissions::from_mode(0o644));
         let _ = fs::set_permissions(&readonly_file, fs::Permissions::from_mode(0o644));
         let _ = fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o755));
         let _ = fs::set_permissions(&child_dir, fs::Permissions::from_mode(0o755));
         let _ = fs::remove_dir_all(&dir);
     }
-
     #[test]
     fn test_hclfmt_json_flag_and_output() {
         let opts = parse_args(vec!["--json".to_string(), "-".to_string()]).unwrap();
         assert!(opts.json);
-
-        // Invalid HCL with json flag
         let mut stdin = "{ invalid syntax".as_bytes();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();

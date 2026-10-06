@@ -2,7 +2,6 @@
 //!
 //! Generates Markdown hover documentation for block keywords, attribute keys,
 //! built-in standard library functions, and user-defined functions.
-
 use crate::cache::VirtualDocument;
 use crate::protocol::{Hover, MarkupContent, Position};
 use crate::symbols::span_to_range;
@@ -10,7 +9,6 @@ use hashicorp_configuration_language_rs::ast::expr::Expression;
 use hashicorp_configuration_language_rs::ast::schema::BodySchema;
 use hashicorp_configuration_language_rs::ast::structure::Body;
 use hashicorp_configuration_language_rs::eval::stdlib::get_stdlib_function;
-
 /// Computes hover documentation at a specific document position.
 ///
 /// # Arguments
@@ -28,41 +26,37 @@ pub fn hover_at_position(
 ) -> Option<Hover> {
     let offset = doc.position_to_offset(pos);
     let body = doc.parsed_body.as_ref()?;
-
-    // 1. Check top-level or nested attributes & blocks
     find_hover_in_body(body, offset, schema)
 }
-
 /// Traverses a body looking for block keywords, attribute keys, or user functions matching offset.
 fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -> Option<Hover> {
-    // Check attributes
     for (name, attr) in &body.attributes {
         if attr.name_span.start_byte <= offset && offset <= attr.name_span.end_byte {
             let attr_schema = schema.and_then(|s| s.attributes.get(name));
             let mut md = format!(
                 "### Attribute `{name}`
 
-"
+        "
             );
             if let Some(aschem) = attr_schema {
                 if let Some(ref ty) = aschem.expected_type {
                     md.push_str(&format!(
                         "**Type:** `{ty}`
 
-"
+        "
                     ));
                 }
                 if aschem.required {
                     md.push_str(
                         "**Required:** `true`
 
-",
+        ",
                     );
                 } else {
                     md.push_str(
                         "**Required:** `false` (optional)
 
-",
+        ",
                     );
                 }
                 if let Some(ref desc) = aschem.description {
@@ -76,21 +70,17 @@ fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -
                 range: Some(span_to_range(&attr.name_span)),
             });
         }
-
-        // Check expression inside attribute (e.g. function call)
         if let Some(h) = find_hover_in_expr(&attr.expr, offset) {
             return Some(h);
         }
     }
-
-    // Check blocks
     for block in &body.blocks {
         if block.type_span.start_byte <= offset && offset <= block.type_span.end_byte {
             let block_schema = schema.and_then(|s| s.blocks.get(&block.block_type));
             let mut md = format!(
                 "### Block `{}`
 
-",
+        ",
                 block.block_type
             );
             if let Some(bschem) = block_schema {
@@ -99,7 +89,7 @@ fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -
                     md.push_str(
                         "
 
-",
+        ",
                     );
                 }
                 if !bschem.label_names.is_empty() {
@@ -116,18 +106,13 @@ fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -
                 range: Some(span_to_range(&block.type_span)),
             });
         }
-
-        // Check nested block body
         let inner_schema = schema
             .and_then(|s| s.blocks.get(&block.block_type))
             .and_then(|bs| bs.body_schema.as_ref());
-
         if let Some(h) = find_hover_in_body(&block.body, offset, inner_schema) {
             return Some(h);
         }
     }
-
-    // Check user functions
     for func in &body.functions {
         if func.span.start_byte <= offset && offset <= func.span.end_byte {
             let mut md = format!("### Function `{}`\n\n", func.name);
@@ -147,10 +132,8 @@ fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -
             });
         }
     }
-
     None
 }
-
 /// Recursively inspects expressions to find function calls or symbols matching cursor offset.
 fn find_hover_in_expr(expr: &Expression, offset: usize) -> Option<Hover> {
     match expr {
@@ -178,7 +161,6 @@ fn find_hover_in_expr(expr: &Expression, offset: usize) -> Option<Hover> {
                     });
                 }
             }
-
             for arg in &fc.args {
                 if let Some(h) = find_hover_in_expr(arg, offset) {
                     return Some(h);
@@ -235,10 +217,8 @@ fn find_hover_in_expr(expr: &Expression, offset: usize) -> Option<Hover> {
         | Expression::Traversal(_, _)
         | Expression::ForExpr(_, _) => {}
     }
-
     None
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -248,14 +228,12 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::protocol::TextDocumentItem;
     use hashicorp_configuration_language_rs::ast::schema::{AttributeSchema, BlockHeaderSchema};
     use hashicorp_configuration_language_rs::ast::user_func::{FunctionBlock, FunctionParam};
     use hashicorp_configuration_language_rs::span::Span;
     use hashicorp_configuration_language_rs::types::Type;
-
     #[test]
     fn test_hover_on_attribute_and_function() {
         let hcl = r#"
@@ -264,7 +242,6 @@ mod tests {
                 ip = "10.0.0.1"
             }
         "#;
-
         let schema = BodySchema::new()
             .with_attribute(
                 AttributeSchema::required("name")
@@ -275,17 +252,13 @@ mod tests {
                 BlockHeaderSchema::new("server", vec!["id".to_string()])
                     .with_description("Server configuration block."),
             );
-
         let item = TextDocumentItem {
             uri: "file:///main.tf".to_string(),
             language_id: "hcl".to_string(),
             version: 1,
             text: hcl.to_string(),
         };
-
         let doc = VirtualDocument::new(item);
-
-        // Hover over "name"
         let name_pos = Position::new(1, 13);
         let hover_attr = hover_at_position(&doc, name_pos, Some(&schema));
         assert_eq!(
@@ -306,8 +279,6 @@ mod tests {
                 .map(|h| h.contents.value.contains("**Required:** `true`")),
             Some(true)
         );
-
-        // Hover over "upper"
         let upper_pos = Position::new(1, 20);
         let hover_fn = hover_at_position(&doc, upper_pos, Some(&schema));
         assert_eq!(
@@ -316,13 +287,10 @@ mod tests {
                 .map(|h| h.contents.value.contains("upper")),
             Some(true)
         );
-
-        // Hover over "resource"
         let res_pos = Position::new(2, 14);
         let hover_res = hover_at_position(&doc, res_pos, Some(&schema));
         assert!(hover_res.is_some());
     }
-
     #[test]
     fn test_hover_unparsed_doc_and_miss() {
         let item = TextDocumentItem {
@@ -333,19 +301,15 @@ mod tests {
         };
         let mut doc = VirtualDocument::new(item);
         doc.parsed_body = None;
-
         assert!(hover_at_position(&doc, Position::new(0, 0), None).is_none());
-
         let doc2 = VirtualDocument::new(TextDocumentItem {
             uri: "file:///miss2.hcl".to_string(),
             language_id: "hcl".to_string(),
             version: 1,
             text: "foo = 1".to_string(),
         });
-        // Position far beyond document bounds
         assert!(hover_at_position(&doc2, Position::new(10, 10), None).is_none());
     }
-
     #[test]
     fn test_hover_attribute_without_schema_and_optional() {
         let hcl = "tag = \"prod\"\n";
@@ -355,8 +319,6 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         });
-
-        // 1. Without schema
         let h_no_schema = hover_at_position(&doc, Position::new(0, 1), None);
         assert_eq!(
             h_no_schema
@@ -364,8 +326,6 @@ mod tests {
                 .map(|h| h.contents.value.contains("Configuration attribute.")),
             Some(true)
         );
-
-        // 2. With optional attribute schema without type or description
         let schema = BodySchema::new().with_attribute(AttributeSchema::optional("tag"));
         let h_opt = hover_at_position(&doc, Position::new(0, 1), Some(&schema));
         assert_eq!(
@@ -382,7 +342,6 @@ mod tests {
             Some(false)
         );
     }
-
     #[test]
     fn test_hover_block_variants() {
         let hcl = r#"// leading line 0
@@ -403,18 +362,13 @@ mod tests {
                     .with_body_schema(inner_schema),
             )
             .with_block(BlockHeaderSchema::new("untyped", vec![]));
-
         let doc = VirtualDocument::new(TextDocumentItem {
             uri: "file:///block.hcl".to_string(),
             language_id: "hcl".to_string(),
             version: 1,
             text: hcl.to_string(),
         });
-
-        // Hover before block begins (offset < block.type_span.start_byte)
         assert!(hover_at_position(&doc, Position::new(0, 0), Some(&schema)).is_none());
-
-        // Hover over "cluster"
         let cluster_offset = doc.text.find("cluster").unwrap_or(0);
         let cluster_pos = doc.offset_to_position(cluster_offset + 2);
         let h_cluster = hover_at_position(&doc, cluster_pos, Some(&schema));
@@ -430,8 +384,6 @@ mod tests {
                 .map(|h| h.contents.value.contains("**Labels:** `name`")),
             Some(true)
         );
-
-        // Hover over inner block attribute "size"
         let size_offset = doc.text.find("size").unwrap_or(0);
         let size_pos = doc.offset_to_position(size_offset + 1);
         let h_size = hover_at_position(&doc, size_pos, Some(&schema));
@@ -441,8 +393,6 @@ mod tests {
                 .map(|h| h.contents.value.contains("Cluster size count.")),
             Some(true)
         );
-
-        // Hover over "untyped" (block in schema without description and without labels)
         let untyped_offset = doc.text.find("untyped").unwrap_or(0);
         let untyped_pos = doc.offset_to_position(untyped_offset + 2);
         let h_untyped = hover_at_position(&doc, untyped_pos, Some(&schema));
@@ -452,8 +402,6 @@ mod tests {
                 .map(|h| h.contents.value.contains("**Labels:**")),
             Some(false)
         );
-
-        // Hover over block without any schema
         let h_no_schema = hover_at_position(&doc, untyped_pos, None);
         assert_eq!(
             h_no_schema
@@ -462,7 +410,6 @@ mod tests {
             Some(true)
         );
     }
-
     #[test]
     fn test_hover_user_functions() {
         let hcl = "x = 1\n          ";
@@ -472,7 +419,6 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         });
-
         let fn_span = Span::new(10, 15, 1, 11, 1, 16);
         let param_span = Span::new(12, 13, 1, 13, 1, 14);
         let ufunc = FunctionBlock {
@@ -487,7 +433,6 @@ mod tests {
             body: Expression::Null(fn_span.clone()),
             span: fn_span,
         };
-
         for has_body in [true, false] {
             let mut target_doc = if has_body {
                 doc.clone()
@@ -501,8 +446,6 @@ mod tests {
                 doc = target_doc;
             }
         }
-
-        // 1. Matches user function span (byte 12)
         let h = hover_at_position(&doc, Position::new(1, 6), None);
         assert_eq!(
             h.as_ref().map(|v| v.contents.value.contains("my_sum(val)")),
@@ -513,16 +456,11 @@ mod tests {
                 .map(|v| v.contents.value.contains("User-defined function.")),
             Some(true)
         );
-
-        // 2. Position before user function span (offset 2 on '=' < 10)
         let h_before = hover_at_position(&doc, Position::new(0, 2), None);
         assert!(h_before.is_none());
-
-        // 3. Position after user function span (byte 16 > 15)
         let h_after = hover_at_position(&doc, Position::new(1, 10), None);
         assert!(h_after.is_none());
     }
-
     #[test]
     fn test_hover_in_nested_expressions() {
         let hcl = r#"
@@ -537,15 +475,12 @@ mod tests {
             i = regex_replace("abc", "b", "z")
             j = range(5)
         "#;
-
         let doc = VirtualDocument::new(TextDocumentItem {
             uri: "file:///expr.hcl".to_string(),
             language_id: "hcl".to_string(),
             version: 1,
             text: hcl.to_string(),
         });
-
-        // Test hover inside each upper(...) occurrence
         let mut start_idx = 0;
         while let Some(pos_idx) = doc.text[start_idx..].find("upper") {
             let actual_idx = start_idx + pos_idx;
@@ -557,13 +492,9 @@ mod tests {
             );
             start_idx = actual_idx + 5;
         }
-
-        // Unknown function name hover returns None
         let unknown_idx = doc.text.find("unknown_no_args").unwrap_or(0);
         let unknown_pos = doc.offset_to_position(unknown_idx + 3);
         assert!(hover_at_position(&doc, unknown_pos, None).is_none());
-
-        // Hover over regex_replace (has signature with description)
         let reg_idx = doc.text.find("regex_replace").unwrap_or(0);
         let reg_pos = doc.offset_to_position(reg_idx + 2);
         let h_reg = hover_at_position(&doc, reg_pos, None);
@@ -579,8 +510,6 @@ mod tests {
                 .map(|val| val.contents.value.contains("Replaces all occurrences")),
             Some(true)
         );
-
-        // Hover over range (has signature without description)
         let range_idx = doc.text.find("range(5)").unwrap_or(0);
         let range_pos = doc.offset_to_position(range_idx + 2);
         let h_range = hover_at_position(&doc, range_pos, None);

@@ -56,7 +56,7 @@ def compute_doc_coverage(repo_root: Path) -> float:
     """
     env = dict(os.environ)
     env["RUSTDOCFLAGS"] = "-Z unstable-options --show-coverage --output-format json"
-    cmd = ["cargo", "doc", "--workspace", "--no-deps"]
+    cmd = ["cargo", "+nightly", "doc", "--workspace", "--no-deps"]
 
     result = subprocess.run(
         cmd,
@@ -145,6 +145,7 @@ def compute_test_coverage(repo_root: Path) -> float:
     if shutil.which("cargo-llvm-cov"):
         cmd = [
             "cargo",
+            "+nightly",
             "llvm-cov",
             "--all-features",
             "--workspace",
@@ -206,9 +207,14 @@ def compute_test_coverage(repo_root: Path) -> float:
             try:
                 with open(tarpaulin_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    files = data.get("files", {})
-                    covered = sum(len(f.get("covered", [])) for f in files.values())
-                    coverable = sum(f.get("coverable", 0) for f in files.values())
+                    files = data.get("files", [])
+                    if isinstance(files, dict):
+                        files = list(files.values())
+                    covered = sum(
+                        len(f.get("covered", [])) if isinstance(f.get("covered", []), list) else f.get("covered", 0)
+                        for f in files
+                    )
+                    coverable = sum(f.get("coverable", 0) for f in files)
                     if coverable > 0:
                         return float(round((covered / coverable) * 100.0, 1))
             except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:

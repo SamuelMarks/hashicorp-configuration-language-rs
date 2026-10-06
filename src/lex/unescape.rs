@@ -1,8 +1,6 @@
 //! String unescaping utilities for HCL string literals and heredocs.
-
 use crate::error::HclError;
 use crate::span::Span;
-
 /// Unescape an HCL string literal or heredoc.
 ///
 /// Supports \n, \r, \t, \", \\, \uXXXX, and \UXXXXXXXX.
@@ -12,7 +10,6 @@ use crate::span::Span;
 pub fn unescape_string(input: &str, span: &Span) -> Result<String, HclError> {
     let mut out = String::with_capacity(input.len());
     let mut chars = input.char_indices().peekable();
-
     while let Some((_, c)) = chars.next() {
         if c == '\\' {
             if let Some((_, next_c)) = chars.next() {
@@ -28,22 +25,22 @@ pub fn unescape_string(input: &str, span: &Span) -> Result<String, HclError> {
                         let mut read = 0;
                         let mut hex_str = String::with_capacity(expected_len);
                         while read < expected_len {
-                            if let Some((_, hc)) = chars.peek()
-                                && let Some(digit) = hc.to_digit(16)
-                            {
-                                hex_str.push(*hc);
-                                val = (val << 4) | digit;
-                                chars.next();
-                                read += 1;
-                                continue;
+                            if let Some((_, hc)) = chars.peek() {
+                                if let Some(digit) = hc.to_digit(16) {
+                                    hex_str.push(*hc);
+                                    val = (val << 4) | digit;
+                                    chars.next();
+                                    read += 1;
+                                    continue;
+                                }
                             }
                             break;
                         }
-                        if read == expected_len
-                            && let Some(uc) = char::from_u32(val)
-                        {
-                            out.push(uc);
-                            continue;
+                        if read == expected_len {
+                            if let Some(uc) = char::from_u32(val) {
+                                out.push(uc);
+                                continue;
+                            }
                         }
                         return Err(HclError::Lex(format!(
                             "Invalid unicode escape: \\{next_c}{hex_str} at {span}"
@@ -61,10 +58,8 @@ pub fn unescape_string(input: &str, span: &Span) -> Result<String, HclError> {
             out.push(c);
         }
     }
-
     Ok(out)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -74,9 +69,7 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     #[test]
     fn test_unescape_standard() {
         let span = Span::new(0, 0, 0, 0, 0, 0);
@@ -90,7 +83,6 @@ mod tests {
         assert_eq!(unescape_string("a\\xb", &span).unwrap(), "a\\xb");
         assert_eq!(unescape_string("a\\", &span).unwrap(), "a\\");
     }
-
     #[test]
     fn test_unescape_unicode() {
         let span = Span::new(0, 0, 0, 0, 0, 0);

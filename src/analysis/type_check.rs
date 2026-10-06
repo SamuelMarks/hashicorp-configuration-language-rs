@@ -2,7 +2,6 @@
 //!
 //! Validates AST structures against declarative [`BodySchema`] specifications
 //! and [`ScopeSchema`]s without evaluating runtime variable values.
-
 use crate::ast::expr::{
     BinaryOp, Directive, Expression, ForExpr, FuncCall, TemplatePart, Traversal, TraversalOperator,
     UnaryOp,
@@ -16,7 +15,6 @@ use crate::span::Span;
 use crate::types::Type;
 use bigdecimal::ToPrimitive;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-
 /// Determines whether an actual type can be converted or coerced to an expected type.
 ///
 /// Returns `true` if `actual` is identical to `expected`, if either is [`Type::Dynamic`],
@@ -33,23 +31,15 @@ pub fn is_type_compatible(actual: &Type, expected: &Type) -> bool {
     if actual == expected || actual == &Type::Dynamic || expected == &Type::Dynamic {
         return true;
     }
-
     match (actual, expected) {
-        // Number / Bool / String coercion
         (Type::String, Type::Number | Type::Bool) | (Type::Number | Type::Bool, Type::String) => {
             true
         }
-
-        // Lists, sets, maps
         (Type::List(a) | Type::Set(a), Type::List(b) | Type::Set(b))
         | (Type::Map(a), Type::Map(b)) => is_type_compatible(a, b),
-
-        // Tuple to List/Set coercion
         (Type::Tuple(elems), Type::List(target) | Type::Set(target)) => {
             elems.iter().all(|el| is_type_compatible(el, target))
         }
-
-        // Tuple to Tuple coercion
         (Type::Tuple(a_elems), Type::Tuple(b_elems)) => {
             a_elems.len() == b_elems.len()
                 && a_elems
@@ -57,13 +47,9 @@ pub fn is_type_compatible(actual: &Type, expected: &Type) -> bool {
                     .zip(b_elems.iter())
                     .all(|(a, b)| is_type_compatible(a, b))
         }
-
-        // Object to Map coercion
         (Type::Object { attrs, .. }, Type::Map(target)) => {
             attrs.values().all(|v| is_type_compatible(v, target))
         }
-
-        // Object to Object coercion
         (
             Type::Object { attrs: a_attrs, .. },
             Type::Object {
@@ -82,11 +68,9 @@ pub fn is_type_compatible(actual: &Type, expected: &Type) -> bool {
             }
             true
         }
-
         _ => crate::types::unify::unify(actual, expected) == Some(expected.clone()),
     }
 }
-
 /// Unifies an arbitrary slice of types into their most general common supertype.
 ///
 /// # Arguments
@@ -109,7 +93,6 @@ pub fn unify_all(types: &[Type]) -> Type {
     }
     current
 }
-
 /// A static scope specification describing in-scope variables and function signatures.
 #[derive(Debug, Clone, Default)]
 pub struct ScopeSchema {
@@ -122,7 +105,6 @@ pub struct ScopeSchema {
     /// Whether undefined functions are permitted without emitting diagnostics.
     pub allow_undefined_functions: bool,
 }
-
 impl ScopeSchema {
     /// Creates a new, empty `ScopeSchema` with strict checking enabled.
     ///
@@ -132,7 +114,6 @@ impl ScopeSchema {
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Adds a declared variable with its static type to the scope schema.
     ///
     /// # Arguments
@@ -146,7 +127,6 @@ impl ScopeSchema {
         self.variables.insert(name.into(), ty);
         self
     }
-
     /// Adds multiple declared variables to the scope schema.
     ///
     /// # Arguments
@@ -159,7 +139,6 @@ impl ScopeSchema {
         self.variables.extend(vars);
         self
     }
-
     /// Adds a declared function signature to the scope schema.
     ///
     /// # Arguments
@@ -173,7 +152,6 @@ impl ScopeSchema {
         self.functions.insert(name.into(), sig);
         self
     }
-
     /// Sets whether undefined variables are allowed (permissive mode).
     ///
     /// # Arguments
@@ -186,7 +164,6 @@ impl ScopeSchema {
         self.allow_undefined_variables = allow;
         self
     }
-
     /// Sets whether undefined functions are allowed (permissive mode).
     ///
     /// # Arguments
@@ -199,7 +176,6 @@ impl ScopeSchema {
         self.allow_undefined_functions = allow;
         self
     }
-
     /// Retrieves the static type of a variable by name if registered.
     ///
     /// # Arguments
@@ -211,7 +187,6 @@ impl ScopeSchema {
     pub fn get_variable(&self, name: &str) -> Option<&Type> {
         self.variables.get(name)
     }
-
     /// Retrieves a function signature by name if registered.
     ///
     /// # Arguments
@@ -223,7 +198,6 @@ impl ScopeSchema {
     pub fn get_function(&self, name: &str) -> Option<&FunctionSignature> {
         self.functions.get(name)
     }
-
     /// Creates a child scope inheriting variables and functions from this scope.
     ///
     /// # Returns
@@ -233,7 +207,6 @@ impl ScopeSchema {
         self.clone()
     }
 }
-
 /// Static ahead-of-time (AOT) type checker engine.
 ///
 /// Validates an AST [`Body`] against a [`BodySchema`] and a [`ScopeSchema`]
@@ -242,7 +215,6 @@ impl ScopeSchema {
 pub struct TypeChecker {
     scope: ScopeSchema,
 }
-
 impl TypeChecker {
     /// Creates a new `TypeChecker` with an empty default scope.
     ///
@@ -252,7 +224,6 @@ impl TypeChecker {
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Configures this `TypeChecker` with a specified [`ScopeSchema`].
     ///
     /// # Arguments
@@ -265,7 +236,6 @@ impl TypeChecker {
         self.scope = scope;
         self
     }
-
     /// Returns a reference to the active [`ScopeSchema`].
     ///
     /// # Returns
@@ -274,7 +244,6 @@ impl TypeChecker {
     pub fn scope(&self) -> &ScopeSchema {
         &self.scope
     }
-
     /// Returns a mutable reference to the active [`ScopeSchema`].
     ///
     /// # Returns
@@ -282,7 +251,6 @@ impl TypeChecker {
     pub fn scope_mut(&mut self) -> &mut ScopeSchema {
         &mut self.scope
     }
-
     /// Validates an entire AST [`Body`] against an expected [`BodySchema`].
     ///
     /// Checks for unexpected attributes, missing required attributes, block type
@@ -304,7 +272,6 @@ impl TypeChecker {
             Ok(())
         }
     }
-
     /// Infers the static type of an expression and returns any accumulated diagnostics.
     ///
     /// # Arguments
@@ -324,7 +291,6 @@ impl TypeChecker {
             Ok(ty)
         }
     }
-
     /// Checks an expression against an expected static type.
     ///
     /// # Arguments
@@ -354,14 +320,12 @@ impl TypeChecker {
             diag.detail = Some(format!("Expected type {expected}, but received {actual}"));
             diags.push(diag);
         }
-
         if diags.has_errors() {
             Err(diags)
         } else {
             Ok(actual)
         }
     }
-
     /// Verifies a static traversal against the current scope schema.
     ///
     /// # Arguments
@@ -381,7 +345,6 @@ impl TypeChecker {
             Ok(ty)
         }
     }
-
     /// Checks a function call statically against declared or built-in signatures.
     ///
     /// # Arguments
@@ -402,7 +365,6 @@ impl TypeChecker {
             Ok(ty)
         }
     }
-
     fn check_body_with_scope(
         &self,
         body: &Body,
@@ -410,24 +372,23 @@ impl TypeChecker {
         scope: &ScopeSchema,
         diags: &mut Diagnostics,
     ) {
-        // 1. Check for unexpected attributes
         for (name, attr) in &body.attributes {
             if let Some(attr_schema) = schema.attributes.get(name) {
                 let actual_ty = self.infer_expression_type_inner(&attr.expr, scope, diags);
-                if let Some(expected_ty) = &attr_schema.expected_type
-                    && !is_type_compatible(&actual_ty, expected_ty)
-                {
-                    let mut diag = Diagnostic::new(
-                        HclError::Type(format!(
-                            "Invalid value for attribute {name:?}: expected {expected_ty}, got {actual_ty}"
-                        )),
-                        attr.expr.span(),
-                    );
-                    diag.summary = Some(format!("Attribute {name:?} type mismatch"));
-                    diag.detail = Some(format!(
-                        "Expected type {expected_ty}, but received type {actual_ty}"
-                    ));
-                    diags.push(diag);
+                if let Some(expected_ty) = &attr_schema.expected_type {
+                    if !is_type_compatible(&actual_ty, expected_ty) {
+                        let mut diag = Diagnostic::new(
+                            HclError::Type(format!(
+                                "Invalid value for attribute {name:?}: expected {expected_ty}, got {actual_ty}"
+                            )),
+                            attr.expr.span(),
+                        );
+                        diag.summary = Some(format!("Attribute {name:?} type mismatch"));
+                        diag.detail = Some(format!(
+                            "Expected type {expected_ty}, but received type {actual_ty}"
+                        ));
+                        diags.push(diag);
+                    }
                 }
             } else {
                 let mut diag = Diagnostic::new(
@@ -444,8 +405,6 @@ impl TypeChecker {
                 diags.push(diag);
             }
         }
-
-        // 2. Check for missing required attributes
         for attr_schema in schema.attributes.values() {
             if attr_schema.required && !body.attributes.contains_key(&attr_schema.name) {
                 diags.push(Diagnostic::new(
@@ -457,8 +416,6 @@ impl TypeChecker {
                 ));
             }
         }
-
-        // 3. Check regular blocks
         for block in &body.blocks {
             if let Some(block_schema) = schema.blocks.get(&block.block_type) {
                 let expected_count = block_schema.label_names.len();
@@ -472,7 +429,6 @@ impl TypeChecker {
                         block.type_span.clone(),
                     ));
                 }
-
                 if let Some(inner_schema) = &block_schema.body_schema {
                     self.check_body_with_scope(&block.body, inner_schema, scope, diags);
                 }
@@ -494,13 +450,10 @@ impl TypeChecker {
                 diags.push(diag);
             }
         }
-
-        // 4. Check dynamic blocks
         for dyn_block in &body.dynamic_blocks {
             self.check_dynamic_block(dyn_block, schema, scope, diags);
         }
     }
-
     fn check_dynamic_block(
         &self,
         dyn_block: &DynamicBlock,
@@ -529,7 +482,6 @@ impl TypeChecker {
                     (Type::Dynamic, Type::Dynamic)
                 }
             };
-
             if let Some(ref labels) = dyn_block.labels {
                 let expected_count = block_schema.label_names.len();
                 if labels.len() != expected_count {
@@ -555,7 +507,6 @@ impl TypeChecker {
                     }
                 }
             }
-
             let iterator_name = dyn_block
                 .iterator
                 .as_deref()
@@ -571,7 +522,6 @@ impl TypeChecker {
                     optional_attrs: BTreeSet::new(),
                 },
             );
-
             if let Some(inner_schema) = &block_schema.body_schema {
                 self.check_body_with_scope(&dyn_block.content, inner_schema, &child_scope, diags);
             }
@@ -593,7 +543,6 @@ impl TypeChecker {
             diags.push(diag);
         }
     }
-
     fn check_template_part(
         &self,
         part: &TemplatePart,
@@ -683,7 +632,6 @@ impl TypeChecker {
             },
         }
     }
-
     fn infer_expression_type_inner(
         &self,
         expr: &Expression,
@@ -720,7 +668,6 @@ impl TypeChecker {
                             None
                         }
                     };
-
                     let v_ty = self.infer_expression_type_inner(v_expr, scope, diags);
                     if let Some(k) = k_name {
                         attrs.insert(k, v_ty);
@@ -762,10 +709,8 @@ impl TypeChecker {
                         cond.cond_expr.span(),
                     ));
                 }
-
                 let true_ty = self.infer_expression_type_inner(&cond.true_expr, scope, diags);
                 let false_ty = self.infer_expression_type_inner(&cond.false_expr, scope, diags);
-
                 if let Some(unified) = crate::types::unify::unify(&true_ty, &false_ty) {
                     unified
                 } else {
@@ -879,7 +824,6 @@ impl TypeChecker {
             }
         }
     }
-
     fn infer_for_expr_type(
         &self,
         for_expr: &ForExpr,
@@ -904,13 +848,11 @@ impl TypeChecker {
                 (Type::Dynamic, Type::Dynamic)
             }
         };
-
         let mut child_scope = scope.child_scope();
         if let Some(ref k_var) = for_expr.key_var {
             child_scope.variables.insert(k_var.clone(), k_ty);
         }
         child_scope.variables.insert(for_expr.val_var.clone(), v_ty);
-
         if let Some(ref cond) = for_expr.cond_expr {
             let cond_ty = self.infer_expression_type_inner(cond, &child_scope, diags);
             if !is_type_compatible(&cond_ty, &Type::Bool) {
@@ -922,9 +864,7 @@ impl TypeChecker {
                 ));
             }
         }
-
         let val_ty = self.infer_expression_type_inner(&for_expr.val_expr, &child_scope, diags);
-
         if let Some(ref key_expr) = for_expr.key_expr {
             let key_ty = self.infer_expression_type_inner(key_expr, &child_scope, diags);
             if !is_type_compatible(&key_ty, &Type::String) {
@@ -944,7 +884,6 @@ impl TypeChecker {
             Type::List(Box::new(val_ty))
         }
     }
-
     fn check_traversal_inner(
         &self,
         trav: &Traversal,
@@ -952,7 +891,6 @@ impl TypeChecker {
         diags: &mut Diagnostics,
     ) -> Type {
         let mut curr_ty = self.infer_expression_type_inner(&trav.expr, scope, diags);
-
         for op in &trav.operators {
             match op {
                 TraversalOperator::GetAttr(attr_name, op_span) => match curr_ty {
@@ -993,23 +931,33 @@ impl TypeChecker {
                         }
                         Type::List(elem_ty) | Type::Set(elem_ty) => {
                             if !is_type_compatible(&idx_ty, &Type::Number) {
-                                diags.push(Diagnostic::new(
-                                    HclError::Traversal(format!(
-                                        "Invalid index type for collection: expected number, got {idx_ty}"
-                                    )),
-                                    op_span.clone(),
-                                ));
+                                diags
+                                    .push(
+                                        Diagnostic::new(
+                                            HclError::Traversal(
+                                                format!(
+                                                    "Invalid index type for collection: expected number, got {idx_ty}"
+                                                ),
+                                            ),
+                                            op_span.clone(),
+                                        ),
+                                    );
                             }
                             curr_ty = *elem_ty;
                         }
                         Type::Tuple(elems) => {
                             if !is_type_compatible(&idx_ty, &Type::Number) {
-                                diags.push(Diagnostic::new(
-                                    HclError::Traversal(format!(
-                                        "Invalid index type for tuple: expected number, got {idx_ty}"
-                                    )),
-                                    op_span.clone(),
-                                ));
+                                diags
+                                    .push(
+                                        Diagnostic::new(
+                                            HclError::Traversal(
+                                                format!(
+                                                    "Invalid index type for tuple: expected number, got {idx_ty}"
+                                                ),
+                                            ),
+                                            op_span.clone(),
+                                        ),
+                                    );
                             }
                             if let Expression::Number(num, _) = idx_expr {
                                 if let Some(i) = num.0.to_u64() {
@@ -1045,12 +993,17 @@ impl TypeChecker {
                         }
                         Type::Object { attrs, .. } => {
                             if !is_type_compatible(&idx_ty, &Type::String) {
-                                diags.push(Diagnostic::new(
-                                    HclError::Traversal(format!(
-                                        "Invalid index type for object: expected string, got {idx_ty}"
-                                    )),
-                                    op_span.clone(),
-                                ));
+                                diags
+                                    .push(
+                                        Diagnostic::new(
+                                            HclError::Traversal(
+                                                format!(
+                                                    "Invalid index type for object: expected string, got {idx_ty}"
+                                                ),
+                                            ),
+                                            op_span.clone(),
+                                        ),
+                                    );
                             }
                             if let Expression::String(k, _) = idx_expr {
                                 if let Some(val_ty) = attrs.get(k) {
@@ -1130,10 +1083,8 @@ impl TypeChecker {
                 }
             }
         }
-
         curr_ty
     }
-
     fn check_func_call_inner(
         &self,
         fc: &FuncCall,
@@ -1147,11 +1098,9 @@ impl TypeChecker {
             let ty = self.infer_expression_type_inner(arg, scope, diags);
             arg_types.push(ty);
         }
-
         let sig = scope.get_function(&name).cloned().or_else(|| {
             crate::eval::stdlib::get_stdlib_function(&name).and_then(|f| f.signature.clone())
         });
-
         if let Some(signature) = sig {
             let expected_fixed = signature.params.len();
             if let Some(ref variadic) = signature.variadic_param {
@@ -1173,25 +1122,53 @@ impl TypeChecker {
                         variadic
                     };
                     let arg_ty = &arg_types[idx];
-                    if !spec.allow_dynamic_type && arg_ty.is_dynamic() {
-                        diags.push(Diagnostic::new(
-                            HclError::FunctionArgMismatch(format!(
-                                "Argument {:?} for function {:?} requires exact type {}, got dynamic",
-                                spec.name, name, spec.param_type
-                            )),
-                            arg_expr.span(),
-                        ));
+                    if !spec.allow_dynamic_type {
+                        if arg_ty.is_dynamic() {
+                            diags
+                                .push(
+                                    Diagnostic::new(
+                                        HclError::FunctionArgMismatch(
+                                            format!(
+                                                "Argument {:?} for function {:?} requires exact type {}, got dynamic",
+                                                spec.name, name, spec.param_type
+                                            ),
+                                        ),
+                                        arg_expr.span(),
+                                    ),
+                                );
+                        } else if spec.param_type != Type::Dynamic
+                            && !arg_ty.is_dynamic()
+                            && !is_type_compatible(arg_ty, &spec.param_type)
+                        {
+                            diags
+                                .push(
+                                    Diagnostic::new(
+                                        HclError::FunctionArgMismatch(
+                                            format!(
+                                                "Invalid type for argument {:?} in call to {:?}: expected {}, got {}",
+                                                spec.name, name, spec.param_type, arg_ty
+                                            ),
+                                        ),
+                                        arg_expr.span(),
+                                    ),
+                                );
+                        }
                     } else if spec.param_type != Type::Dynamic
                         && !arg_ty.is_dynamic()
                         && !is_type_compatible(arg_ty, &spec.param_type)
                     {
-                        diags.push(Diagnostic::new(
-                            HclError::FunctionArgMismatch(format!(
-                                "Invalid type for argument {:?} in call to {:?}: expected {}, got {}",
-                                spec.name, name, spec.param_type, arg_ty
-                            )),
-                            arg_expr.span(),
-                        ));
+                        diags
+                            .push(
+                                Diagnostic::new(
+                                    HclError::FunctionArgMismatch(
+                                        format!(
+                                            "Invalid type for argument {:?} in call to {:?}: expected {}, got {}",
+                                            spec.name, name, spec.param_type, arg_ty
+                                        ),
+                                    ),
+                                    arg_expr.span(),
+                                ),
+                            );
                     }
                 }
             } else {
@@ -1210,30 +1187,57 @@ impl TypeChecker {
                     if idx < expected_fixed {
                         let spec = &signature.params[idx];
                         let arg_ty = &arg_types[idx];
-                        if !spec.allow_dynamic_type && arg_ty.is_dynamic() {
-                            diags.push(Diagnostic::new(
-                                HclError::FunctionArgMismatch(format!(
-                                    "Argument {:?} for function {:?} requires exact type {}, got dynamic",
-                                    spec.name, name, spec.param_type
-                                )),
-                                arg_expr.span(),
-                            ));
+                        if !spec.allow_dynamic_type {
+                            if arg_ty.is_dynamic() {
+                                diags
+                                    .push(
+                                        Diagnostic::new(
+                                            HclError::FunctionArgMismatch(
+                                                format!(
+                                                    "Argument {:?} for function {:?} requires exact type {}, got dynamic",
+                                                    spec.name, name, spec.param_type
+                                                ),
+                                            ),
+                                            arg_expr.span(),
+                                        ),
+                                    );
+                            } else if spec.param_type != Type::Dynamic
+                                && !arg_ty.is_dynamic()
+                                && !is_type_compatible(arg_ty, &spec.param_type)
+                            {
+                                diags
+                                    .push(
+                                        Diagnostic::new(
+                                            HclError::FunctionArgMismatch(
+                                                format!(
+                                                    "Invalid type for argument {:?} in call to {:?}: expected {}, got {}",
+                                                    spec.name, name, spec.param_type, arg_ty
+                                                ),
+                                            ),
+                                            arg_expr.span(),
+                                        ),
+                                    );
+                            }
                         } else if spec.param_type != Type::Dynamic
                             && !arg_ty.is_dynamic()
                             && !is_type_compatible(arg_ty, &spec.param_type)
                         {
-                            diags.push(Diagnostic::new(
-                                HclError::FunctionArgMismatch(format!(
-                                    "Invalid type for argument {:?} in call to {:?}: expected {}, got {}",
-                                    spec.name, name, spec.param_type, arg_ty
-                                )),
-                                arg_expr.span(),
-                            ));
+                            diags
+                                .push(
+                                    Diagnostic::new(
+                                        HclError::FunctionArgMismatch(
+                                            format!(
+                                                "Invalid type for argument {:?} in call to {:?}: expected {}, got {}",
+                                                spec.name, name, spec.param_type, arg_ty
+                                            ),
+                                        ),
+                                        arg_expr.span(),
+                                    ),
+                                );
                         }
                     }
                 }
             }
-
             match (signature.return_type)(&arg_types) {
                 Ok(ret) => ret,
                 Err(err) => {
@@ -1257,7 +1261,6 @@ impl TypeChecker {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -1267,71 +1270,52 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::ast::schema::{AttributeSchema, BlockHeaderSchema};
     use crate::eval::func::FunctionParamSpec;
     use crate::number::Number;
     use crate::parse::parser::Parser;
-
     /// Parses an HCL input string into a Body AST for testing.
     fn parse_body(input: &str) -> Body {
         let mut parser = Parser::new(input);
         parser.parse_body()
     }
-
     /// Parses an expression string into an AST Expression for testing.
     fn parse_expr(input: &str) -> Expression {
         let body = parse_body(&format!("val = {input}"));
         body.attributes["val"].expr.clone()
     }
-
     #[test]
     fn test_is_type_compatible_permutations() {
-        // Equal types
         assert!(is_type_compatible(&Type::String, &Type::String));
         assert!(is_type_compatible(&Type::Number, &Type::Number));
         assert!(is_type_compatible(&Type::Bool, &Type::Bool));
-
-        // Dynamic
         assert!(is_type_compatible(&Type::Dynamic, &Type::String));
         assert!(is_type_compatible(&Type::String, &Type::Dynamic));
-
-        // String <-> Number / Bool
         assert!(is_type_compatible(&Type::String, &Type::Number));
         assert!(is_type_compatible(&Type::Number, &Type::String));
         assert!(is_type_compatible(&Type::String, &Type::Bool));
         assert!(is_type_compatible(&Type::Bool, &Type::String));
-
-        // Lists and Sets
         let list_num = Type::List(Box::new(Type::Number));
         let set_num = Type::Set(Box::new(Type::Number));
         let list_str = Type::List(Box::new(Type::String));
         assert!(is_type_compatible(&list_num, &list_num));
         assert!(is_type_compatible(&list_num, &set_num));
         assert!(is_type_compatible(&set_num, &list_num));
-        assert!(is_type_compatible(&list_num, &list_str)); // number can coerce to string
-
-        // Tuples to Lists and Sets
+        assert!(is_type_compatible(&list_num, &list_str));
         let tup_nums = Type::Tuple(vec![Type::Number, Type::Number]);
         assert!(is_type_compatible(&tup_nums, &list_num));
         assert!(is_type_compatible(&tup_nums, &set_num));
-
-        // Tuple to Tuple
         let tup_mixed = Type::Tuple(vec![Type::Number, Type::String]);
         assert!(is_type_compatible(&tup_mixed, &tup_mixed));
         assert!(!is_type_compatible(
             &tup_nums,
             &Type::Tuple(vec![Type::Number])
         ));
-
-        // Maps
         let map_num = Type::Map(Box::new(Type::Number));
         let map_str = Type::Map(Box::new(Type::String));
         assert!(is_type_compatible(&map_num, &map_num));
-        assert!(is_type_compatible(&map_num, &map_str)); // value number coerces to string
-
-        // Object to Map
+        assert!(is_type_compatible(&map_num, &map_str));
         let mut obj_attrs = BTreeMap::new();
         obj_attrs.insert("a".to_string(), Type::Number);
         obj_attrs.insert("b".to_string(), Type::Number);
@@ -1340,8 +1324,6 @@ mod tests {
             optional_attrs: BTreeSet::new(),
         };
         assert!(is_type_compatible(&obj_num, &map_num));
-
-        // Object to Object
         let mut target_attrs = BTreeMap::new();
         target_attrs.insert("a".to_string(), Type::Number);
         let mut target_opts = BTreeSet::new();
@@ -1351,12 +1333,9 @@ mod tests {
             attrs: target_attrs,
             optional_attrs: target_opts,
         };
-        assert!(is_type_compatible(&obj_num, &target_obj)); // 'a' present, 'opt' optional
-
-        // Incompatible
+        assert!(is_type_compatible(&obj_num, &target_obj));
         assert!(!is_type_compatible(&Type::Bool, &list_num));
     }
-
     #[test]
     fn test_unify_all() {
         assert_eq!(unify_all(&[]), Type::Dynamic);
@@ -1365,15 +1344,12 @@ mod tests {
             unify_all(&[Type::Number, Type::Number, Type::Number]),
             Type::Number
         );
-        // Number and String unify to String
         assert_eq!(unify_all(&[Type::Number, Type::String]), Type::String);
-        // Incompatible fallback to Dynamic
         assert_eq!(
             unify_all(&[Type::Bool, Type::List(Box::new(Type::Number))]),
             Type::Dynamic
         );
     }
-
     #[test]
     fn test_scope_schema_builder() {
         let sig = FunctionSignature::with_static_return_type(vec![], Type::String);
@@ -1383,50 +1359,37 @@ mod tests {
             .with_function("my_fn", sig)
             .with_allow_undefined_variables(true)
             .with_allow_undefined_functions(true);
-
         assert_eq!(scope.get_variable("x"), Some(&Type::Number));
         assert_eq!(scope.get_variable("y"), Some(&Type::Bool));
         assert!(scope.get_function("my_fn").is_some());
         assert!(scope.allow_undefined_variables);
         assert!(scope.allow_undefined_functions);
-
         let child = scope.child_scope();
         assert_eq!(child.get_variable("x"), Some(&Type::Number));
     }
-
     #[test]
     fn test_type_checker_primitives_and_collections() {
         let checker = TypeChecker::new();
-
-        // Null
         let body_null = parse_body("val = null");
         let ty = checker
             .infer_expression_type(&body_null.attributes["val"].expr)
             .unwrap();
         assert_eq!(ty, Type::Dynamic);
-
-        // Bool
         let body_bool = parse_body("val = true");
         let ty = checker
             .infer_expression_type(&body_bool.attributes["val"].expr)
             .unwrap();
         assert_eq!(ty, Type::Bool);
-
-        // Number
         let body_num = parse_body("val = 42");
         let ty = checker
             .infer_expression_type(&body_num.attributes["val"].expr)
             .unwrap();
         assert_eq!(ty, Type::Number);
-
-        // String
         let body_str = parse_body(r#"val = "hello""#);
         let ty = checker
             .infer_expression_type(&body_str.attributes["val"].expr)
             .unwrap();
         assert_eq!(ty, Type::String);
-
-        // Tuple
         let body_tup = parse_body("val = [1, 2, 3]");
         let ty = checker
             .infer_expression_type(&body_tup.attributes["val"].expr)
@@ -1435,8 +1398,6 @@ mod tests {
             ty,
             Type::Tuple(vec![Type::Number, Type::Number, Type::Number])
         );
-
-        // Object
         let body_obj = parse_body(r#"val = { a = 1, b = "two" }"#);
         let ty = checker
             .infer_expression_type(&body_obj.attributes["val"].expr)
@@ -1451,15 +1412,11 @@ mod tests {
                 optional_attrs: BTreeSet::new(),
             }
         );
-
-        // Parentheses
         let body_paren = parse_body("val = (10)");
         let ty = checker
             .infer_expression_type(&body_paren.attributes["val"].expr)
             .unwrap();
         assert_eq!(ty, Type::Number);
-
-        // Check expression matches
         assert!(
             checker
                 .check_expression(&body_num.attributes["val"].expr, &Type::Number)
@@ -1469,14 +1426,11 @@ mod tests {
             checker
                 .check_expression(&body_str.attributes["val"].expr, &Type::Bool)
                 .is_ok()
-        ); // String coerces to Bool
+        );
     }
-
     #[test]
     fn test_type_checker_binary_and_unary_ops() {
         let checker = TypeChecker::new();
-
-        // Arithmetic
         let b1 = parse_body("val = 1 + 2 * 3 - 4 / 2 % 1");
         assert_eq!(
             checker
@@ -1484,8 +1438,6 @@ mod tests {
                 .unwrap(),
             Type::Number
         );
-
-        // Comparison
         let b2 = parse_body("val = 1 < 2");
         assert_eq!(
             checker
@@ -1493,8 +1445,6 @@ mod tests {
                 .unwrap(),
             Type::Bool
         );
-
-        // Logical
         let b3 = parse_body("val = true && false || true");
         assert_eq!(
             checker
@@ -1502,8 +1452,6 @@ mod tests {
                 .unwrap(),
             Type::Bool
         );
-
-        // Equality
         let b4 = parse_body("val = 1 == 2");
         assert_eq!(
             checker
@@ -1511,8 +1459,6 @@ mod tests {
                 .unwrap(),
             Type::Bool
         );
-
-        // Unary
         let b5 = parse_body("val = !true");
         assert_eq!(
             checker
@@ -1528,11 +1474,9 @@ mod tests {
             Type::Number
         );
     }
-
     #[test]
     fn test_type_checker_conditionals() {
         let checker = TypeChecker::new();
-
         let b1 = parse_body("val = true ? 1 : 2");
         assert_eq!(
             checker
@@ -1540,7 +1484,6 @@ mod tests {
                 .unwrap(),
             Type::Number
         );
-
         let b2 = parse_body(r#"val = false ? "yes" : "no""#);
         assert_eq!(
             checker
@@ -1549,7 +1492,6 @@ mod tests {
             Type::String
         );
     }
-
     #[test]
     fn test_type_checker_for_expressions() {
         let span = Span::default();
@@ -1557,8 +1499,6 @@ mod tests {
             .with_variable("items", Type::List(Box::new(Type::Number)))
             .with_variable("tags", Type::Map(Box::new(Type::String)));
         let checker = TypeChecker::new().with_scope(scope);
-
-        // Tuple for expression: [for x in items: x * 2]
         let for_tuple = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -1580,8 +1520,6 @@ mod tests {
             checker.infer_expression_type(&for_tuple).unwrap(),
             Type::List(Box::new(Type::Number))
         );
-
-        // Object for expression: {for k, v in tags: k => v}
         let for_obj = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: Some("k".to_string()),
@@ -1601,8 +1539,6 @@ mod tests {
             checker.infer_expression_type(&for_obj).unwrap(),
             Type::Map(Box::new(Type::String))
         );
-
-        // Grouping object for expression: {for k, v in tags: k => v...}
         let for_group = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: Some("k".to_string()),
@@ -1622,8 +1558,6 @@ mod tests {
             checker.infer_expression_type(&for_group).unwrap(),
             Type::Map(Box::new(Type::List(Box::new(Type::String))))
         );
-
-        // Filter condition: [for x in items: x if x > 0]
         let for_cond = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -1646,13 +1580,11 @@ mod tests {
             Type::List(Box::new(Type::Number))
         );
     }
-
     #[test]
     fn test_type_checker_traversals() {
         let mut user_attrs = BTreeMap::new();
         user_attrs.insert("name".to_string(), Type::String);
         user_attrs.insert("age".to_string(), Type::Number);
-
         let scope = ScopeSchema::new()
             .with_variable(
                 "user",
@@ -1664,18 +1596,13 @@ mod tests {
             .with_variable("scores", Type::List(Box::new(Type::Number)))
             .with_variable("pair", Type::Tuple(vec![Type::String, Type::Bool]))
             .with_variable("config", Type::Map(Box::new(Type::String)));
-
         let checker = TypeChecker::new().with_scope(scope);
-
-        // Variable
         let b_var = parse_body("val = user");
         assert!(
             checker
                 .infer_expression_type(&b_var.attributes["val"].expr)
                 .is_ok()
         );
-
-        // Object attribute access
         let b_name = parse_body("val = user.name");
         assert_eq!(
             checker
@@ -1683,16 +1610,12 @@ mod tests {
                 .unwrap(),
             Type::String
         );
-
-        // Missing attribute
         let b_bad_attr = parse_body("val = user.nonexistent");
         assert!(
             checker
                 .infer_expression_type(&b_bad_attr.attributes["val"].expr)
                 .is_err()
         );
-
-        // List indexing
         let b_list_idx = parse_body("val = scores[0]");
         assert_eq!(
             checker
@@ -1700,8 +1623,6 @@ mod tests {
                 .unwrap(),
             Type::Number
         );
-
-        // Tuple indexing
         let b_tup_0 = parse_body("val = pair[0]");
         assert_eq!(
             checker
@@ -1716,16 +1637,12 @@ mod tests {
                 .unwrap(),
             Type::Bool
         );
-
-        // Tuple index out of bounds
         let b_tup_oob = parse_body("val = pair[10]");
         assert!(
             checker
                 .infer_expression_type(&b_tup_oob.attributes["val"].expr)
                 .is_err()
         );
-
-        // Map indexing
         let b_map_idx = parse_body(r#"val = config["env"]"#);
         assert_eq!(
             checker
@@ -1733,8 +1650,6 @@ mod tests {
                 .unwrap(),
             Type::String
         );
-
-        // Splat
         let b_splat = parse_body("val = scores.*");
         assert_eq!(
             checker
@@ -1742,16 +1657,12 @@ mod tests {
                 .unwrap(),
             Type::List(Box::new(Type::Number))
         );
-
-        // Undefined variable in strict mode
         let b_undef = parse_body("val = missing_var");
         assert!(
             checker
                 .infer_expression_type(&b_undef.attributes["val"].expr)
                 .is_err()
         );
-
-        // Permissive mode allows undefined variable
         let perm_checker =
             TypeChecker::new().with_scope(ScopeSchema::new().with_allow_undefined_variables(true));
         assert_eq!(
@@ -1761,7 +1672,6 @@ mod tests {
             Type::Dynamic
         );
     }
-
     #[test]
     fn test_type_checker_function_calls() {
         let sig = FunctionSignature::with_static_return_type(
@@ -1771,20 +1681,15 @@ mod tests {
             ],
             Type::Number,
         );
-
         let var_sig = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("first", Type::String)],
             Type::String,
         )
         .with_variadic(FunctionParamSpec::new("rest", Type::String));
-
         let scope = ScopeSchema::new()
             .with_function("add", sig)
             .with_function("concat_all", var_sig);
-
         let checker = TypeChecker::new().with_scope(scope);
-
-        // Valid function call
         let b1 = parse_body("val = add(10, 20)");
         assert_eq!(
             checker
@@ -1792,32 +1697,24 @@ mod tests {
                 .unwrap(),
             Type::Number
         );
-
-        // Too few args
         let b_few = parse_body("val = add(10)");
         assert!(
             checker
                 .infer_expression_type(&b_few.attributes["val"].expr)
                 .is_err()
         );
-
-        // Too many args
         let b_many = parse_body("val = add(10, 20, 30)");
         assert!(
             checker
                 .infer_expression_type(&b_many.attributes["val"].expr)
                 .is_err()
         );
-
-        // Argument type mismatch
         let b_mismatch = parse_body(r#"val = add("not_num", [1, 2])"#);
         assert!(
             checker
                 .infer_expression_type(&b_mismatch.attributes["val"].expr)
                 .is_err()
         );
-
-        // Variadic function call
         let b_var1 = parse_body(r#"val = concat_all("a")"#);
         assert_eq!(
             checker
@@ -1832,8 +1729,6 @@ mod tests {
                 .unwrap(),
             Type::String
         );
-
-        // Stdlib function fallback (range)
         let b_range = parse_body("val = range(5)");
         assert_eq!(
             checker
@@ -1841,8 +1736,6 @@ mod tests {
                 .unwrap(),
             Type::List(Box::new(Type::Number))
         );
-
-        // Undefined function
         let b_undef_fn = parse_body("val = nonexistent_function(1)");
         assert!(
             checker
@@ -1850,7 +1743,6 @@ mod tests {
                 .is_err()
         );
     }
-
     #[test]
     fn test_type_checker_body_validation() {
         let schema = BodySchema::new()
@@ -1862,10 +1754,7 @@ mod tests {
                         .with_attribute(AttributeSchema::required("ip").with_type(Type::String)),
                 ),
             );
-
         let checker = TypeChecker::new();
-
-        // Valid body
         let b_valid = parse_body(
             r#"
             name = "production"
@@ -1876,8 +1765,6 @@ mod tests {
         "#,
         );
         assert!(checker.check_body(&b_valid, &schema).is_ok());
-
-        // Missing required attribute
         let b_missing = parse_body(
             r"
             age = 30
@@ -1885,8 +1772,6 @@ mod tests {
         );
         let err_missing = checker.check_body(&b_missing, &schema).unwrap_err();
         assert!(err_missing.to_string().contains("is required"));
-
-        // Unexpected attribute with typo suggestion
         let b_typo = parse_body(
             r#"
             name = "production"
@@ -1895,8 +1780,6 @@ mod tests {
         );
         let err_typo = checker.check_body(&b_typo, &schema).unwrap_err();
         assert!(err_typo.to_string().contains("not expected here"));
-
-        // Attribute type mismatch
         let b_bad_type = parse_body(
             r"
             name = [1, 2, 3]
@@ -1908,8 +1791,6 @@ mod tests {
                 .to_string()
                 .contains("Invalid value for attribute")
         );
-
-        // Wrong block labels count
         let b_labels = parse_body(
             r#"
             name = "test"
@@ -1920,8 +1801,6 @@ mod tests {
         );
         let err_labels = checker.check_body(&b_labels, &schema).unwrap_err();
         assert!(err_labels.to_string().contains("Wrong number of labels"));
-
-        // Unexpected block with suggestion
         let b_bad_block = parse_body(
             r#"
             name = "test"
@@ -1936,8 +1815,6 @@ mod tests {
             err_bad_block.errors()[0].detail.as_deref(),
             Some("Did you mean \"server\"?")
         );
-
-        // Unexpected block without suggestion
         let b_unrelated = parse_body(
             r#"
             name = "test"
@@ -1945,14 +1822,10 @@ mod tests {
         "#,
         );
         assert!(checker.check_body(&b_unrelated, &schema).is_err());
-
-        // Regular block with no body schema
         let schema_bare =
             BodySchema::new().with_block(BlockHeaderSchema::new("bare_block", vec![]));
         let b_bare = parse_body("bare_block {}");
         assert!(checker.check_body(&b_bare, &schema_bare).is_ok());
-
-        // Inner block body schema error
         let b_inner_err = parse_body(
             r#"
             name = "test"
@@ -1964,7 +1837,6 @@ mod tests {
         let err_inner = checker.check_body(&b_inner_err, &schema).unwrap_err();
         assert!(err_inner.to_string().contains("is not expected here"));
     }
-
     #[test]
     fn test_type_checker_dynamic_blocks() {
         let schema = BodySchema::new().with_block(
@@ -1973,11 +1845,8 @@ mod tests {
                     .with_attribute(AttributeSchema::required("val").with_type(Type::Number)),
             ),
         );
-
         let scope = ScopeSchema::new().with_variable("configs", Type::List(Box::new(Type::Number)));
         let checker = TypeChecker::new().with_scope(scope);
-
-        // Valid dynamic block
         let b_dyn = parse_body(
             r#"
             dynamic "setting" {
@@ -1990,8 +1859,6 @@ mod tests {
         "#,
         );
         assert!(checker.check_body(&b_dyn, &schema).is_ok());
-
-        // Invalid dynamic block for_each (not a collection)
         let b_dyn_err = parse_body(
             r#"
             dynamic "setting" {
@@ -2004,8 +1871,6 @@ mod tests {
         "#,
         );
         assert!(checker.check_body(&b_dyn_err, &schema).is_err());
-
-        // Dynamic block label count mismatch
         let b_dyn_lbls = parse_body(
             r#"
             dynamic "setting" {
@@ -2018,8 +1883,6 @@ mod tests {
         "#,
         );
         assert!(checker.check_body(&b_dyn_lbls, &schema).is_err());
-
-        // Unexpected dynamic block type
         let b_dyn_unexp = parse_body(
             r#"
             dynamic "unknown_block" {
@@ -2032,17 +1895,13 @@ mod tests {
         );
         assert!(checker.check_body(&b_dyn_unexp, &schema).is_err());
     }
-
     /// Tests compatibility between complex types, including tuple length and element mismatches,
     /// and object attributes, types, and optional attributes.
     #[test]
     fn test_is_type_compatible_edge_cases() {
-        // Tuple to Tuple element mismatch (Bool cannot coerce to List(Number))
         let tup1 = Type::Tuple(vec![Type::Number, Type::Bool]);
         let tup2 = Type::Tuple(vec![Type::Number, Type::List(Box::new(Type::Number))]);
         assert!(!is_type_compatible(&tup1, &tup2));
-
-        // Object to Object attribute mismatch
         let mut a_attrs = BTreeMap::new();
         a_attrs.insert("a".to_string(), Type::Number);
         let mut b_attrs = BTreeMap::new();
@@ -2056,8 +1915,6 @@ mod tests {
             optional_attrs: BTreeSet::new(),
         };
         assert!(!is_type_compatible(&obj_a, &obj_b));
-
-        // Object to Object missing required attribute
         let mut req_attrs = BTreeMap::new();
         req_attrs.insert("req".to_string(), Type::String);
         let obj_req = Type::Object {
@@ -2065,19 +1922,12 @@ mod tests {
             optional_attrs: BTreeSet::new(),
         };
         assert!(!is_type_compatible(&obj_a, &obj_req));
-
-        // Object to Map with incompatible attributes
         let map_bool = Type::Map(Box::new(Type::List(Box::new(Type::Bool))));
         assert!(!is_type_compatible(&obj_a, &map_bool));
-
-        // Tuple to List/Set with incompatible element
         let list_bool = Type::List(Box::new(Type::List(Box::new(Type::Bool))));
         assert!(!is_type_compatible(&tup1, &list_bool));
-
-        // Default branch fallback: incompatible primitives
         assert!(!is_type_compatible(&Type::Number, &Type::Tuple(vec![])));
     }
-
     /// Tests [`TypeChecker`] public methods including scope access, [`TypeChecker::check_traversal`],
     /// [`TypeChecker::check_func_call`], and [`TypeChecker::check_expression`].
     #[test]
@@ -2095,8 +1945,6 @@ mod tests {
             ),
         );
         assert_eq!(checker.scope().get_variable("x"), Some(&Type::Number));
-
-        // check_expression success & failure
         let expr_num = parse_expr("42");
         assert!(checker.check_expression(&expr_num, &Type::Number).is_ok());
         assert!(
@@ -2104,8 +1952,6 @@ mod tests {
                 .check_expression(&expr_num, &Type::List(Box::new(Type::Bool)))
                 .is_err()
         );
-
-        // check_traversal success & failure
         let trav_ok = Traversal {
             expr: Box::new(Expression::Variable(
                 "x".to_string(),
@@ -2122,8 +1968,6 @@ mod tests {
             operators: vec![],
         };
         assert!(checker.check_traversal(&trav_err).is_err());
-
-        // check_func_call success (custom & stdlib fallback range) & failure
         let fc_custom = FuncCall {
             name: "my_fn".into(),
             args: vec![Expression::String(
@@ -2158,7 +2002,6 @@ mod tests {
                 .is_err()
         );
     }
-
     /// Tests dynamic blocks with various collection types, invalid labels, custom iterators,
     /// and blocks without nested body schemas.
     #[test]
@@ -2171,7 +2014,6 @@ mod tests {
                 ),
             )
             .with_block(BlockHeaderSchema::new("no_schema_block", vec![]));
-
         let mut scope = ScopeSchema::new();
         scope
             .variables
@@ -2196,9 +2038,7 @@ mod tests {
         scope
             .variables
             .insert("dyn_coll".to_string(), Type::Dynamic);
-
         let checker = TypeChecker::new().with_scope(scope);
-
         for coll in ["set_coll", "map_coll", "tup_coll", "obj_coll", "dyn_coll"] {
             let body_str = format!(
                 r#"
@@ -2215,8 +2055,6 @@ mod tests {
             let b = parse_body(&body_str);
             assert!(checker.check_body(&b, &schema).is_ok());
         }
-
-        // Dynamic block with no body schema
         let b_no_schema = parse_body(
             r#"
             dynamic "no_schema_block" {
@@ -2226,8 +2064,6 @@ mod tests {
         "#,
         );
         assert!(checker.check_body(&b_no_schema, &schema).is_ok());
-
-        // Dynamic block with label that is not a string
         let b_bad_lbl = parse_body(
             r#"
             dynamic "item" {
@@ -2240,8 +2076,6 @@ mod tests {
         "#,
         );
         assert!(checker.check_body(&b_bad_lbl, &schema).is_err());
-
-        // Dynamic block with typo suggestion
         let b_dyn_typo = parse_body(
             r#"
             dynamic "itim" {
@@ -2256,7 +2090,6 @@ mod tests {
             Some("Did you mean \"item\"?")
         );
     }
-
     /// Tests template directives including conditional if, `else_if`, else, and for directives
     /// with various collection types and error conditions.
     #[test]
@@ -2286,10 +2119,7 @@ mod tests {
         scope
             .variables
             .insert("dyn_coll".to_string(), Type::Dynamic);
-
         let checker = TypeChecker::new().with_scope(scope);
-
-        // Valid if-elseif-else template
         let b_if = parse_body(
             r#"
             val = "%{if bool_val}yes%{elif !bool_val}no%{else}maybe%{endif}"
@@ -2300,8 +2130,6 @@ mod tests {
                 .infer_expression_type(&b_if.attributes["val"].expr)
                 .is_ok()
         );
-
-        // Invalid if condition (tuple is not bool)
         let b_if_err = parse_body(
             r#"
             val = "%{if [1]}yes%{endif}"
@@ -2312,8 +2140,6 @@ mod tests {
                 .infer_expression_type(&b_if_err.attributes["val"].expr)
                 .is_err()
         );
-
-        // Invalid elif condition (tuple is not bool)
         let b_elif_err = parse_body(
             r#"
             val = "%{if bool_val}yes%{elif [1]}no%{endif}"
@@ -2324,8 +2150,6 @@ mod tests {
                 .infer_expression_type(&b_elif_err.attributes["val"].expr)
                 .is_err()
         );
-
-        // For directive with key and value across collection types
         for coll in ["set_coll", "map_coll", "tup_coll", "obj_coll", "dyn_coll"] {
             let body_str = format!(r#"val = "%{{for k, v in {coll}}}${{k}}=${{v}} %{{endfor}}""#);
             let b_for = parse_body(&body_str);
@@ -2335,8 +2159,6 @@ mod tests {
                     .is_ok()
             );
         }
-
-        // For directive over non-collection
         let b_for_bad = parse_body(
             r#"
             val = "%{for x in 123}${x}%{endfor}"
@@ -2347,8 +2169,6 @@ mod tests {
                 .infer_expression_type(&b_for_bad.attributes["val"].expr)
                 .is_err()
         );
-
-        // Directive::Strip
         let mut diags = Diagnostics::new();
         let span = Span::default();
         let strip_part = crate::ast::expr::TemplatePart::Directive(
@@ -2361,7 +2181,6 @@ mod tests {
         checker.check_template_part(&strip_part, checker.scope(), &mut diags);
         assert!(!diags.has_errors());
     }
-
     /// Tests static type inference for object keys, undefined variables, conditionals,
     /// binary operations, unary operations, and for expressions.
     #[test]
@@ -2371,46 +2190,35 @@ mod tests {
         scope.variables.insert("b".to_string(), Type::Bool);
         scope.variables.insert("s".to_string(), Type::String);
         let checker = TypeChecker::new().with_scope(scope);
-
-        // Object with non-string key expression
         let b_obj_key_bad = parse_body("val = { [1] = 2 }");
         assert!(
             checker
                 .infer_expression_type(&b_obj_key_bad.attributes["val"].expr)
                 .is_err()
         );
-
         let b_obj_key_good = parse_body("val = { (123) = 2 }");
         assert!(
             checker
                 .infer_expression_type(&b_obj_key_good.attributes["val"].expr)
                 .is_ok()
         );
-
-        // Undefined variable with allow_undefined_variables = true
         let loose_checker =
             TypeChecker::new().with_scope(ScopeSchema::new().with_allow_undefined_variables(true));
         let b_undef = parse_body("val = undef_var");
         let ty_undef = loose_checker.infer_expression_type(&b_undef.attributes["val"].expr);
         assert_eq!(ty_undef.ok(), Some(Type::Dynamic));
-
-        // Conditional with non-bool condition
         let b_cond_bad_cond = parse_body("val = [1] ? 1 : 2");
         assert!(
             checker
                 .infer_expression_type(&b_cond_bad_cond.attributes["val"].expr)
                 .is_err()
         );
-
-        // Conditional with incompatible branches
         let b_cond_incompat = parse_body("val = b ? 1 : [1]");
         assert!(
             checker
                 .infer_expression_type(&b_cond_incompat.attributes["val"].expr)
                 .is_err()
         );
-
-        // Binary arithmetic with non-numbers (tuples cannot coerce to number)
         assert!(
             checker
                 .infer_expression_type(&parse_expr("[1] + 1"))
@@ -2441,8 +2249,6 @@ mod tests {
                 .infer_expression_type(&parse_expr("[1] % 1"))
                 .is_err()
         );
-
-        // Binary comparison with non-numbers
         assert!(
             checker
                 .infer_expression_type(&parse_expr("[1] < 1"))
@@ -2468,8 +2274,6 @@ mod tests {
                 .infer_expression_type(&parse_expr("[1] >= 1"))
                 .is_err()
         );
-
-        // Binary logical with non-bools
         assert!(
             checker
                 .infer_expression_type(&parse_expr("[1] && true"))
@@ -2490,16 +2294,10 @@ mod tests {
                 .infer_expression_type(&parse_expr("false || [1]"))
                 .is_err()
         );
-
-        // Binary equality with incompatible types (warning generated, but returns Ok(Bool))
         let res_eq_warn = checker.infer_expression_type(&parse_expr("true == [1]"));
         assert_eq!(res_eq_warn.ok(), Some(Type::Bool));
-
-        // Unary operations with invalid operands
         assert!(checker.infer_expression_type(&parse_expr("![1]")).is_err());
         assert!(checker.infer_expression_type(&parse_expr("-[1]")).is_err());
-
-        // ForExpr collection types and errors
         let span = Span::default();
         let bad_for_coll = Expression::ForExpr(
             Box::new(ForExpr {
@@ -2514,7 +2312,6 @@ mod tests {
             span.clone(),
         );
         assert!(checker.infer_expression_type(&bad_for_coll).is_err());
-
         let bad_for_cond = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -2531,7 +2328,6 @@ mod tests {
             span.clone(),
         );
         assert!(checker.infer_expression_type(&bad_for_cond).is_err());
-
         let bad_for_key = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -2548,8 +2344,6 @@ mod tests {
             span.clone(),
         );
         assert!(checker.infer_expression_type(&bad_for_key).is_err());
-
-        // ForExpr map with grouping
         let for_group = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
@@ -2573,8 +2367,6 @@ mod tests {
             res_group.ok(),
             Some(Type::Map(Box::new(Type::List(Box::new(Type::String)))))
         );
-
-        // ForExpr iterating over Set, Map, Tuple, Object, Dynamic
         let mut coll_scope = ScopeSchema::new();
         coll_scope
             .variables
@@ -2597,7 +2389,6 @@ mod tests {
         );
         coll_scope.variables.insert("d".to_string(), Type::Dynamic);
         let coll_checker = TypeChecker::new().with_scope(coll_scope);
-
         for var in ["s", "m", "t", "o", "d"] {
             let for_expr_direct = Expression::ForExpr(
                 Box::new(ForExpr {
@@ -2614,7 +2405,6 @@ mod tests {
             assert!(coll_checker.infer_expression_type(&for_expr_direct).is_ok());
         }
     }
-
     /// Tests static type checking for `GetAttr`, `Index`, `LegacyIndex`, and splat operators across
     /// Dynamic, Object, Map, List, Set, Tuple, and unsupported types.
     #[test]
@@ -2646,10 +2436,7 @@ mod tests {
         scope.variables.insert("str_key".to_string(), Type::String);
         scope.variables.insert("n".to_string(), Type::Number);
         scope.variables.insert("b".to_string(), Type::Bool);
-
         let checker = TypeChecker::new().with_scope(scope);
-
-        // GetAttr
         assert_eq!(
             checker.infer_expression_type(&parse_expr("d.foo")).ok(),
             Some(Type::Dynamic)
@@ -2672,14 +2459,10 @@ mod tests {
                 .infer_expression_type(&parse_expr("n.attr"))
                 .is_err()
         );
-
-        // Index on Dynamic
         assert_eq!(
             checker.infer_expression_type(&parse_expr("d[0]")).ok(),
             Some(Type::Dynamic)
         );
-
-        // Index on List and Set
         assert_eq!(
             checker.infer_expression_type(&parse_expr("l[0]")).ok(),
             Some(Type::String)
@@ -2693,8 +2476,6 @@ mod tests {
                 .infer_expression_type(&parse_expr("l[[1]]"))
                 .is_err()
         );
-
-        // Index on Tuple
         assert_eq!(
             checker.infer_expression_type(&parse_expr("t[0]")).ok(),
             Some(Type::String)
@@ -2710,7 +2491,6 @@ mod tests {
                 .is_err()
         );
         assert!(checker.infer_expression_type(&parse_expr("t[n]")).is_ok());
-
         let float_trav = Traversal {
             expr: Box::new(Expression::Variable("t".to_string(), Span::default())),
             operators: vec![TraversalOperator::Index(
@@ -2722,8 +2502,6 @@ mod tests {
             )],
         };
         assert!(checker.check_traversal(&float_trav).is_ok());
-
-        // Index on Map
         assert_eq!(
             checker.infer_expression_type(&parse_expr(r#"m["k"]"#)).ok(),
             Some(Type::Number)
@@ -2733,8 +2511,6 @@ mod tests {
                 .infer_expression_type(&parse_expr("m[[1]]"))
                 .is_err()
         );
-
-        // Index on Object
         assert_eq!(
             checker
                 .infer_expression_type(&parse_expr(r#"o["name"]"#))
@@ -2756,11 +2532,7 @@ mod tests {
                 .infer_expression_type(&parse_expr("o[str_key]"))
                 .is_ok()
         );
-
-        // Index on unsupported type
         assert!(checker.infer_expression_type(&parse_expr("b[0]")).is_err());
-
-        // LegacyIndex
         assert_eq!(
             checker.infer_expression_type(&parse_expr("d.0")).ok(),
             Some(Type::Dynamic)
@@ -2775,8 +2547,6 @@ mod tests {
             Some(Type::String)
         );
         assert!(checker.infer_expression_type(&parse_expr("n.0")).is_err());
-
-        // Splat operators
         assert_eq!(
             checker.infer_expression_type(&parse_expr("d.*")).ok(),
             Some(Type::Dynamic)
@@ -2795,16 +2565,12 @@ mod tests {
         );
         assert!(checker.infer_expression_type(&parse_expr("n.*")).is_err());
     }
-
     /// Tests function call type checking including stdlib lookups, variadic and fixed
     /// signatures, dynamic type allowances, return type computation errors, and undefined functions.
     #[test]
     fn test_type_checker_function_calls_comprehensive() {
         use std::sync::Arc;
-
         let mut scope = ScopeSchema::new();
-
-        // Variadic function: min 2 args, disallow dynamic on first
         let sig_var = FunctionSignature::with_static_return_type(
             vec![
                 FunctionParamSpec::new("p1", Type::String).with_allow_dynamic_type(false),
@@ -2817,8 +2583,6 @@ mod tests {
             Type::Tuple(vec![Type::Number]),
         ));
         scope.functions.insert("my_var_fn".to_string(), sig_var);
-
-        // Fixed function: exactly 2 args, disallow dynamic on second
         let sig_fixed = FunctionSignature::with_static_return_type(
             vec![
                 FunctionParamSpec::new("f1", Type::Tuple(vec![Type::String])),
@@ -2827,80 +2591,68 @@ mod tests {
             Type::Number,
         );
         scope.functions.insert("my_fixed_fn".to_string(), sig_fixed);
-
-        // Function that errors on return type calculation
         let sig_err = FunctionSignature::new(
             vec![],
             Arc::new(|_| Err("failed return type calc".to_string())),
         );
         scope.functions.insert("my_err_fn".to_string(), sig_err);
-
         scope.variables.insert("dyn_val".to_string(), Type::Dynamic);
-
         let checker = TypeChecker::new().with_scope(scope);
-
-        // Variadic function errors
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_var_fn("a")"#))
                 .is_err()
-        ); // too few
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr("my_var_fn(dyn_val, 10)"))
                 .is_err()
-        ); // dynamic not allowed on p1
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_var_fn("a", [1])"#))
                 .is_err()
-        ); // invalid type on p2
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_var_fn("a", 10, "not_tuple")"#))
                 .is_err()
-        ); // invalid type on variadic
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_var_fn("a", 10, [1], [2])"#))
                 .is_ok()
         );
-
-        // Fixed function errors
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_fixed_fn(["a"])"#))
                 .is_err()
-        ); // too few
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_fixed_fn(["a"], 10, 20)"#))
                 .is_err()
-        ); // too many
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_fixed_fn(["a"], dyn_val)"#))
                 .is_err()
-        ); // dynamic not allowed on f2
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_fixed_fn("not_tuple", 10)"#))
                 .is_err()
-        ); // invalid type on f1
+        );
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"my_fixed_fn(["a"], 10)"#))
                 .is_ok()
         );
-
-        // Return type calculation error
         assert!(
             checker
                 .infer_expression_type(&parse_expr("my_err_fn()"))
                 .is_err()
         );
-
-        // Undefined function when allow_undefined_functions = true
         let loose_checker =
             TypeChecker::new().with_scope(ScopeSchema::new().with_allow_undefined_functions(true));
         assert_eq!(
@@ -2910,10 +2662,8 @@ mod tests {
             Some(Type::Dynamic)
         );
     }
-
     #[test]
     fn test_type_check_missing_branch_coverage() {
-        // 1. Line 417: attr_schema.expected_type is None
         let mut attr_schemas = std::collections::HashMap::new();
         attr_schemas.insert(
             "any_attr".to_string(),
@@ -2928,8 +2678,6 @@ mod tests {
         let checker = TypeChecker::new();
         let diags = checker.check_body(&body, &body_schema);
         assert!(diags.is_ok());
-
-        // 2. Lines 835, 836, 838: BinaryOp::Eq / NotEq branches
         let mut scope = ScopeSchema::new();
         scope.variables.insert("dyn_v".to_string(), Type::Dynamic);
         scope
@@ -2938,8 +2686,6 @@ mod tests {
         scope
             .variables
             .insert("tuple_v".to_string(), Type::Tuple(vec![Type::Number]));
-
-        // 3. Lines 1184, 1185: Variadic param Dynamic vs allow_dynamic_type
         let sig_var_dyn = FunctionSignature::with_static_return_type(vec![], Type::String)
             .with_variadic(
                 FunctionParamSpec::new("rest", Type::Dynamic).with_allow_dynamic_type(true),
@@ -2947,7 +2693,6 @@ mod tests {
         scope
             .functions
             .insert("var_dyn_fn".to_string(), sig_var_dyn);
-
         let sig_var_str = FunctionSignature::with_static_return_type(vec![], Type::String)
             .with_variadic(
                 FunctionParamSpec::new("rest", Type::String).with_allow_dynamic_type(true),
@@ -2955,8 +2700,6 @@ mod tests {
         scope
             .functions
             .insert("var_str_fn".to_string(), sig_var_str);
-
-        // 4. Lines 1221, 1222: Fixed param Dynamic vs allow_dynamic_type
         let sig_fixed_dyn = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("p1", Type::Dynamic).with_allow_dynamic_type(true)],
             Type::Number,
@@ -2964,7 +2707,6 @@ mod tests {
         scope
             .functions
             .insert("fixed_dyn_fn".to_string(), sig_fixed_dyn);
-
         let sig_fixed_str = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("p1", Type::String).with_allow_dynamic_type(true)],
             Type::Number,
@@ -2972,52 +2714,38 @@ mod tests {
         scope
             .functions
             .insert("fixed_str_fn".to_string(), sig_fixed_str);
-
         let checker = TypeChecker::new().with_scope(scope);
-
-        // BinaryOp Eq branches:
-        // l_ty is Dynamic
         assert!(
             checker
                 .infer_expression_type(&parse_expr("dyn_v == 1"))
                 .is_ok()
         );
-        // r_ty is Dynamic
         assert!(
             checker
                 .infer_expression_type(&parse_expr("1 == dyn_v"))
                 .is_ok()
         );
-        // is_type_compatible(l, r) is true
         assert!(checker.infer_expression_type(&parse_expr("1 == 2")).is_ok());
-        // !is_type_compatible(l, r) is true, but !is_type_compatible(r, l) is false
         assert!(
             checker
                 .infer_expression_type(&parse_expr("list_v == tuple_v"))
                 .is_ok()
         );
-
-        // Function call parameter branches:
-        // variadic param_type is Dynamic
         assert!(
             checker
                 .infer_expression_type(&parse_expr(r#"var_dyn_fn(1, "a")"#))
                 .is_ok()
         );
-        // variadic arg_ty is Dynamic with allow_dynamic_type = true
         assert!(
             checker
                 .infer_expression_type(&parse_expr("var_str_fn(dyn_v)"))
                 .is_ok()
         );
-
-        // fixed param_type is Dynamic
         assert!(
             checker
                 .infer_expression_type(&parse_expr("fixed_dyn_fn(1)"))
                 .is_ok()
         );
-        // fixed arg_ty is Dynamic with allow_dynamic_type = true
         assert!(
             checker
                 .infer_expression_type(&parse_expr("fixed_str_fn(dyn_v)"))

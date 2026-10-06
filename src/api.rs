@@ -1,7 +1,5 @@
 //! API module.
-
 //! Public API surface.
-
 pub use crate::analysis::{Linter, ScopeSchema, TypeChecker, is_type_compatible};
 pub use crate::ast::deps::{
     DependencyGraph, extract_static_references, extract_static_references_from_body,
@@ -27,7 +25,6 @@ pub use crate::eval::validation::{
 };
 pub use crate::parse::file_manager::{FileManager, HclParser};
 use crate::parse::parser::Parser;
-
 /// Parse an HCL string into an AST Body.
 ///
 /// # Errors
@@ -41,7 +38,6 @@ pub fn parse(input: &str) -> Result<Body, Diagnostics> {
         Ok(body)
     }
 }
-
 /// Decode an HCL string directly into a Rust struct using standard library functions by default.
 ///
 /// Automatically expands any dynamic blocks defined within the HCL configuration.
@@ -54,7 +50,6 @@ pub fn from_str<T: DecodeBody>(input: &str) -> Result<T, Diagnostics> {
     let expanded = expand_dynamic_blocks(&body, &mut ctx)?;
     T::decode_body(&expanded, &[], &mut ctx)
 }
-
 /// Decode an HCL string directly into a Rust struct without enabling standard library functions.
 ///
 /// Automatically expands any dynamic blocks defined within the HCL configuration.
@@ -67,7 +62,6 @@ pub fn from_str_without_stdlib<T: DecodeBody>(input: &str) -> Result<T, Diagnost
     let expanded = expand_dynamic_blocks(&body, &mut ctx)?;
     T::decode_body(&expanded, &[], &mut ctx)
 }
-
 /// Decode an HCL string into a Rust struct using a specific context.
 ///
 /// Automatically expands any dynamic blocks defined within the HCL configuration.
@@ -82,7 +76,6 @@ pub fn from_str_with_context<T: DecodeBody>(
     let expanded = expand_dynamic_blocks(&body, ctx)?;
     T::decode_body(&expanded, &[], ctx)
 }
-
 /// Parse and evaluate a single HCL expression string.
 ///
 /// If `ctx` is None, a default context with all standard library functions is used.
@@ -117,7 +110,6 @@ pub fn evaluate_expr(
     let (val, _) = eval.evaluate(&expr)?;
     Ok(val)
 }
-
 /// Parse an HCL string and expand dynamic blocks using the provided context (or stdlib if None).
 ///
 /// # Errors
@@ -133,7 +125,6 @@ pub fn evaluate(input: &str, ctx: Option<&mut Context>) -> Result<Body, Diagnost
     };
     expand_dynamic_blocks(&body, eval_ctx)
 }
-
 /// Decode an HCL file from disk directly into a Rust struct using standard library functions by default.
 ///
 /// Automatically caches the source file in [`FileManager`] to provide source context for diagnostics
@@ -148,7 +139,6 @@ pub fn from_file<T: DecodeBody>(path: impl AsRef<std::path::Path>) -> Result<T, 
     let mut ctx = Context::with_stdlib();
     from_file_with_context(path, &mut ctx)
 }
-
 /// Decode an HCL file from disk into a Rust struct using a specific [`Context`].
 ///
 /// Automatically caches the source file in [`FileManager`] to provide source context for diagnostics
@@ -170,7 +160,6 @@ pub fn from_file_with_context<T: DecodeBody>(
     let expanded = expand_dynamic_blocks(&body, ctx)?;
     T::decode_body(&expanded, &[], ctx)
 }
-
 /// Parses an HCL file from disk and expands dynamic blocks using the provided context (or stdlib if None).
 ///
 /// # Arguments
@@ -193,5 +182,4 @@ pub fn evaluate_file(
         expand_dynamic_blocks(&body, &mut default_ctx)
     }
 }
-
 mod api_tests;

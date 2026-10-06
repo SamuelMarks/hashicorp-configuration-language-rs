@@ -1,11 +1,9 @@
 //! User-Defined Function AST.
 //!
 //! Provides the AST node for `function "name" { ... }` definitions.
-
 use crate::ast::expr::Expression;
 use crate::ast::type_expr::TypeExpr;
 use crate::span::Span;
-
 /// A parameter definition in a user-defined function.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParam {
@@ -16,7 +14,6 @@ pub struct FunctionParam {
     /// The source span of the parameter definition.
     pub span: Span,
 }
-
 /// An HCL `function` block definition.
 ///
 /// Represents a user-defined function parsed from HCL configuration.
@@ -35,7 +32,6 @@ pub struct FunctionBlock {
     /// The total source span of the function block.
     pub span: Span,
 }
-
 impl FunctionBlock {
     /// Creates a new `FunctionBlock`.
     #[must_use]
@@ -55,7 +51,6 @@ impl FunctionBlock {
             span,
         }
     }
-
     /// Sets the variadic parameter for this function block.
     ///
     /// # Arguments
@@ -66,7 +61,6 @@ impl FunctionBlock {
         self
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -76,11 +70,9 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::number::Number;
     use std::str::FromStr;
-
     #[test]
     fn test_function_block_new() {
         let span = Span::new(0, 0, 0, 0, 0, 0);
@@ -90,7 +82,6 @@ mod tests {
             span: span.clone(),
         }];
         let body = Expression::Number(Number::from_str("42").unwrap(), span.clone());
-
         let fb = FunctionBlock::new("test_func".to_string(), params, None, body, span.clone())
             .with_variadic_param(Some(FunctionParam {
                 name: "rest".to_string(),

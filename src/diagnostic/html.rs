@@ -2,11 +2,9 @@
 //!
 //! Renders diagnostics into self-contained HTML documents or embeddable HTML snippets
 //! with syntax highlighting, line gutters, error underlines, and responsive CSS styling.
-
 use crate::diagnostic::{Diagnostic, Diagnostics, Severity};
 use std::fmt::Write as FmtWrite;
 use std::io::Write;
-
 /// HTML entity escaping helper to prevent XSS.
 #[must_use]
 pub fn html_escape(input: &str) -> String {
@@ -23,7 +21,6 @@ pub fn html_escape(input: &str) -> String {
     }
     escaped
 }
-
 /// Default responsive CSS stylesheet supporting both light and dark display modes.
 pub const DEFAULT_CSS: &str = r#"
 :root {
@@ -156,7 +153,6 @@ body {
   font-size: 12px;
 }
 "#;
-
 /// Configurable HTML diagnostic report writer.
 #[derive(Debug, Clone)]
 pub struct HtmlDiagnosticWriter {
@@ -167,13 +163,11 @@ pub struct HtmlDiagnosticWriter {
     /// Custom CSS stylesheet string.
     pub custom_css: Option<String>,
 }
-
 impl Default for HtmlDiagnosticWriter {
     fn default() -> Self {
         Self::new()
     }
 }
-
 impl HtmlDiagnosticWriter {
     /// Creates a new `HtmlDiagnosticWriter` with default settings.
     #[must_use]
@@ -184,7 +178,6 @@ impl HtmlDiagnosticWriter {
             custom_css: None,
         }
     }
-
     /// Sets whether the output should be a standalone HTML document.
     ///
     /// # Arguments
@@ -194,7 +187,6 @@ impl HtmlDiagnosticWriter {
         self.standalone = standalone;
         self
     }
-
     /// Sets the document title for standalone HTML reports.
     ///
     /// # Arguments
@@ -204,7 +196,6 @@ impl HtmlDiagnosticWriter {
         self.title = title.into();
         self
     }
-
     /// Sets custom CSS stylesheet contents.
     ///
     /// # Arguments
@@ -214,7 +205,6 @@ impl HtmlDiagnosticWriter {
         self.custom_css = Some(css.into());
         self
     }
-
     /// Renders a collection of diagnostics to an HTML string.
     ///
     /// # Arguments
@@ -224,25 +214,23 @@ impl HtmlDiagnosticWriter {
     pub fn render_to_string(&self, diagnostics: &Diagnostics, source: Option<&str>) -> String {
         let mut out = String::new();
         if self.standalone {
-            out.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+            out.push_str(
+                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
+            );
             let _ = writeln!(&mut out, "  <title>{}</title>", html_escape(&self.title));
             let css = self.custom_css.as_deref().unwrap_or(DEFAULT_CSS);
             let _ = writeln!(&mut out, "  <style>{css}</style>\n</head>\n<body>");
         }
-
         out.push_str("<div class=\"diag-container\">\n");
         for diag in diagnostics.errors() {
             Self::write_diagnostic_card(diag, source, &mut out);
         }
         out.push_str("</div>\n");
-
         if self.standalone {
             out.push_str("</body>\n</html>\n");
         }
-
         out
     }
-
     /// Writes the rendered HTML report to an arbitrary output stream.
     ///
     /// # Arguments
@@ -261,13 +249,11 @@ impl HtmlDiagnosticWriter {
         let content = self.render_to_string(diagnostics, source);
         writer.write_all(content.as_bytes())
     }
-
     fn write_diagnostic_card(diag: &Diagnostic, source: Option<&str>, out: &mut String) {
         let (card_cls, badge_cls, badge_text) = match diag.severity {
             Severity::Error => ("diag-card error", "badge badge-error", "Error"),
             Severity::Warning => ("diag-card warning", "badge badge-warning", "Warning"),
         };
-
         let _ = writeln!(out, "  <div class=\"{card_cls}\">");
         let _ = writeln!(out, "    <div class=\"diag-header\">");
         let _ = writeln!(out, "      <span class=\"{badge_cls}\">{badge_text}</span>");
@@ -277,10 +263,7 @@ impl HtmlDiagnosticWriter {
             html_escape(&diag.summary_str())
         );
         let _ = writeln!(out, "    </div>");
-
         let _ = writeln!(out, "    <div class=\"diag-body\">");
-
-        // Location info
         let file_name = diag.subject.file.as_deref().unwrap_or("<unknown>");
         let _ = writeln!(
             out,
@@ -289,13 +272,9 @@ impl HtmlDiagnosticWriter {
             diag.subject.start_line,
             diag.subject.start_col
         );
-
-        // Source snippet rendering
         if let Some(src) = source {
             Self::write_code_snippet(diag, src, out);
         }
-
-        // Diagnostic detail
         if let Some(ref detail) = diag.detail {
             let _ = writeln!(
                 out,
@@ -303,8 +282,6 @@ impl HtmlDiagnosticWriter {
                 html_escape(detail)
             );
         }
-
-        // Sub-expression evaluation callouts
         if !diag.eval_callouts.is_empty() {
             let _ = writeln!(out, "      <ul class=\"callouts-list\">");
             for callout in &diag.eval_callouts {
@@ -317,21 +294,17 @@ impl HtmlDiagnosticWriter {
             }
             let _ = writeln!(out, "      </ul>");
         }
-
         let _ = writeln!(out, "    </div>");
         let _ = writeln!(out, "  </div>");
     }
-
     fn write_code_snippet(diag: &Diagnostic, source: &str, out: &mut String) {
         let lines: Vec<&str> = source.lines().collect();
         let target_line_idx = diag.subject.start_line.saturating_sub(1);
         if target_line_idx >= lines.len() {
             return;
         }
-
         let start_idx = target_line_idx.saturating_sub(1);
         let end_idx = (target_line_idx + 2).min(lines.len());
-
         let _ = writeln!(out, "      <div class=\"diag-snippet\">");
         for (idx, line_text) in lines[start_idx..end_idx].iter().enumerate() {
             let current_line_num = start_idx + idx + 1;
@@ -341,18 +314,15 @@ impl HtmlDiagnosticWriter {
             } else {
                 "snippet-line"
             };
-
             let _ = writeln!(out, "        <div class=\"{line_cls}\">");
             let _ = writeln!(
                 out,
                 "          <span class=\"gutter\">{current_line_num}</span>"
             );
-
             if is_target {
                 let col_start = diag.subject.start_col.saturating_sub(1);
                 let col_end = diag.subject.end_col.saturating_sub(1).max(col_start + 1);
                 let chars: Vec<char> = line_text.chars().collect();
-
                 let prefix: String = chars.iter().take(col_start).collect();
                 let underline: String = chars
                     .iter()
@@ -360,7 +330,6 @@ impl HtmlDiagnosticWriter {
                     .take(col_end.saturating_sub(col_start))
                     .collect();
                 let suffix: String = chars.iter().skip(col_end).collect();
-
                 let _ = writeln!(
                     out,
                     "          <span class=\"code\">{}<span class=\"error-underline\">{}</span>{}</span>",
@@ -380,7 +349,6 @@ impl HtmlDiagnosticWriter {
         let _ = writeln!(out, "      </div>");
     }
 }
-
 /// Convenience function rendering diagnostics directly to an HTML string.
 ///
 /// # Arguments
@@ -397,7 +365,6 @@ pub fn diagnostics_to_html(
         .with_standalone(standalone)
         .render_to_string(diagnostics, source)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -407,11 +374,9 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::diagnostic::{EvalCallout, Span};
     use crate::error::HclError;
-
     #[test]
     fn test_html_escape() {
         assert_eq!(
@@ -420,7 +385,6 @@ mod tests {
         );
         assert_eq!(html_escape("clean"), "clean");
     }
-
     #[test]
     fn test_diagnostics_to_html_standalone() {
         let mut diags = Diagnostics::new();
@@ -432,7 +396,6 @@ mod tests {
             evaluated_value: r#""prod""#.to_string(),
         });
         diags.push(d);
-
         let html = diagnostics_to_html(&diags, Some("var.env = 123\n"), true);
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("Unexpected token"));
@@ -442,25 +405,21 @@ mod tests {
         assert!(html.contains("snippet-line highlight"));
         assert!(html.contains("error-underline"));
     }
-
     #[test]
     fn test_diagnostics_to_html_snippet_and_warning() {
         let mut diags = Diagnostics::new();
         let span = Span::new(0, 0, 1, 1, 1, 1);
         let d = Diagnostic::warning("Deprecated syntax", "Use modern syntax instead", span);
         diags.push(d);
-
         let writer = HtmlDiagnosticWriter::default()
             .with_standalone(false)
             .with_title("Custom Title")
             .with_css("body { color: red; }");
         let html = writer.render_to_string(&diags, None);
-
         assert!(!html.contains("<!DOCTYPE html>"));
         assert!(html.contains("badge-warning"));
         assert!(html.contains("Deprecated syntax"));
     }
-
     #[test]
     fn test_diagnostics_to_html_out_of_bounds_source() {
         let mut diags = Diagnostics::new();
@@ -470,30 +429,24 @@ mod tests {
             "",
             span,
         ));
-
         let html = diagnostics_to_html(&diags, Some("line 1\n"), false);
         assert!(html.contains("diag-card error"));
     }
-
     #[test]
     fn test_diagnostics_to_html_multiline_context_and_custom_css() {
         let mut diags = Diagnostics::new();
         let mut span = Span::new(7, 13, 2, 1, 2, 7);
         span.file = Some(std::sync::Arc::from("config.hcl"));
-
         let mut d = Diagnostic::error("Invalid value", "", span);
-        d.detail = None; // Test detail = None branch
+        d.detail = None;
         diags.push(d);
-
         let writer = HtmlDiagnosticWriter::new()
             .with_standalone(true)
             .with_css("body { margin: 0; }")
             .with_title("Custom Doc");
-
         let source = "line 1\ntarget line\nline 3\n";
         let mut buf = Vec::new();
         assert!(writer.write_html(&diags, Some(source), &mut buf).is_ok());
-
         let html = String::from_utf8_lossy(&buf);
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("<title>Custom Doc</title>"));
@@ -504,7 +457,6 @@ mod tests {
         assert!(html.contains("gutter\">3<"));
         assert!(html.contains("snippet-line highlight"));
     }
-
     #[test]
     fn test_diagnostics_to_html_warning_with_snippet() {
         let mut diags = Diagnostics::new();
@@ -513,13 +465,11 @@ mod tests {
         let mut warn = Diagnostic::warning("Warning title", "Warning summary", span);
         warn.detail = Some("Detailed explanation of warning".to_string());
         diags.push(warn);
-
         let html = diagnostics_to_html(&diags, Some("warn line\n"), false);
         assert!(html.contains("badge badge-warning"));
         assert!(html.contains("Detailed explanation of warning"));
         assert!(html.contains("warn.hcl:1:1"));
     }
-
     struct FailWriter;
     impl std::io::Write for FailWriter {
         fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
@@ -529,12 +479,10 @@ mod tests {
             Err(std::io::Error::other("flush error"))
         }
     }
-
     #[test]
     fn test_diagnostics_to_html_io_error() {
         let mut fail = FailWriter;
         assert!(fail.flush().is_err());
-
         let mut diags = Diagnostics::new();
         diags.push(Diagnostic::error("fail", "summary", Span::default()));
         let writer = HtmlDiagnosticWriter::new().with_standalone(true);
@@ -543,7 +491,6 @@ mod tests {
                 .write_html(&diags, Some("code\n"), &mut fail)
                 .is_err()
         );
-
         let snippet_writer = HtmlDiagnosticWriter::new().with_standalone(false);
         assert!(
             snippet_writer

@@ -6,7 +6,6 @@ use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::lex::token::{Token, TokenKind};
 use crate::number::Number;
 use crate::span::Span;
-
 /// A parsed JSON node with spans.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonNode {
@@ -17,7 +16,6 @@ pub enum JsonNode {
     Bool(bool, Span),
     Null(Span),
 }
-
 impl JsonNode {
     #[must_use]
     pub fn span(&self) -> Span {
@@ -31,13 +29,11 @@ impl JsonNode {
         }
     }
 }
-
 pub struct JsonParser<'a> {
     tokens: &'a [Token],
     pos: usize,
     diagnostics: Diagnostics,
 }
-
 impl<'a> JsonParser<'a> {
     #[must_use]
     pub fn new(tokens: &'a [Token]) -> Self {
@@ -47,7 +43,6 @@ impl<'a> JsonParser<'a> {
             diagnostics: Diagnostics::new(),
         }
     }
-
     /// # Errors
     /// Returns diagnostics if parsing fails.
     pub fn parse(mut self) -> Result<(JsonNode, Diagnostics), Diagnostics> {
@@ -55,9 +50,7 @@ impl<'a> JsonParser<'a> {
         if self.is_eof() {
             return Err(self.diagnostics);
         }
-
         let node = self.parse_value();
-
         self.skip_whitespace_and_newlines();
         if let Some(tok) = self.peek().cloned() {
             self.push_error(
@@ -65,32 +58,26 @@ impl<'a> JsonParser<'a> {
                 tok.span,
             );
         }
-
         if let Some(node) = node {
             Ok((node, self.diagnostics))
         } else {
             Err(self.diagnostics)
         }
     }
-
     fn push_error(&mut self, summary: &str, span: Span) {
         self.diagnostics.push(Diagnostic::error(summary, "", span));
     }
-
     fn peek(&self) -> Option<&Token> {
         self.tokens.get(self.pos)
     }
-
     fn peek_kind(&self) -> Option<&TokenKind> {
         self.peek().map(|t| &t.kind)
     }
-
     fn next(&mut self) -> Option<&Token> {
         let tok = self.tokens.get(self.pos)?;
         self.pos += 1;
         Some(tok)
     }
-
     fn advance(&mut self) -> Token {
         if let Some(tok) = self.tokens.get(self.pos) {
             self.pos += 1;
@@ -99,17 +86,14 @@ impl<'a> JsonParser<'a> {
             Token::new(TokenKind::Whitespace, "", self.last_span())
         }
     }
-
     fn is_eof(&self) -> bool {
         self.pos >= self.tokens.len()
     }
-
     fn last_span(&self) -> Span {
         self.tokens
             .last()
             .map_or(Span::new(0, 0, 0, 0, 0, 0), |t| t.span.clone())
     }
-
     fn skip_whitespace_and_newlines(&mut self) {
         while let Some(tok) = self.peek() {
             if tok.kind == TokenKind::Newline || tok.kind == TokenKind::Whitespace {
@@ -119,14 +103,12 @@ impl<'a> JsonParser<'a> {
             }
         }
     }
-
     fn strip_quotes(text: &str) -> String {
         text.strip_prefix('"')
             .and_then(|s| s.strip_suffix('"'))
             .unwrap_or(text)
             .to_string()
     }
-
     fn parse_value(&mut self) -> Option<JsonNode> {
         self.skip_whitespace_and_newlines();
         let Some(tok) = self.peek().cloned() else {
@@ -134,7 +116,6 @@ impl<'a> JsonParser<'a> {
             self.push_error("Unexpected EOF while parsing JSON value", last_span);
             return None;
         };
-
         match tok.kind {
             TokenKind::OBrace => self.parse_object(),
             TokenKind::OBrack => self.parse_array(),
@@ -174,18 +155,15 @@ impl<'a> JsonParser<'a> {
             }
         }
     }
-
     fn parse_object(&mut self) -> Option<JsonNode> {
         let open_brace = self.advance();
         let mut members = Vec::new();
-
         self.skip_whitespace_and_newlines();
         if self.peek_kind() == Some(&TokenKind::CBrace) {
             let close = self.advance();
             let span = open_brace.span.merge(&close.span);
             return Some(JsonNode::Object(members, span));
         }
-
         loop {
             self.skip_whitespace_and_newlines();
             let tok = if let Some(t) = self.peek() {
@@ -195,7 +173,6 @@ impl<'a> JsonParser<'a> {
                 self.push_error("Unexpected EOF", last_span);
                 return None;
             };
-
             let key = if tok.kind == TokenKind::String {
                 self.next();
                 let text = Self::strip_quotes(&tok.text);
@@ -205,7 +182,6 @@ impl<'a> JsonParser<'a> {
                 self.push_error("Expected JSON object key (string)", tok.span);
                 return None;
             };
-
             self.skip_whitespace_and_newlines();
             let tok = if let Some(t) = self.peek() {
                 t.clone()
@@ -219,13 +195,11 @@ impl<'a> JsonParser<'a> {
                 self.push_error("Expected ':' after JSON object key", tok.span);
                 return None;
             }
-            self.next(); // consume ':'
-
+            self.next();
             {
                 let val = self.parse_value()?;
                 members.push((key.0, key.1, val));
             }
-
             self.skip_whitespace_and_newlines();
             let tok = if let Some(t) = self.peek() {
                 t.clone()
@@ -235,10 +209,9 @@ impl<'a> JsonParser<'a> {
                 return None;
             };
             if tok.kind == TokenKind::Comma {
-                self.next(); // consume ','
+                self.next();
                 self.skip_whitespace_and_newlines();
                 if self.peek_kind() == Some(&TokenKind::CBrace) {
-                    // trailing comma
                     break;
                 }
             } else if tok.kind == TokenKind::CBrace {
@@ -249,29 +222,24 @@ impl<'a> JsonParser<'a> {
                 return None;
             }
         }
-
         let close = self.advance();
         let span = open_brace.span.merge(&close.span);
         Some(JsonNode::Object(members, span))
     }
-
     fn parse_array(&mut self) -> Option<JsonNode> {
         let open_brack = self.advance();
         let mut elements = Vec::new();
-
         self.skip_whitespace_and_newlines();
         if self.peek_kind() == Some(&TokenKind::CBrack) {
             let close = self.advance();
             let span = open_brack.span.merge(&close.span);
             return Some(JsonNode::Array(elements, span));
         }
-
         loop {
             {
                 let val = self.parse_value()?;
                 elements.push(val);
             }
-
             self.skip_whitespace_and_newlines();
             let tok = if let Some(t) = self.peek() {
                 t.clone()
@@ -281,10 +249,9 @@ impl<'a> JsonParser<'a> {
                 return None;
             };
             if tok.kind == TokenKind::Comma {
-                self.next(); // consume ','
+                self.next();
                 self.skip_whitespace_and_newlines();
                 if self.peek_kind() == Some(&TokenKind::CBrack) {
-                    // trailing comma
                     break;
                 }
             } else if tok.kind == TokenKind::CBrack {
@@ -295,13 +262,11 @@ impl<'a> JsonParser<'a> {
                 return None;
             }
         }
-
         let close = self.advance();
         let span = open_brack.span.merge(&close.span);
         Some(JsonNode::Array(elements, span))
     }
 }
-
 /// Parses a JSON string conforming to the HCL JSON specification into an AST [`Body`].
 ///
 /// # Arguments
@@ -323,7 +288,6 @@ fn lex_json_tokens(input: &str) -> Vec<Token> {
     }
     tokens
 }
-
 /// Parses a JSON string conforming to the HCL JSON specification into an AST [`Body`].
 ///
 /// # Arguments
@@ -337,7 +301,6 @@ pub fn parse_json(input: &str) -> Result<Body, Diagnostics> {
     let (node, _) = parser.parse()?;
     convert_json_to_body(node)
 }
-
 /// Parses a JSON string using an explicit [`BodySchema`] to disambiguate blocks and attributes,
 /// and unfold nested label hierarchies.
 ///
@@ -353,14 +316,12 @@ pub fn parse_json_with_schema(input: &str, schema: &BodySchema) -> Result<Body, 
     let (node, _) = parser.parse()?;
     convert_json_to_body_with_schema(node, schema)
 }
-
 /// Converts a `JsonNode` to an HCL `Body`.
 /// # Errors
 /// Returns diagnostics if conversion fails.
 pub fn convert_json_to_body(node: JsonNode) -> Result<Body, Diagnostics> {
     let mut diagnostics = Diagnostics::new();
     let mut body = Body::new(node.span());
-
     match node {
         JsonNode::Object(members, _span) => {
             process_object_members(members, &mut body);
@@ -389,14 +350,12 @@ pub fn convert_json_to_body(node: JsonNode) -> Result<Body, Diagnostics> {
             ));
         }
     }
-
     if diagnostics.has_errors() {
         Err(diagnostics)
     } else {
         Ok(body)
     }
 }
-
 /// Converts a `JsonNode` to an HCL `Body` using an explicit [`BodySchema`].
 ///
 /// # Arguments
@@ -411,7 +370,6 @@ pub fn convert_json_to_body_with_schema(
 ) -> Result<Body, Diagnostics> {
     let mut diagnostics = Diagnostics::new();
     let mut body = Body::new(node.span());
-
     match node {
         JsonNode::Object(members, _span) => {
             process_object_members_with_schema(members, &mut body, schema, &mut diagnostics);
@@ -445,27 +403,22 @@ pub fn convert_json_to_body_with_schema(
             ));
         }
     }
-
     if diagnostics.has_errors() {
         Err(diagnostics)
     } else {
         Ok(body)
     }
 }
-
 type MemberObject = (Vec<(String, Span, JsonNode)>, Span);
-
 fn process_object_members(members: Vec<(String, Span, JsonNode)>, body: &mut Body) {
     for (key, key_span, val) in members {
         if key == "//" {
             continue;
         }
-
         match val {
             JsonNode::Object(child_members, val_span) => {
                 let mut block_body = Body::new(val_span.clone());
                 process_object_members(child_members, &mut block_body);
-
                 body.blocks.push(Block {
                     block_type: key.clone(),
                     labels: vec![],
@@ -487,7 +440,6 @@ fn process_object_members(members: Vec<(String, Span, JsonNode)>, body: &mut Bod
                         _ => None,
                     })
                     .collect();
-
                 if let Some(objects) = maybe_objects.filter(|objs| !objs.is_empty()) {
                     for (child_members, val_span) in objects {
                         let mut block_body = Body::new(val_span.clone());
@@ -541,7 +493,6 @@ fn process_object_members(members: Vec<(String, Span, JsonNode)>, body: &mut Bod
         }
     }
 }
-
 fn process_object_members_with_schema(
     members: Vec<(String, Span, JsonNode)>,
     body: &mut Body,
@@ -552,7 +503,6 @@ fn process_object_members_with_schema(
         if key == "//" {
             continue;
         }
-
         if let Some(block_schema) = schema.blocks.get(&key) {
             let mut ctx = BlockUnfoldContext {
                 block_type: &key,
@@ -580,7 +530,6 @@ fn process_object_members_with_schema(
         }
     }
 }
-
 struct BlockUnfoldContext<'a> {
     block_type: &'a str,
     block_schema: &'a BlockHeaderSchema,
@@ -588,7 +537,6 @@ struct BlockUnfoldContext<'a> {
     labels: Vec<String>,
     label_spans: Vec<Span>,
 }
-
 fn unfold_block_labels(
     ctx: &mut BlockUnfoldContext<'_>,
     current_node: JsonNode,
@@ -638,7 +586,6 @@ fn unfold_block_labels(
         }
         return;
     }
-
     match current_node {
         JsonNode::Object(members, _) => {
             for (key, key_span, next_val) in members {
@@ -669,7 +616,6 @@ fn unfold_block_labels(
         }
     }
 }
-
 fn json_node_to_expression(node: JsonNode) -> Expression {
     match node {
         JsonNode::Null(span) => Expression::Null(span),
@@ -691,7 +637,6 @@ fn json_node_to_expression(node: JsonNode) -> Expression {
         }
     }
 }
-
 /// Converts a JSON string into an HCL expression, parsing embedded interpolations (`${...}`)
 /// and directives (`%{...}`), unescaping `$$`, and directly returning unwrapped expressions
 /// when the string consists of a single interpolation.
@@ -702,20 +647,16 @@ fn json_string_to_expression(s: &str, span: Span) -> Expression {
             span,
         );
     }
-
     let quoted = format!("\"{s}\"");
     let mut diags = Diagnostics::new();
     let parts = crate::parse::parser::Parser::parse_template(&mut diags, &quoted, &span);
-
-    if parts.len() == 1
-        && let TemplatePart::Interpolation(ref expr, _) = parts[0]
-    {
-        return expr.clone();
+    if parts.len() == 1 {
+        if let TemplatePart::Interpolation(ref expr, _) = parts[0] {
+            return expr.clone();
+        }
     }
-
     Expression::Template(parts, span)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -725,29 +666,24 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     fn unwrap_body(res: Result<Body, Diagnostics>) -> Body {
         match res {
             Ok(b) => b,
             Err(_) => Body::new(Span::new(0, 0, 1, 1, 1, 1)),
         }
     }
-
     fn unwrap_node(res: Result<(JsonNode, Diagnostics), Diagnostics>) -> JsonNode {
         match res {
             Ok((n, _)) => n,
             Err(_) => JsonNode::Null(Span::new(0, 0, 1, 1, 1, 1)),
         }
     }
-
     fn extract_diags(res: Result<(JsonNode, Diagnostics), Diagnostics>) -> Diagnostics {
         match res {
             Ok((_, d)) | Err(d) => d,
         }
     }
-
     #[test]
     fn test_json_parser_coverage_gaps() {
         let run = |input: &str| {
@@ -755,13 +691,11 @@ mod tests {
             let mut tokens = Vec::new();
             for t in lexer.flatten() {
                 tokens.push(t);
-                // DON'T SKIP WHITESPACE IN TEST LEXER BECAUSE JSON PARSER MANUALLY CALLS skip_whitespace_and_newlines() AND DEPENDS ON IT FOR EOF DETECTION
             }
             let parser = JsonParser::new(&tokens);
             let res = parser.parse();
             res.map_or(true, |(_, diags)| diags.has_errors())
         };
-
         assert!(run("true trailing"));
         assert!(run("{\"a\": "));
         assert!(run("{\"a\": invalid}"));
@@ -771,13 +705,10 @@ mod tests {
         assert!(run("{\"a\": 2 \"b\": 3}"));
         assert!(run("[1 2]"));
     }
-
     use crate::lex::token::TokenKind;
-
     fn lex(input: &str) -> Vec<Token> {
         lex_json_tokens(input)
     }
-
     #[test]
     fn test_json_parser_exhaustive_coverage_extra() {
         let cases = vec![
@@ -795,13 +726,11 @@ mod tests {
             ),
             (r"[1true]", "Expected ',' or ']' after JSON array element"),
         ];
-
         for (input, expected_err) in cases {
             let tokens = lex(input);
             let parser = JsonParser::new(&tokens);
             let res = parser.parse();
             let diags = extract_diags(res);
-
             assert!(diags.has_errors(), "Expected error for input: {input}");
             let found = diags
                 .errors()
@@ -809,16 +738,12 @@ mod tests {
                 .any(|err| err.error.to_string().contains(expected_err));
             assert!(found, "Failed: {input} -> expected: '{expected_err}'");
         }
-
         let ok_tokens = lex(r#"{"a": 1}"#);
         let ok_res = JsonParser::new(&ok_tokens).parse();
         let _ok_diags = extract_diags(ok_res);
-
-        // Lexer error handling test (covers `let Ok(kind) = res else { continue; }` in lex_json_tokens)
         let bad_tokens = lex_json_tokens(r#"{"a": @ 1}"#);
         assert_eq!(bad_tokens.len(), 7);
     }
-
     #[test]
     fn test_json_span_methods() {
         let span = Span::new(0, 1, 1, 1, 1, 2);
@@ -832,7 +757,6 @@ mod tests {
         assert_eq!(JsonNode::Bool(true, span.clone()).span(), span);
         assert_eq!(JsonNode::Null(span.clone()).span(), span);
     }
-
     #[test]
     fn test_json_parser_basic() {
         let tokens = lex(r#"{"a": 1, "b": [true, false, null, "foo"]}"#);
@@ -845,7 +769,6 @@ mod tests {
         assert!(is_obj(&node));
         assert!(!is_obj(&JsonNode::Null(Span::new(0, 0, 1, 1, 1, 1))));
     }
-
     #[test]
     fn test_json_parser_trailing_chars() {
         let tokens = lex(r"{} []");
@@ -859,15 +782,13 @@ mod tests {
                 .contains("trailing characters")
         );
     }
-
     #[test]
     fn test_json_parser_eof_early() {
         let tokens = lex(r"");
         let parser = JsonParser::new(&tokens);
         let errs = parser.parse().err().unwrap();
-        assert_eq!(errs.errors().len(), 0); // just eof
+        assert_eq!(errs.errors().len(), 0);
     }
-
     #[test]
     fn test_json_parser_errors() {
         let cases = vec![
@@ -882,7 +803,6 @@ mod tests {
             (r"foo", "Expected JSON value"),
             (r"}", "Unexpected token for JSON value"),
         ];
-
         for (input, expected_err) in cases {
             let tokens = lex(input);
             let parser = JsonParser::new(&tokens);
@@ -900,7 +820,6 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn test_convert_json_to_body_attributes() {
         let tokens = lex(r#"{"foo": "bar", "num": 42}"#);
@@ -910,7 +829,6 @@ mod tests {
         assert_eq!(body.attributes.len(), 2);
         assert_eq!(body.blocks, [] as [crate::ast::structure::Block; 0]);
     }
-
     #[test]
     fn test_convert_json_to_body_blocks() {
         let tokens = lex(r#"{
@@ -926,7 +844,6 @@ mod tests {
         assert_eq!(body.blocks.len(), 1);
         assert_eq!(body.blocks[0].block_type, "resource");
     }
-
     #[test]
     fn test_convert_json_to_body_multiple_blocks() {
         let tokens = lex(r#"{
@@ -940,17 +857,14 @@ mod tests {
         let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.blocks.len(), 2);
     }
-
     #[test]
     fn test_convert_json_to_body_invalid_array() {
         let tokens = lex(r#"{"foo": [1, 2]}"#);
         let parser = JsonParser::new(&tokens);
         let (node, _) = parser.parse().unwrap();
         let body = convert_json_to_body(node).unwrap();
-        // Since array doesn't contain only objects, it's an attribute
         assert_eq!(body.attributes.len(), 1);
-
-        let tokens = lex(r"[1, 2]"); // A body must be an object or array of objects
+        let tokens = lex(r"[1, 2]");
         let parser = JsonParser::new(&tokens);
         let (node, _) = parser.parse().unwrap();
         let errs = convert_json_to_body(node).err().unwrap();
@@ -960,8 +874,7 @@ mod tests {
                 .to_string()
                 .contains("only contain objects")
         );
-
-        let tokens = lex(r"1"); // Not an object/array
+        let tokens = lex(r"1");
         let parser = JsonParser::new(&tokens);
         let (node, _) = parser.parse().unwrap();
         let errs = convert_json_to_body(node).err().unwrap();
@@ -972,7 +885,6 @@ mod tests {
                 .contains("must be an object or array")
         );
     }
-
     #[test]
     fn test_convert_json_to_body_array_of_objects() {
         let tokens = lex(r#"[{ "a": 1 }, { "b": 2 }]"#);
@@ -981,7 +893,6 @@ mod tests {
         let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.attributes.len(), 2);
     }
-
     #[test]
     fn test_json_node_to_expression_types() {
         let tokens = lex(r#"{"foo": [1, true, null, {"k": "v"}]}"#);
@@ -990,10 +901,8 @@ mod tests {
         let body = convert_json_to_body(node).unwrap();
         assert_eq!(body.attributes.len(), 1);
     }
-
     #[test]
     fn test_json_parser_exhaustive_coverage() {
-        // Line 131: Unquoted string token
         let tokens = vec![Token::new(
             TokenKind::String,
             "unquoted",
@@ -1005,8 +914,6 @@ mod tests {
             node,
             JsonNode::String("unquoted".to_string(), Span::new(0, 0, 0, 0, 0, 0))
         );
-
-        // Line 140: Invalid number token
         let tokens = vec![Token::new(
             TokenKind::Number,
             "123invalid",
@@ -1014,8 +921,6 @@ mod tests {
         )];
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 189: EOF while parsing object key
         let tokens = vec![Token::new(
             TokenKind::OBrace,
             "{",
@@ -1023,8 +928,6 @@ mod tests {
         )];
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 206: Object key unquoted string
         let tokens = vec![
             Token::new(TokenKind::OBrace, "{", Span::new(0, 0, 0, 0, 0, 0)),
             Token::new(
@@ -1041,41 +944,27 @@ mod tests {
         let check_obj = |n: &JsonNode| -> bool { matches!(n, JsonNode::Object(..)) };
         assert!(check_obj(&node));
         assert!(!check_obj(&JsonNode::Null(Span::new(0, 0, 0, 0, 0, 0))));
-
-        // Line 223: EOF while expecting colon
         let tokens = vec![
             Token::new(TokenKind::OBrace, "{", Span::new(0, 0, 0, 0, 0, 0)),
             Token::new(TokenKind::String, "\"foo\"", Span::new(0, 0, 0, 0, 0, 0)),
         ];
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 264: Trailing comma in object
         let tokens = lex(r#"{"foo": 1,}"#);
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_ok());
-
-        // Line 283: EOF after object member trailing comma
         let tokens = lex(r#"{"foo": 1,"#);
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 296: Not } at end of object after trailing comma (unreachable without comma but with comma?)
         let tokens = lex(r#"{"foo": 1, ]"#);
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 359: EOF after array element trailing comma
         let tokens = lex(r"[1,");
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 372: Not ] at end of array after trailing comma
         let tokens = lex(r"[1, }");
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 283: EOF after object member
         let tokens = vec![
             Token::new(TokenKind::OBrace, "{", Span::new(0, 0, 0, 0, 0, 0)),
             Token::new(TokenKind::String, "\"foo\"", Span::new(0, 0, 0, 0, 0, 0)),
@@ -1084,112 +973,81 @@ mod tests {
         ];
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 296: Not } at end of object
         let tokens = lex(r#"{"foo": 1 ]"#);
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 312: Empty array
         let tokens = lex(r"[]");
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_ok());
-
-        // Line 340: Trailing comma in array
         let tokens = lex(r"[1,]");
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_ok());
-
-        // Line 359: EOF after array element
         let tokens = vec![
             Token::new(TokenKind::OBrack, "[", Span::new(0, 0, 0, 0, 0, 0)),
             Token::new(TokenKind::Number, "1", Span::new(0, 0, 0, 0, 0, 0)),
         ];
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 372: Not ] at end of array
         let tokens = lex(r"[1 }");
         let parser = JsonParser::new(&tokens);
         assert!(parser.parse().is_err());
-
-        // Line 429: Key // in object mapping to Body
         let tokens = lex(r#"{"//": "comment", "a": 1}"#);
         let parser = JsonParser::new(&tokens);
         let (node, _) = parser.parse().unwrap();
         let body = convert_json_to_body(node).unwrap();
-        assert_eq!(body.attributes.len(), 1); // Only 'a' should be mapped if it's treated as attribute.
-        // Actually wait, if 'a' is 1, it will be mapped to attribute.
-        // Let's verify 'body' attributes length.
+        assert_eq!(body.attributes.len(), 1);
         assert!(body.attributes.contains_key("a"));
-
-        // Line 451: Array mapping to Blocks where array is empty
         let tokens = lex(r#"{"block": []}"#);
         let parser = JsonParser::new(&tokens);
         let (node, _) = parser.parse().unwrap();
         let body = convert_json_to_body(node).unwrap();
-        // Since it's an empty array, all_objects becomes false in line 451.
-        // Then it gets treated as an attribute instead of blocks!
         assert_eq!(body.attributes.len(), 1);
         assert!(body.attributes.contains_key("block"));
     }
-
     #[test]
     fn test_json_parser_coverage_gaps_extra_2() {
         let input = "{\"a\": ";
         let lexer = crate::lex::lexer::Lexer::new(input);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
-
         let input2 = "[1";
         let lexer = crate::lex::lexer::Lexer::new(input2);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
-
         let input3 = "{\"a\"";
         let lexer = crate::lex::lexer::Lexer::new(input3);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
-
         let input4 = "{\"a\": 1";
         let lexer = crate::lex::lexer::Lexer::new(input4);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
     }
-
     #[test]
     fn test_json_parser_coverage_gaps_extra_3() {
-        // hit early returns on parse object missing key/value
         let input = "{\"a\": ";
         let lexer = crate::lex::lexer::Lexer::new(input);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
-
-        // hit EOF after array element
         let input2 = "[1";
         let lexer = crate::lex::lexer::Lexer::new(input2);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
-
         let input3 = "{\"a\"";
         let lexer = crate::lex::lexer::Lexer::new(input3);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
-
         let input4 = "{\"a\": 1";
         let lexer = crate::lex::lexer::Lexer::new(input4);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
-
         let input5 = "[1,";
         let lexer = crate::lex::lexer::Lexer::new(input5);
         let tokens: Vec<_> = lexer.filter_map(Result::ok).collect();
         let _ = JsonParser::new(&tokens).parse();
     }
-
     #[test]
     fn test_json_embedded_templates_and_expressions() {
-        // 1. Single interpolation ${var.foo} unwraps directly to Expression::Traversal
         let json1 = r#"{"attr": "${var.foo}"}"#;
         let body1 = unwrap_body(parse_json(json1));
         let is_traversal =
@@ -1198,8 +1056,6 @@ mod tests {
         assert!(!is_traversal(&Expression::Null(Span::new(
             0, 0, 1, 1, 1, 1
         ))));
-
-        // 2. Multiple interpolations / mixed literal text becomes Expression::Template
         let json2 = r#"{"attr": "prefix ${var.foo} suffix"}"#;
         let body2 = unwrap_body(parse_json(json2));
         let get_parts_len = |expr: &Expression| match expr {
@@ -1211,8 +1067,6 @@ mod tests {
             get_parts_len(&Expression::Null(Span::new(0, 0, 1, 1, 1, 1))),
             0
         );
-
-        // 3. Escape sequence $${var.foo} becomes literal ${var.foo}
         let json3 = r#"{"attr": "$${var.foo}"}"#;
         let body3 = unwrap_body(parse_json(json3));
         let get_lit = |expr: &Expression| -> String {
@@ -1230,33 +1084,21 @@ mod tests {
             get_lit(&Expression::Template(vec![], Span::new(0, 0, 1, 1, 1, 1))),
             ""
         );
-
-        // 4. Directive %{ if true }...%{ endif }
         let json4 = r#"{"attr": "%{ if true }hello%{ endif }"}"#;
         let body4 = unwrap_body(parse_json(json4));
         let is_template = |expr: &Expression| matches!(expr, Expression::Template(..));
         assert!(is_template(&body4.attributes["attr"].expr));
         assert!(!is_template(&Expression::Null(Span::new(0, 0, 1, 1, 1, 1))));
-
-        // 5. Strings containing $$ or %% without ${ or %{ markers
         let json_escaped_dollar = r#"{"attr": "cost is $$10"}"#;
         let body_dollar = unwrap_body(parse_json(json_escaped_dollar));
         assert!(is_template(&body_dollar.attributes["attr"].expr));
-
         let json_escaped_percent = r#"{"attr": "rate is %%5"}"#;
         let body_percent = unwrap_body(parse_json(json_escaped_percent));
         assert!(is_template(&body_percent.attributes["attr"].expr));
     }
-
     #[test]
     fn test_json_schema_driven_parsing() {
         use crate::ast::schema::{AttributeSchema, BlockHeaderSchema, BodySchema};
-
-        // Schema with:
-        // - Block "resource" with labels ["type", "name"]
-        // - Block "service" with labels [] (0 labels)
-        // - Block "variable" with labels ["name"]
-        // - Attribute "config"
         let schema = BodySchema::new()
             .with_block(BlockHeaderSchema::new(
                 "resource",
@@ -1265,8 +1107,6 @@ mod tests {
             .with_block(BlockHeaderSchema::new("service", vec![]))
             .with_block(BlockHeaderSchema::new("variable", vec!["name".into()]))
             .with_attribute(AttributeSchema::required("config"));
-
-        // 1. Nested object hierarchies unfolded into block labels
         let json_input = r#"{
             "resource": {
                 "aws_instance": {
@@ -1280,23 +1120,17 @@ mod tests {
                 "setting": true
             }
         }"#;
-
         let body = unwrap_body(parse_json_with_schema(json_input, &schema));
-        // "config" must be an attribute, NOT a block!
         assert!(body.attributes.contains_key("config"));
         let is_object = |expr: &Expression| matches!(expr, Expression::Object(..));
         assert!(is_object(&body.attributes["config"].expr));
         assert!(!is_object(&Expression::Null(Span::new(0, 0, 1, 1, 1, 1))));
-
-        // "resource" must be a block with unfolded labels ["aws_instance", "web"]
         assert_eq!(body.blocks.len(), 1);
         let block = &body.blocks[0];
         assert_eq!(block.block_type, "resource");
         assert_eq!(block.labels, vec!["aws_instance", "web"]);
         assert!(block.body.attributes.contains_key("ami"));
         assert!(block.body.attributes.contains_key("count"));
-
-        // 2. JSON array-of-objects as repeated blocks of the same type
         let json_repeated = r#"{
             "service": [
                 { "port": 80 },
@@ -1307,9 +1141,7 @@ mod tests {
                 { "subnet_id": { "type": "string" } }
             ]
         }"#;
-
         let body2 = unwrap_body(parse_json_with_schema(json_repeated, &schema));
-        // service has 2 blocks with 0 labels
         let services: Vec<_> = body2
             .blocks
             .iter()
@@ -1318,8 +1150,6 @@ mod tests {
         assert_eq!(services.len(), 2);
         assert_eq!(services[0].labels.len(), 0);
         assert_eq!(services[1].labels.len(), 0);
-
-        // variable has 2 blocks with 1 label each
         let variables: Vec<_> = body2
             .blocks
             .iter()
@@ -1328,16 +1158,12 @@ mod tests {
         assert_eq!(variables.len(), 2);
         assert_eq!(variables[0].labels, vec!["vpc_id"]);
         assert_eq!(variables[1].labels, vec!["subnet_id"]);
-
-        // 3. Error case: bad nesting when unfolding labels
         let json_bad = r#"{"resource": "not_an_object"}"#;
         assert!(parse_json_with_schema(json_bad, &schema).is_err());
     }
-
     #[test]
     fn test_json_parser_coverage_gaps_exhaustive() {
         use crate::ast::schema::{AttributeSchema, BlockHeaderSchema, BodySchema};
-
         let schema = BodySchema::new()
             .with_block(BlockHeaderSchema::new("service", vec![]))
             .with_block(BlockHeaderSchema::new(
@@ -1345,24 +1171,16 @@ mod tests {
                 vec!["type".into(), "name".into()],
             ))
             .with_attribute(AttributeSchema::required("config"));
-
-        // 1. Array of objects with schema
         let json_arr_objs = r#"[
             { "service": { "port": 80 } },
             { "service": { "port": 443 } }
         ]"#;
         let body_arr = unwrap_body(parse_json_with_schema(json_arr_objs, &schema));
         assert_eq!(body_arr.blocks.len(), 2);
-
-        // 2. Array containing non-object with schema
         let json_arr_non_obj = r"[ 123 ]";
         assert!(parse_json_with_schema(json_arr_non_obj, &schema).is_err());
-
-        // 3. Document not an object or array of objects with schema
         let json_primitive = r#""just a string""#;
         assert!(parse_json_with_schema(json_primitive, &schema).is_err());
-
-        // 4. Comment key "//" with schema at root and in block body
         let json_comments = r#"{
             "//": "root comment",
             "service": {
@@ -1372,12 +1190,8 @@ mod tests {
         }"#;
         let body_comments = unwrap_body(parse_json_with_schema(json_comments, &schema));
         assert_eq!(body_comments.blocks.len(), 1);
-
-        // 5. Block body is not an object: { "service": 123 }
         let json_bad_body = r#"{ "service": 123 }"#;
         assert!(parse_json_with_schema(json_bad_body, &schema).is_err());
-
-        // 6. Template strip markers: ${~...}, ...~}, ${~...~}
         let json_strips = r#"{
             "strip_left": "${~var.foo}",
             "strip_right": "${var.foo~}",
@@ -1387,50 +1201,30 @@ mod tests {
         assert!(body_strips.attributes.contains_key("strip_left"));
         assert!(body_strips.attributes.contains_key("strip_right"));
         assert!(body_strips.attributes.contains_key("strip_both"));
-
-        // 7. Calling next() and advance() on EOF
         let tokens = lex_json_tokens("");
         let mut parser = JsonParser::new(&tokens);
         assert!(parser.next().is_none());
         let _ = parser.advance();
-
-        // 8. parse_json and parse_json_with_schema on invalid input
         assert!(parse_json("invalid json").is_err());
         assert!(parse_json_with_schema("invalid json", &schema).is_err());
-
-        // 9. Error branches of helpers
         let _ = unwrap_body(Err(Diagnostics::new()));
         let _ = unwrap_node(Err(Diagnostics::new()));
     }
-
     #[test]
     fn test_json_parser_syntax_errors_exhaustive() {
-        // 1. Unexpected EOF while parsing JSON value in object and array
         assert!(parse_json(r#"{"key": "#).is_err());
         assert!(parse_json(r"[").is_err());
         assert!(parse_json(r"[1, ").is_err());
-
-        // 2. Unexpected identifier (not true, false, null)
         assert!(parse_json(r#"{"key": undefined}"#).is_err());
         assert!(parse_json(r"[foo]").is_err());
-
-        // 3. Unexpected token for JSON value
         assert!(parse_json(r#"{"key": +}"#).is_err());
         assert!(parse_json(r"[ = ]").is_err());
-
-        // 4. Expected JSON object key (string)
         assert!(parse_json(r#"{ 123: "val" }"#).is_err());
         assert!(parse_json(r#"{ true: "val" }"#).is_err());
-
-        // 5. Expected ':' after JSON object key
         assert!(parse_json(r#"{"key" = "val"}"#).is_err());
         assert!(parse_json(r#"{"key" "val"}"#).is_err());
-
-        // 6. Expected ',' or '}' after JSON object value
         assert!(parse_json(r#"{"key": "val" "key2": "val2"}"#).is_err());
         assert!(parse_json(r#"{"key": "val" +}"#).is_err());
-
-        // 7. Expected ',' or ']' after JSON array element
         assert!(parse_json(r"[1 2]").is_err());
         assert!(parse_json(r"[1 +]").is_err());
     }

@@ -7,17 +7,14 @@
 )]
 #[cfg(test)]
 mod tests {
-
     use super::super::de::from_str;
     use super::super::ser::to_string;
     use serde::{Deserialize, Serialize};
-
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct TestConfig {
         name: String,
         count: i32,
     }
-
     #[test]
     fn test_deserialize_basic() {
         let hcl = "name = \"test\" \n count = 42";
@@ -25,20 +22,16 @@ mod tests {
         assert!(config.name.contains("test"));
         assert_eq!(config.count, 42);
     }
-
     #[test]
     fn test_deserialize_error() {
-        let res: Result<TestConfig, _> = from_str("name"); // Invalid body item start
+        let res: Result<TestConfig, _> = from_str("name");
         assert!(res.is_err());
         assert!(res.err().unwrap().contains("Parse error"));
-
-        // Test serde_json deserialization error
         let hcl = "count = \"not an integer\"";
         let res: Result<TestConfig, _> = from_str(hcl);
         assert!(res.is_err());
         assert!(res.err().unwrap().contains("Deserialize error"));
     }
-
     #[test]
     fn test_deserialize_mixed_blocks() {
         let input = r#"
@@ -52,36 +45,30 @@ mod tests {
         assert!(map.contains_key("my_block"));
         assert!(map.contains_key("my_other"));
     }
-
     #[test]
     fn test_expr_to_json_fallbacks() {
         use crate::ast::expr::{Expression, TemplatePart};
         use crate::span::Span;
-
         let span = Span::new(0, 0, 0, 0, 0, 0);
         let e = Expression::Variable("foo".to_string(), span.clone());
         let pairs = vec![(e, Expression::Bool(true, span.clone()))];
         let obj = Expression::Object(pairs, span.clone());
         let json = crate::serde::de::expr_to_json(&obj);
         assert_eq!(json["foo"], true);
-
         let other = Expression::Null(span.clone());
         let pairs = vec![(other, Expression::Bool(true, span.clone()))];
         let obj = Expression::Object(pairs, span.clone());
         let json = crate::serde::de::expr_to_json(&obj);
         assert_eq!(json["unknown_key"], true);
-
         let p = TemplatePart::Interpolation(Expression::Bool(true, span.clone()), span.clone());
         let e = Expression::Template(vec![p], span.clone());
         let json = crate::serde::de::expr_to_json(&e);
         assert_eq!(json.as_str().unwrap(), "${...}");
-
         let n = std::str::FromStr::from_str("1e400").unwrap();
         let e = Expression::Number(n, span);
         let json = crate::serde::de::expr_to_json(&e);
         assert!(json.is_null());
     }
-
     #[test]
     fn test_deserialize_complex() {
         #[derive(Debug, PartialEq, Deserialize)]
@@ -95,12 +82,10 @@ mod tests {
             blocks: Vec<Block>,
             named_block: std::collections::BTreeMap<String, Block>,
         }
-
         #[derive(Debug, PartialEq, Deserialize)]
         struct Block {
             inner: bool,
         }
-
         let hcl = r#"
             float_val = 42.42
             flag = true
@@ -138,37 +123,23 @@ mod tests {
         assert!(!config.blocks[1].inner);
         assert!(config.named_block["label1"].inner);
     }
-
     #[test]
     fn test_deserialize_nan() {
-        // Test JsonValue::Null path
-
-        // Bigdecimal handles practically any number, but we can't easily parse an invalid one because it doesn't fail cleanly or allow arbitrary precision to overflow to None in as_f64 for all implementations, however we can just create an expression and use `expr_to_json`.
-        // Wait, `expr_to_json` isn't public. We can't access it easily.
-        // Actually, we can just trigger it using from_str.
-        // What number fails as_f64()?
-        // BigDecimal to f64 might fail for extreme exponents?
-        // Let's test a very large number.
         let hcl = "val = 1e9999999999999999999999999999999999999";
         let res: Result<TestConfig, _> = from_str(hcl);
-        assert!(res.is_err()); // It probably fails to parse in HCL.
-
-        // So let's construct the object directly to trigger the branch in expr_to_json
+        assert!(res.is_err());
         use super::super::de::from_str;
         use serde::Deserialize;
         #[derive(Deserialize)]
         struct Dummy {
             num: Option<f64>,
         }
-        // Let's make `expr_to_json` be called indirectly via parsing a huge number that HCL parses but serde_json can't handle or something
-        // In the parser, does it parse huge numbers?
         let hcl = "num = 1e4000";
         let res: Result<Dummy, _> = from_str(hcl);
         if let Ok(dummy) = res {
-            assert_eq!(dummy.num, None); // map_or(JsonValue::Null) maps to None for Option
+            assert_eq!(dummy.num, None);
         }
     }
-
     #[test]
     fn test_serialize_complex() {
         use std::collections::BTreeMap;
@@ -183,10 +154,8 @@ mod tests {
             obj: BTreeMap<String, i32>,
             string_val: String,
         }
-
         let mut obj = BTreeMap::new();
         obj.insert("a".to_string(), 1);
-
         let data = ComplexSer {
             null_val: None,
             bool_true: true,
@@ -197,7 +166,6 @@ mod tests {
             obj,
             string_val: "str\"ing".to_string(),
         };
-
         let hcl = to_string(&data).unwrap();
         assert!(hcl.contains("null_val = null"));
         assert!(hcl.contains("bool_true = true"));
@@ -208,7 +176,6 @@ mod tests {
         assert!(hcl.contains("a = 1"));
         assert!(hcl.contains("\"str\\\"ing\""));
     }
-
     #[test]
     fn test_serialize_error() {
         use std::collections::BTreeMap;

@@ -3,7 +3,6 @@
 //! Implements LSP 3.17+ with JSON-RPC transport, document synchronization,
 //! hierarchical outline symbols, hover documentation, schema-driven completions,
 //! semantic token highlighting, and go-to-definition/references.
-
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::items_after_statements)]
@@ -18,11 +17,9 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::iter_on_single_items)]
-#![allow(clippy::coerce_container_to_any)]
 #![allow(clippy::trivial_regex)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::assert_is_empty)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
@@ -43,7 +40,6 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 #![allow(clippy::string_lit_as_bytes)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 pub mod cache;
 pub mod completion;
 pub mod definition;
@@ -54,6 +50,5 @@ pub mod semantic_tokens;
 pub mod server;
 pub mod symbols;
 pub mod transport;
-
 pub use error::LspError;
 pub use server::LspServer;

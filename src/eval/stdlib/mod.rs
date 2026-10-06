@@ -2,11 +2,9 @@
 //!
 //! This module contains implementations of the built-in functions
 //! available in HCL configuration files.
-
 use crate::eval::func::Function;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-
 mod all_tests;
 /// Collection functions.
 pub mod collection;
@@ -28,11 +26,9 @@ pub mod numeric;
 pub mod string;
 /// Environment and system functions.
 pub mod system;
-
 pub use system::{
     Environment, MockEnvironment, SystemEnvironment, env_func, env_func_with_provider,
 };
-
 /// Returns all built-in standard library functions aggregated across all categories.
 #[must_use]
 pub fn all_functions() -> Vec<Function> {
@@ -49,7 +45,6 @@ pub fn all_functions() -> Vec<Function> {
     funcs.extend(system::functions());
     funcs
 }
-
 static STDLIB_FUNCTIONS: LazyLock<HashMap<String, Function>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     for func in all_functions() {
@@ -57,7 +52,6 @@ static STDLIB_FUNCTIONS: LazyLock<HashMap<String, Function>> = LazyLock::new(|| 
     }
     map
 });
-
 /// Look up a built-in standard library function by name from the global static registry.
 ///
 /// Returns `Some(&Function)` if the function exists in the standard library, or `None` otherwise.
@@ -65,7 +59,6 @@ static STDLIB_FUNCTIONS: LazyLock<HashMap<String, Function>> = LazyLock::new(|| 
 pub fn get_stdlib_function(name: &str) -> Option<&'static Function> {
     STDLIB_FUNCTIONS.get(name)
 }
-
 /// Returns a reference to the global static map of all standard library functions.
 #[must_use]
 pub fn stdlib_map() -> &'static HashMap<String, Function> {

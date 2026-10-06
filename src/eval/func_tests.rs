@@ -13,13 +13,10 @@ use crate::number::Number;
 use crate::span::Span;
 use crate::types::{Type, Value, ValueData};
 use std::str::FromStr;
-
 #[test]
 fn test_register_and_call_user_func() {
     let span = Span::new(0, 0, 0, 0, 0, 0);
     let mut ctx = Context::new();
-
-    // function "add_one" { params = [x], return_type = number, body = x + 1 }
     let params = vec![FunctionParam {
         name: "x".to_string(),
         type_expr: Some(TypeExpr::Primitive(Type::Number, span.clone())),
@@ -33,9 +30,7 @@ fn test_register_and_call_user_func() {
         body,
         span,
     );
-
     ctx.register_function_block(&fb);
-
     let f = ctx.get_function("add_one").unwrap();
     let res = (f.func)(&[Value::new(
         Type::Number,
@@ -49,12 +44,10 @@ fn test_register_and_call_user_func() {
         panic!("expected number");
     }
 }
-
 #[test]
 fn test_register_and_call_user_func_type_mismatch() {
     let span = Span::new(0, 0, 0, 0, 0, 0);
     let mut ctx = Context::new();
-
     let params = vec![FunctionParam {
         name: "x".to_string(),
         type_expr: Some(TypeExpr::Primitive(Type::Number, span.clone())),
@@ -62,10 +55,8 @@ fn test_register_and_call_user_func_type_mismatch() {
     }];
     let body = Expression::Number(Number::from_str("1").unwrap(), span.clone());
     let fb = FunctionBlock::new("test".to_string(), params, None, body, span);
-
     ctx.register_function_block(&fb);
     let f = ctx.get_function("test").unwrap();
-
     let err = (f.func)(&[Value::new(
         Type::String,
         ValueData::String("hello".to_string()),
@@ -74,13 +65,10 @@ fn test_register_and_call_user_func_type_mismatch() {
     .unwrap();
     assert!(err.contains("type mismatch"));
 }
-
 #[test]
 fn test_user_func_variadic_0_1_n_args() {
     let span = Span::new(0, 0, 0, 0, 0, 0);
     let mut ctx = Context::new();
-
-    // function "custom_join" { params = [prefix], variadic_param = rest, result = join("-", concat([prefix], rest)) }
     let params = vec![FunctionParam {
         name: "prefix".to_string(),
         type_expr: Some(TypeExpr::Primitive(Type::String, span.clone())),
@@ -91,30 +79,20 @@ fn test_user_func_variadic_0_1_n_args() {
         type_expr: None,
         span: span.clone(),
     };
-
-    // Body: join("-", concat([prefix], rest))
     let parsed_body = crate::api::parse("v = join(\"-\", concat([prefix], rest))").unwrap();
     let body = parsed_body.attributes["v"].expr.clone();
-
     let fb = FunctionBlock::new("custom_join".to_string(), params, None, body, span)
         .with_variadic_param(Some(variadic));
-
     ctx.register_function_block(&fb);
     let f = ctx.get_function("custom_join").unwrap();
-
-    // 0 variadic args
     let res0 = (f.func)(&[Value::new(Type::String, ValueData::String("base".into()))]).unwrap();
     assert_eq!(res0.data.as_ref(), &ValueData::String("base".into()));
-
-    // 1 variadic arg
     let res1 = (f.func)(&[
         Value::new(Type::String, ValueData::String("base".into())),
         Value::new(Type::String, ValueData::String("one".into())),
     ])
     .unwrap();
     assert_eq!(res1.data.as_ref(), &ValueData::String("base-one".into()));
-
-    // N variadic args (3 extra args)
     let res3 = (f.func)(&[
         Value::new(Type::String, ValueData::String("base".into())),
         Value::new(Type::String, ValueData::String("one".into())),
@@ -126,14 +104,10 @@ fn test_user_func_variadic_0_1_n_args() {
         res3.data.as_ref(),
         &ValueData::String("base-one-two-three".into())
     );
-
-    // Error: missing required positional arg (0 args provided)
     assert!((f.func)(&[]).is_err());
 }
-
 #[test]
 fn test_parse_and_execute_user_func_with_variadic() {
-    // Test parsing variadic_param attribute syntax
     let hcl_attr_syntax = r#"
         function "collect" {
             params = [first]
@@ -150,16 +124,11 @@ fn test_parse_and_execute_user_func_with_variadic() {
         func_block.variadic_param.as_ref().map(|v| v.name.as_str()),
         Some("more")
     );
-
     let mut ctx = Context::new();
     ctx.register_function_block(func_block);
     let f1 = ctx.get_function("collect").unwrap();
-
-    // Call with 0 variadic
     let r0 = (f1.func)(&[Value::new(Type::String, ValueData::String("a".into()))]).unwrap();
     assert_eq!(r0.data.as_ref(), &ValueData::Number(0_i32.into()));
-
-    // Call with 2 variadic
     let r2 = (f1.func)(&[
         Value::new(Type::String, ValueData::String("a".into())),
         Value::new(Type::String, ValueData::String("b".into())),
@@ -167,8 +136,6 @@ fn test_parse_and_execute_user_func_with_variadic() {
     ])
     .unwrap();
     assert_eq!(r2.data.as_ref(), &ValueData::Number(2_i32.into()));
-
-    // Test parsing variadic_param block syntax
     let hcl_block_syntax = r#"
         function "collect_block" {
             params = [first]
@@ -185,11 +152,9 @@ fn test_parse_and_execute_user_func_with_variadic() {
         fb2.variadic_param.as_ref().map(|v| v.name.as_str()),
         Some("rest")
     );
-
     let mut ctx2 = Context::new();
     ctx2.register_function_block(fb2);
     let f2 = ctx2.get_function("collect_block").unwrap();
-
     let sum_res = (f2.func)(&[
         Value::new(Type::String, ValueData::String("unused".into())),
         Value::new(Type::Number, ValueData::Number(10_i32.into())),
@@ -199,14 +164,10 @@ fn test_parse_and_execute_user_func_with_variadic() {
     .unwrap();
     assert_eq!(sum_res.data.as_ref(), &ValueData::Number(60_i32.into()));
 }
-
 #[test]
 fn test_misspelled_function_name_suggestions() {
     use crate::eval::evaluator::Evaluator;
-
     let mut ctx = Context::with_stdlib();
-
-    // 1. Stdlib typo: "uppr" -> "upper"
     let expr_uppr = Expression::FuncCall(
         Box::new(crate::ast::expr::FuncCall {
             name: "uppr".into(),
@@ -221,8 +182,6 @@ fn test_misspelled_function_name_suggestions() {
         diag_uppr.detail.as_deref(),
         Some("Unknown function 'uppr'. Did you mean 'upper'?")
     );
-
-    // 2. Custom registered function typo: "my_transfrm" -> "my_transform"
     ctx.set_function(
         "my_transform",
         crate::eval::func::Function::new(
@@ -244,8 +203,6 @@ fn test_misspelled_function_name_suggestions() {
         diag_custom.detail.as_deref(),
         Some("Unknown function 'my_transfrm'. Did you mean 'my_transform'?")
     );
-
-    // 3. No match when edit distance is too large
     let expr_nomatch = Expression::FuncCall(
         Box::new(crate::ast::expr::FuncCall {
             name: "completely_unknown_function_name".into(),

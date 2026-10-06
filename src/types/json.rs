@@ -1,5 +1,4 @@
 //! Canonical JSON wire format implementation for `cty` Types and Values (`cty/json` equivalent).
-
 use crate::error::HclError;
 use crate::number::Number;
 use crate::types::ty::Type;
@@ -7,7 +6,6 @@ use crate::types::val::{Value, ValueData};
 use serde_json::{Map, Value as JsonValue, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
-
 /// Encodes an HCL [`Type`] into its canonical `cty/json` representation.
 ///
 /// # Arguments
@@ -39,7 +37,6 @@ pub fn encode_type_to_json(ty: &Type) -> JsonValue {
         Type::Capsule { name, .. } => json!(["capsule", name]),
     }
 }
-
 /// Decodes an HCL [`Type`] from its canonical `cty/json` representation.
 ///
 /// # Arguments
@@ -121,7 +118,6 @@ pub fn decode_type_from_json(val: &JsonValue) -> Result<Type, HclError> {
         ))),
     }
 }
-
 /// Encodes an HCL [`Value`] into its JSON representation conforming to `cty/json`.
 ///
 /// # Arguments
@@ -132,7 +128,7 @@ pub fn decode_type_from_json(val: &JsonValue) -> Result<Type, HclError> {
 pub fn encode_value_to_json(val: &Value) -> Result<JsonValue, HclError> {
     match &*val.data {
         ValueData::Null => Ok(JsonValue::Null),
-        ValueData::Unknown(_) => Ok(json!({"__unknown": true})),
+        ValueData::Unknown(_) => Ok(json!({ "__unknown" : true })),
         ValueData::Bool(b) => Ok(JsonValue::Bool(*b)),
         ValueData::Number(n) => {
             let s = n.0.to_string();
@@ -178,7 +174,6 @@ pub fn encode_value_to_json(val: &Value) -> Result<JsonValue, HclError> {
         }
     }
 }
-
 /// Encodes an HCL [`Value`] into a typed JSON envelope `{ "type": ..., "value": ... }`.
 ///
 /// # Arguments
@@ -189,12 +184,8 @@ pub fn encode_value_to_json(val: &Value) -> Result<JsonValue, HclError> {
 pub fn encode_typed_value(val: &Value) -> Result<JsonValue, HclError> {
     let ty_json = encode_type_to_json(val.ty());
     let val_json = encode_value_to_json(val)?;
-    Ok(json!({
-        "type": ty_json,
-        "value": val_json,
-    }))
+    Ok(json!({ "type" : ty_json, "value" : val_json, }))
 }
-
 /// Encodes an HCL [`Value`] into a JSON value, preserving sensitivity and custom marks in a `@cty.marks` envelope.
 ///
 /// If the value has no marks, returns the plain JSON value representation.
@@ -220,7 +211,6 @@ pub fn encode_value_to_json_with_marks(val: &Value) -> Result<JsonValue, HclErro
         Ok(JsonValue::Object(map))
     }
 }
-
 /// Decodes an HCL [`Value`] from JSON conforming to the given [`Type`].
 ///
 /// # Arguments
@@ -254,7 +244,6 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
             return Ok(decoded);
         }
     }
-
     match (val, ty) {
         (JsonValue::Null, _) => Ok(Value::null(ty.clone())),
         (JsonValue::Bool(b), Type::Dynamic) => Ok(Value::new(Type::Bool, ValueData::Bool(*b))),
@@ -391,7 +380,6 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
         }
     }
 }
-
 /// Decodes an HCL [`Value`] from a typed JSON envelope `{ "type": ..., "value": ... }`.
 ///
 /// # Arguments
@@ -409,11 +397,9 @@ pub fn decode_typed_value(json: &JsonValue) -> Result<Value, HclError> {
     let val_json = obj.get("value").ok_or_else(|| {
         HclError::CtyJson("Typed value envelope missing 'value' property".to_string())
     })?;
-
     let ty = decode_type_from_json(ty_json)?;
     decode_value_from_json(val_json, &ty)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -423,9 +409,7 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     #[test]
     fn test_cty_json_type_roundtrip() {
         let types = vec![
@@ -446,21 +430,17 @@ mod tests {
             },
             Type::capsule::<()>("my_capsule"),
         ];
-
         for ty in &types {
             let encoded = encode_type_to_json(ty);
             let decoded = decode_type_from_json(&encoded).unwrap();
             assert_eq!(ty, &decoded);
         }
-
-        // Test decode invalid types
         assert!(decode_type_from_json(&json!("unknown_type")).is_err());
         assert!(decode_type_from_json(&json!(["bad_kind"])).is_err());
         assert!(decode_type_from_json(&json!(123)).is_err());
         assert!(decode_type_from_json(&json!(["list"])).is_err());
         assert!(decode_type_from_json(&json!(["unsupported", "elem"])).is_err());
     }
-
     #[test]
     fn test_cty_json_value_roundtrip() {
         let mut obj = BTreeMap::new();
@@ -472,7 +452,6 @@ mod tests {
             "count".to_string(),
             Value::new(Type::Number, ValueData::Number(Number::from(3_i64))),
         );
-
         let ty = Type::Object {
             attrs: BTreeMap::from([
                 ("name".to_string(), Type::String),
@@ -480,34 +459,25 @@ mod tests {
             ]),
             optional_attrs: BTreeSet::new(),
         };
-
         let val = Value::new(ty.clone(), ValueData::Object(obj));
         let encoded = encode_value_to_json(&val).unwrap();
         let decoded = decode_value_from_json(&encoded, &ty).unwrap();
         assert_eq!(val, decoded);
-
-        // Test typed value envelope
         let envelope = encode_typed_value(&val).unwrap();
         let from_env = decode_typed_value(&envelope).unwrap();
         assert_eq!(val, from_env);
-
-        // Test null and unknown values
         let null_val = Value::null(Type::String);
         let null_env = encode_typed_value(&null_val).unwrap();
         let from_null = decode_typed_value(&null_env).unwrap();
         assert!(from_null.is_null());
-
         let unk_val = Value::unknown(Type::Number);
         let unk_env = encode_typed_value(&unk_val).unwrap();
         let from_unk = decode_typed_value(&unk_env).unwrap();
         assert!(from_unk.is_unknown());
     }
-
     #[test]
     fn test_cty_json_collections_and_error_paths() {
         use crate::encode::EncodeValue;
-
-        // 1. List, Set, Map, Tuple roundtrips
         let list_val = Value::new(
             Type::List(Box::new(Type::String)),
             ValueData::Array(vec!["a".encode_value(), "b".encode_value()]),
@@ -515,7 +485,6 @@ mod tests {
         let enc_list = encode_value_to_json(&list_val).unwrap();
         let dec_list = decode_value_from_json(&enc_list, list_val.ty()).unwrap();
         assert_eq!(list_val, dec_list);
-
         let mut set = BTreeSet::new();
         set.insert(1_i64.encode_value());
         set.insert(2_i64.encode_value());
@@ -523,14 +492,12 @@ mod tests {
         let enc_set = encode_value_to_json(&set_val).unwrap();
         let dec_set = decode_value_from_json(&enc_set, set_val.ty()).unwrap();
         assert_eq!(set_val, dec_set);
-
         let mut map = BTreeMap::new();
         map.insert("k1".to_string(), true.encode_value());
         let map_val = Value::new(Type::Map(Box::new(Type::Bool)), ValueData::Object(map));
         let enc_map = encode_value_to_json(&map_val).unwrap();
         let dec_map = decode_value_from_json(&enc_map, map_val.ty()).unwrap();
         assert_eq!(map_val, dec_map);
-
         let tuple_val = Value::new(
             Type::Tuple(vec![Type::String, Type::Bool]),
             ValueData::Array(vec!["hello".encode_value(), false.encode_value()]),
@@ -538,8 +505,6 @@ mod tests {
         let enc_tup = encode_value_to_json(&tuple_val).unwrap();
         let dec_tup = decode_value_from_json(&enc_tup, tuple_val.ty()).unwrap();
         assert_eq!(tuple_val, dec_tup);
-
-        // 2. Dynamic decoding
         let dyn_bool = decode_value_from_json(&json!(true), &Type::Dynamic).unwrap();
         assert_eq!(dyn_bool, true.encode_value());
         let dyn_num = decode_value_from_json(&json!(123), &Type::Dynamic).unwrap();
@@ -548,10 +513,8 @@ mod tests {
         assert_eq!(dyn_str, "dyn".encode_value());
         let dyn_arr = decode_value_from_json(&json!([1, 2]), &Type::Dynamic).unwrap();
         assert!(matches!(dyn_arr.data.as_ref(), ValueData::Array(_)));
-        let dyn_obj = decode_value_from_json(&json!({"a": true}), &Type::Dynamic).unwrap();
+        let dyn_obj = decode_value_from_json(&json!({ "a" : true }), &Type::Dynamic).unwrap();
         assert!(matches!(dyn_obj.data.as_ref(), ValueData::Object(_)));
-
-        // 3. Object with optional_attrs
         let obj_ty = Type::Object {
             attrs: BTreeMap::from([
                 ("req".to_string(), Type::String),
@@ -559,7 +522,7 @@ mod tests {
             ]),
             optional_attrs: BTreeSet::from(["opt".to_string()]),
         };
-        let partial_json = json!({"req": "present"});
+        let partial_json = json!({ "req" : "present" });
         let dec_opt = decode_value_from_json(&partial_json, &obj_ty).unwrap();
         assert!(
             dec_opt
@@ -570,20 +533,12 @@ mod tests {
                 .unwrap()
                 .is_null()
         );
-
-        // Missing required attribute error
-        let missing_json = json!({"opt": 10});
+        let missing_json = json!({ "opt" : 10 });
         assert!(decode_value_from_json(&missing_json, &obj_ty).is_err());
-
-        // Tuple length mismatch error
         assert!(decode_value_from_json(&json!(["a"]), tuple_val.ty()).is_err());
-
-        // Envelope errors
         assert!(decode_typed_value(&json!("not_an_obj")).is_err());
-        assert!(decode_typed_value(&json!({"type": "string"})).is_err());
-        assert!(decode_typed_value(&json!({"value": "hello"})).is_err());
-
-        // Type errors
+        assert!(decode_typed_value(&json!({ "type" : "string" })).is_err());
+        assert!(decode_typed_value(&json!({ "value" : "hello" })).is_err());
         assert!(decode_value_from_json(&json!("not_bool"), &Type::Bool).is_err());
         assert!(decode_value_from_json(&json!("not_num"), &Type::Number).is_err());
         assert!(decode_value_from_json(&json!(123), &Type::String).is_err());
@@ -597,32 +552,22 @@ mod tests {
             decode_value_from_json(&json!("not_obj"), &Type::Map(Box::new(Type::String))).is_err()
         );
         assert!(decode_value_from_json(&json!("not_obj"), &obj_ty).is_err());
-
-        // 4. Capsule encoding & decoding and edge cases
         let cap_val = Value::capsule::<()>("test_cap", ());
         let cap_json = encode_value_to_json(&cap_val).unwrap();
         assert!(cap_json.is_string());
-
         let cap_ty = Type::capsule::<()>("test_cap");
         assert!(decode_value_from_json(&json!(123), &cap_ty).is_err());
-
-        // Decode type edge cases
         assert!(decode_type_from_json(&json!([123, "elem"])).is_err());
         assert!(decode_type_from_json(&json!(["tuple", 123])).is_err());
         assert!(decode_type_from_json(&json!(["object", 123])).is_err());
         assert!(decode_type_from_json(&json!(["capsule", 123])).is_err());
-
-        // Dynamic null decoding
         let dyn_null = decode_value_from_json(&json!(null), &Type::Dynamic).unwrap();
         assert!(dyn_null.is_null());
     }
-
     #[test]
     fn test_cty_json_coverage_exhaustive() {
         use crate::types::ty::CapsuleOps;
         use std::sync::Arc;
-
-        // 1. Number that overflows serde_json::Number to string fallback
         let mut huge_num = Value::null(Type::Number);
         for s in ["1e400", "invalid"] {
             if let Ok(n) = Number::from_str(s) {
@@ -635,15 +580,12 @@ mod tests {
             enc_huge.as_ref().ok().and_then(JsonValue::as_str),
             Some("1e+400")
         );
-
-        // 2. Capsule with string coercion
         let cap_ops = Arc::new(
             CapsuleOps::new("custom_str_cap", Arc::new(|_a, _b| false), Arc::new(|_| 0))
                 .with_conversion_to(Arc::new(|a, target| {
-                    if target == &Type::String
-                        && let Some(s) = a.downcast_ref::<String>()
-                    {
-                        Some(Value::new(Type::String, ValueData::String(s.clone())))
+                    if target == &Type::String {
+                        a.downcast_ref::<String>()
+                            .map(|s| Value::new(Type::String, ValueData::String(s.clone())))
                     } else {
                         None
                     }
@@ -656,13 +598,10 @@ mod tests {
                     }
                 })),
         );
-
         let cap_val =
             Value::capsule_with_ops("custom_str_cap", cap_ops.clone(), "hello_cap".to_string());
         let enc_cap = encode_value_to_json(&cap_val);
         assert_eq!(enc_cap.ok(), Some(json!("hello_cap")));
-
-        // Fallback branches for capsule conversion closures
         let bad_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(123_i32);
         assert!(
             cap_ops
@@ -679,15 +618,12 @@ mod tests {
         assert!(cap_ops.conversion_from.as_ref().is_some_and(|conv| {
             (conv)(&Value::new(Type::Number, ValueData::Number(123_i64.into()))).is_none()
         }));
-
         let cap_ty = Type::capsule_with_ops::<String>("custom_str_cap", cap_ops);
         let dec_cap = decode_value_from_json(&json!("hello_cap"), &cap_ty);
         assert_eq!(
             dec_cap.as_ref().ok().and_then(|v| v.ty().capsule_name()),
             Some("custom_str_cap")
         );
-
-        // Unencodable capsule with ops but no string conversion
         let no_str_ops = Arc::new(CapsuleOps::new(
             "unencodable_cap",
             Arc::new(|_a, _b| true),
@@ -717,15 +653,11 @@ mod tests {
             .is_err()
         );
         assert!(encode_typed_value(&unencodable_cap).is_err());
-
-        // decode_type_from_json nested error paths
         assert!(decode_type_from_json(&json!(["list", "bad"])).is_err());
         assert!(decode_type_from_json(&json!(["set", "bad"])).is_err());
         assert!(decode_type_from_json(&json!(["map", "bad"])).is_err());
         assert!(decode_type_from_json(&json!(["tuple", ["string", "bad"]])).is_err());
-        assert!(decode_type_from_json(&json!(["object", {"k": "bad"}])).is_err());
-
-        // 3. Number decoding from string and error paths
+        assert!(decode_type_from_json(&json!(["object", { "k" : "bad" }])).is_err());
         let dec_num_str = decode_value_from_json(&json!("123.45"), &Type::Number);
         assert_eq!(
             dec_num_str.as_ref().ok().map(Value::ty),
@@ -733,8 +665,6 @@ mod tests {
         );
         assert!(decode_value_from_json(&json!(true), &Type::Number).is_err());
         assert!(decode_value_from_json(&json!([]), &Type::Number).is_err());
-
-        // decode_value_from_json collection element error paths
         assert!(
             decode_value_from_json(&json!([1, "bad"]), &Type::List(Box::new(Type::Number)))
                 .is_err()
@@ -744,7 +674,7 @@ mod tests {
         );
         assert!(
             decode_value_from_json(
-                &json!({"a": 1, "b": "bad"}),
+                &json!({ "a" : 1, "b" : "bad" }),
                 &Type::Map(Box::new(Type::Number))
             )
             .is_err()
@@ -757,89 +687,60 @@ mod tests {
             .is_err()
         );
         let obj_spec_ty = Type::object(BTreeMap::from([("a".into(), Type::Number)]));
-        assert!(decode_value_from_json(&json!({"a": "bad"}), &obj_spec_ty).is_err());
-
-        // 4. Tuple decoding error path
+        assert!(decode_value_from_json(&json!({ "a" : "bad" }), &obj_spec_ty).is_err());
         assert!(
             decode_value_from_json(&json!("not_array"), &Type::Tuple(vec![Type::String])).is_err()
         );
-
-        // 5. decode_typed_value envelope error paths
         assert!(decode_typed_value(&json!("not_object")).is_err());
-        assert!(decode_typed_value(&json!({"value": "something"})).is_err());
-        assert!(decode_typed_value(&json!({"type": "string"})).is_err());
-        assert!(decode_typed_value(&json!({"type": ["list", "bad"], "value": []})).is_err());
+        assert!(decode_typed_value(&json!({ "value" : "something" })).is_err());
+        assert!(decode_typed_value(&json!({ "type" : "string" })).is_err());
+        assert!(decode_typed_value(&json!({ "type" : ["list", "bad"], "value" : [] })).is_err());
     }
-
     #[test]
     fn test_cty_json_marked_values_roundtrip() {
         use crate::types::val::ValueMark;
-
-        // Plain value
         let val_plain = Value::new(Type::String, ValueData::String("unmarked".into()));
         let json_plain = encode_value_to_json_with_marks(&val_plain).unwrap();
         assert_eq!(json_plain, json!("unmarked"));
-
-        // Sensitive value
         let val_sens = val_plain.mark(ValueMark::Sensitive);
         let json_sens = encode_value_to_json_with_marks(&val_sens).unwrap();
         assert_eq!(
             json_sens,
-            json!({
-                "@cty.marks": ["sensitive"],
-                "value": "unmarked"
-            })
+            json!({ "@cty.marks" : ["sensitive"], "value" : "unmarked" })
         );
-
         let dec_sens = decode_value_from_json(&json_sens, &Type::String).unwrap();
         assert_eq!(
             dec_sens.data.as_ref(),
             &ValueData::String("unmarked".into())
         );
         assert!(dec_sens.has_mark(&ValueMark::Sensitive));
-
-        // Custom marked value
         let val_custom = val_plain.mark(ValueMark::custom("encrypted"));
         let json_custom = encode_value_to_json_with_marks(&val_custom).unwrap();
         let dec_custom = decode_value_from_json(&json_custom, &Type::String).unwrap();
         assert!(dec_custom.has_mark(&ValueMark::custom("encrypted")));
-
-        // Envelope with non-array @cty.marks
-        let json_invalid_marks = json!({
-            "@cty.marks": "not_an_array",
-            "value": "unmarked"
-        });
+        let json_invalid_marks = json!(
+            { "@cty.marks" : "not_an_array", "value" : "unmarked" }
+        );
         let dec_invalid_marks = decode_value_from_json(&json_invalid_marks, &Type::String).unwrap();
         assert_eq!(
             dec_invalid_marks.data.as_ref(),
             &ValueData::String("unmarked".into())
         );
         assert!(dec_invalid_marks.marks.is_empty());
-
-        // Envelope with array containing non-string items and empty array
-        let json_mixed_marks = json!({
-            "@cty.marks": [123, null, true, "sensitive", "custom_tag"],
-            "value": "unmarked"
-        });
+        let json_mixed_marks = json!(
+            { "@cty.marks" : [123, null, true, "sensitive", "custom_tag"], "value" :
+            "unmarked" }
+        );
         let dec_mixed_marks = decode_value_from_json(&json_mixed_marks, &Type::String).unwrap();
         assert!(dec_mixed_marks.has_mark(&ValueMark::Sensitive));
         assert!(dec_mixed_marks.has_mark(&ValueMark::custom("custom_tag")));
-
-        let json_empty_marks = json!({
-            "@cty.marks": [],
-            "value": "unmarked"
-        });
+        let json_empty_marks = json!({ "@cty.marks" : [], "value" : "unmarked" });
         let dec_empty_marks = decode_value_from_json(&json_empty_marks, &Type::String).unwrap();
         assert!(dec_empty_marks.marks.is_empty());
-
-        // Inner value decoding failure inside marked envelope
-        let json_err_inner = json!({
-            "@cty.marks": ["sensitive"],
-            "value": "not_a_boolean"
-        });
+        let json_err_inner = json!(
+            { "@cty.marks" : ["sensitive"], "value" : "not_a_boolean" }
+        );
         assert!(decode_value_from_json(&json_err_inner, &Type::Bool).is_err());
-
-        // Encoding failure inside encode_value_to_json_with_marks
         let eq_fn: crate::types::ty::CapsuleEqualsFn = std::sync::Arc::new(|_, _| true);
         let hash_fn: crate::types::ty::CapsuleHashFn = std::sync::Arc::new(|_| 0);
         let ops = crate::types::ty::CapsuleOps::new("NonJsonCapsule", eq_fn, hash_fn);

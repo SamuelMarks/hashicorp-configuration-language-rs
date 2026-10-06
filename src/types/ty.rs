@@ -1,8 +1,6 @@
 //! Type definitions matching `HashiCorp`'s `cty`.
-
 use crate::error::HclError;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-
 /// Represents an HCL Type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -39,26 +37,21 @@ pub enum Type {
         ops: Option<std::sync::Arc<CapsuleOps>>,
     },
 }
-
 /// Equality function for comparing two encapsulated values.
 pub type CapsuleEqualsFn =
     std::sync::Arc<dyn Fn(&dyn std::any::Any, &dyn std::any::Any) -> bool + Send + Sync>;
-
 /// Hashing function for computing a 64-bit hash code for an encapsulated value.
 pub type CapsuleHashFn = std::sync::Arc<dyn Fn(&dyn std::any::Any) -> u64 + Send + Sync>;
-
 /// Conversion function from an encapsulated value to an HCL [`crate::types::val::Value`].
 pub type CapsuleConversionToFn = std::sync::Arc<
     dyn Fn(&dyn std::any::Any, &Type) -> Option<crate::types::val::Value> + Send + Sync,
 >;
-
 /// Conversion function from an HCL [`crate::types::val::Value`] into an encapsulated type.
 pub type CapsuleConversionFromFn = std::sync::Arc<
     dyn Fn(&crate::types::val::Value) -> Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>
         + Send
         + Sync,
 >;
-
 /// Binary arithmetic operation closure for capsule values.
 pub type CapsuleBinaryOpFn = std::sync::Arc<
     dyn Fn(
@@ -68,21 +61,18 @@ pub type CapsuleBinaryOpFn = std::sync::Arc<
         + Send
         + Sync,
 >;
-
 /// Unary arithmetic operation closure for capsule values.
 pub type CapsuleUnaryOpFn = std::sync::Arc<
     dyn Fn(&dyn std::any::Any) -> Result<Box<dyn std::any::Any + Send + Sync>, String>
         + Send
         + Sync,
 >;
-
 /// Relational comparison operation closure for capsule values.
 pub type CapsuleCmpFn = std::sync::Arc<
     dyn Fn(&dyn std::any::Any, &dyn std::any::Any) -> Result<std::cmp::Ordering, String>
         + Send
         + Sync,
 >;
-
 /// Indexing operation closure for capsule values.
 pub type CapsuleIndexGetFn = std::sync::Arc<
     dyn Fn(
@@ -92,12 +82,10 @@ pub type CapsuleIndexGetFn = std::sync::Arc<
         + Send
         + Sync,
 >;
-
 /// Attribute lookup operation closure for capsule values.
 pub type CapsuleAttrGetFn = std::sync::Arc<
     dyn Fn(&dyn std::any::Any, &str) -> Result<crate::types::val::Value, String> + Send + Sync,
 >;
-
 /// Method execution closure for capsule values: `(capsule_any, args) -> Result<Value, HclError>`.
 pub type CapsuleMethodFn = std::sync::Arc<
     dyn Fn(
@@ -107,7 +95,6 @@ pub type CapsuleMethodFn = std::sync::Arc<
         + Send
         + Sync,
 >;
-
 /// Compares two optional Arc references by pointer equality.
 ///
 /// # Arguments
@@ -123,7 +110,6 @@ fn opt_arc_ptr_eq<T: ?Sized>(a: Option<&std::sync::Arc<T>>, b: Option<&std::sync
         _ => false,
     }
 }
-
 /// Operations and extension hooks for an encapsulated type (`cty.CapsuleWithOps`).
 #[derive(Clone)]
 pub struct CapsuleOps {
@@ -158,7 +144,6 @@ pub struct CapsuleOps {
     /// Named member method functions callable on capsule values (`capsule.method(...)`).
     pub methods: HashMap<String, CapsuleMethodFn>,
 }
-
 impl CapsuleOps {
     /// Creates a new `CapsuleOps` table with the required type name, equality, and hash closures.
     ///
@@ -189,7 +174,6 @@ impl CapsuleOps {
             methods: HashMap::new(),
         }
     }
-
     /// Sets the conversion-to-Value closure.
     ///
     /// # Arguments
@@ -202,7 +186,6 @@ impl CapsuleOps {
         self.conversion_to = Some(conv);
         self
     }
-
     /// Sets the conversion-from-Value closure.
     ///
     /// # Arguments
@@ -215,7 +198,6 @@ impl CapsuleOps {
         self.conversion_from = Some(conv);
         self
     }
-
     /// Sets the addition (`+`) operator closure.
     ///
     /// # Arguments
@@ -228,7 +210,6 @@ impl CapsuleOps {
         self.add = Some(op);
         self
     }
-
     /// Sets the subtraction (`-`) operator closure.
     ///
     /// # Arguments
@@ -241,7 +222,6 @@ impl CapsuleOps {
         self.sub = Some(op);
         self
     }
-
     /// Sets the multiplication (`*`) operator closure.
     ///
     /// # Arguments
@@ -254,7 +234,6 @@ impl CapsuleOps {
         self.mul = Some(op);
         self
     }
-
     /// Sets the division (`/`) operator closure.
     ///
     /// # Arguments
@@ -267,7 +246,6 @@ impl CapsuleOps {
         self.div = Some(op);
         self
     }
-
     /// Sets the modulo (`%`) operator closure.
     ///
     /// # Arguments
@@ -280,7 +258,6 @@ impl CapsuleOps {
         self.modulo = Some(op);
         self
     }
-
     /// Sets the unary negation (`-`) operator closure.
     ///
     /// # Arguments
@@ -293,7 +270,6 @@ impl CapsuleOps {
         self.neg = Some(op);
         self
     }
-
     /// Sets the relational comparison (`<`, `<=`, `>`, `>=`) operator closure.
     ///
     /// # Arguments
@@ -306,7 +282,6 @@ impl CapsuleOps {
         self.cmp = Some(op);
         self
     }
-
     /// Sets the indexing (`capsule[index]`) operator closure.
     ///
     /// # Arguments
@@ -319,7 +294,6 @@ impl CapsuleOps {
         self.index_get = Some(op);
         self
     }
-
     /// Sets the attribute lookup (`capsule.attr`) operator closure.
     ///
     /// # Arguments
@@ -332,7 +306,6 @@ impl CapsuleOps {
         self.attr_get = Some(op);
         self
     }
-
     /// Registers a named method on the capsule type (`capsule.method(...)`).
     ///
     /// # Arguments
@@ -347,7 +320,6 @@ impl CapsuleOps {
         self
     }
 }
-
 impl std::fmt::Debug for CapsuleOps {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CapsuleOps")
@@ -355,7 +327,6 @@ impl std::fmt::Debug for CapsuleOps {
             .finish_non_exhaustive()
     }
 }
-
 impl PartialEq for CapsuleOps {
     fn eq(&self, other: &Self) -> bool {
         self.type_name == other.type_name
@@ -384,15 +355,12 @@ impl PartialEq for CapsuleOps {
             })
     }
 }
-
 impl Eq for CapsuleOps {}
-
 impl std::hash::Hash for CapsuleOps {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.type_name.hash(state);
     }
 }
-
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -436,7 +404,6 @@ impl std::fmt::Display for Type {
         }
     }
 }
-
 impl Type {
     /// Creates an object type with no optional attributes.
     ///
@@ -449,7 +416,6 @@ impl Type {
             optional_attrs: BTreeSet::new(),
         }
     }
-
     /// Creates an object type with optional attribute names.
     ///
     /// # Arguments
@@ -465,7 +431,6 @@ impl Type {
             optional_attrs,
         }
     }
-
     /// If this is an object type, returns the map of attribute names to types.
     #[must_use]
     pub fn object_attrs(&self) -> Option<&BTreeMap<String, Type>> {
@@ -474,7 +439,6 @@ impl Type {
             _ => None,
         }
     }
-
     /// If this is an object type, returns the set of optional attribute names.
     #[must_use]
     pub fn optional_attrs(&self) -> Option<&BTreeSet<String>> {
@@ -483,7 +447,6 @@ impl Type {
             _ => None,
         }
     }
-
     /// Checks if a given attribute name is optional on this object type.
     ///
     /// Returns `false` if this is not an object type or if the attribute is required.
@@ -497,25 +460,21 @@ impl Type {
             _ => false,
         }
     }
-
     /// Returns true if this type is `Dynamic`.
     #[must_use]
     pub fn is_dynamic(&self) -> bool {
         matches!(self, Type::Dynamic)
     }
-
     /// Returns true if this is a collection type (List, Set, Map).
     #[must_use]
     pub fn is_collection(&self) -> bool {
         matches!(self, Type::List(_) | Type::Set(_) | Type::Map(_))
     }
-
     /// Returns true if this is a structural type (Object, Tuple).
     #[must_use]
     pub fn is_structural(&self) -> bool {
         matches!(self, Type::Object { .. } | Type::Tuple(_))
     }
-
     /// Creates a new [`Type::Capsule`] for the provided Rust type `T`.
     ///
     /// # Arguments
@@ -528,7 +487,6 @@ impl Type {
             ops: None,
         }
     }
-
     /// Creates a new [`Type::Capsule`] for the provided Rust type `T` with custom operations.
     ///
     /// # Arguments
@@ -545,13 +503,11 @@ impl Type {
             ops: Some(ops),
         }
     }
-
     /// Returns true if this is a capsule type.
     #[must_use]
     pub fn is_capsule(&self) -> bool {
         matches!(self, Type::Capsule { .. })
     }
-
     /// Returns the capsule type name if this is a capsule type.
     #[must_use]
     pub fn capsule_name(&self) -> Option<&'static str> {
@@ -560,7 +516,6 @@ impl Type {
             _ => None,
         }
     }
-
     /// Returns the capsule operations table if this is a capsule type with operations configured.
     #[must_use]
     pub fn capsule_ops(&self) -> Option<&std::sync::Arc<CapsuleOps>> {
@@ -569,7 +524,6 @@ impl Type {
             _ => None,
         }
     }
-
     /// Serializes this [`Type`] into canonical `MessagePack` binary format.
     ///
     /// # Errors
@@ -577,7 +531,6 @@ impl Type {
     pub fn to_msgpack(&self) -> Result<Vec<u8>, crate::error::HclError> {
         crate::types::msgpack::encode_type(self)
     }
-
     /// Deserializes a [`Type`] from canonical `MessagePack` binary format.
     ///
     /// # Arguments
@@ -589,7 +542,6 @@ impl Type {
         crate::types::msgpack::decode_type(bytes)
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -599,23 +551,18 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     #[test]
     fn test_type_checks() {
         assert!(Type::Dynamic.is_dynamic());
         assert!(!Type::String.is_dynamic());
-
         assert!(Type::List(Box::new(Type::String)).is_collection());
         assert!(Type::Set(Box::new(Type::Number)).is_collection());
         assert!(Type::Map(Box::new(Type::Bool)).is_collection());
         assert!(!Type::String.is_collection());
-
         assert!(Type::object(BTreeMap::new()).is_structural());
         assert!(Type::Tuple(vec![]).is_structural());
         assert!(!Type::Number.is_structural());
-
         let cap = Type::capsule::<u64>("custom_u64");
         assert!(cap.is_capsule());
         assert!(!cap.is_collection());
@@ -624,19 +571,16 @@ mod tests {
         assert_eq!(cap, Type::capsule::<u64>("custom_u64"));
         assert_ne!(cap, Type::capsule::<String>("custom_string"));
     }
-
     #[test]
     fn test_type_display() {
         assert!(Type::Dynamic.to_string().contains("dynamic"));
         assert!(Type::String.to_string().contains("string"));
         assert!(Type::Number.to_string().contains("number"));
         assert!(Type::Bool.to_string().contains("bool"));
-
         let cap = Type::capsule::<i32>("my_int");
         assert_eq!(cap.to_string(), "capsule(my_int)");
         assert_eq!(cap.capsule_name(), Some("my_int"));
         assert_eq!(Type::String.capsule_name(), None);
-
         assert_eq!(
             Type::List(Box::new(Type::String)).to_string(),
             "list(string)"
@@ -651,29 +595,24 @@ mod tests {
                 .to_string()
                 .contains("map(bool)")
         );
-
         assert!(Type::Tuple(vec![]).to_string().contains("tuple([])"));
         assert_eq!(Type::Tuple(vec![Type::Bool]).to_string(), "tuple([bool])");
         assert_eq!(
             Type::Tuple(vec![Type::String, Type::Number]).to_string(),
             "tuple([string, number])"
         );
-
         let mut obj = BTreeMap::new();
         assert!(Type::object(obj.clone()).to_string().contains("object({})"));
-
         obj.insert("a".to_string(), Type::String);
         assert_eq!(
             Type::object(obj.clone()).to_string(),
             "object({a = string})"
         );
-
         obj.insert("b".to_string(), Type::Number);
         assert_eq!(
             Type::object(obj.clone()).to_string(),
             "object({a = string, b = number})"
         );
-
         let mut opt_set = BTreeSet::new();
         opt_set.insert("b".to_string());
         let obj_opt = Type::object_with_optional(obj, opt_set);
@@ -685,11 +624,9 @@ mod tests {
         assert!(!obj_opt.is_attr_optional("a"));
         assert_eq!(obj_opt.object_attrs().map(BTreeMap::len), Some(2));
         assert_eq!(obj_opt.optional_attrs().map(BTreeSet::len), Some(1));
-
         assert_eq!(Type::String.object_attrs(), None);
         assert_eq!(Type::String.optional_attrs(), None);
         assert!(!Type::String.is_attr_optional("a"));
-
         let mut single_opt = BTreeMap::new();
         single_opt.insert("x".to_string(), Type::Bool);
         let mut single_opt_set = BTreeSet::new();
@@ -697,11 +634,9 @@ mod tests {
         let single_opt_ty = Type::object_with_optional(single_opt, single_opt_set);
         assert_eq!(single_opt_ty.to_string(), "object({x = optional(bool)})");
     }
-
     struct StepWriter {
         remaining: usize,
     }
-
     impl std::fmt::Write for StepWriter {
         fn write_str(&mut self, _: &str) -> std::fmt::Result {
             if self.remaining == 0 {
@@ -712,7 +647,6 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn test_type_display_error_paths() {
         let tuple_ty = Type::Tuple(vec![Type::String, Type::Number]);
@@ -720,7 +654,6 @@ mod tests {
             let mut w = StepWriter { remaining: r };
             let _ = std::fmt::write(&mut w, format_args!("{tuple_ty}"));
         }
-
         let mut attrs_non_opt = BTreeMap::new();
         attrs_non_opt.insert("a".to_string(), Type::String);
         attrs_non_opt.insert("b".to_string(), Type::Number);
@@ -729,7 +662,6 @@ mod tests {
             let mut w = StepWriter { remaining: r };
             let _ = std::fmt::write(&mut w, format_args!("{obj_non_opt}"));
         }
-
         let mut attrs_opt = BTreeMap::new();
         attrs_opt.insert("a".to_string(), Type::String);
         attrs_opt.insert("b".to_string(), Type::Number);
@@ -742,41 +674,31 @@ mod tests {
             let _ = std::fmt::write(&mut w, format_args!("{obj_opt}"));
         }
     }
-
     #[test]
     fn test_type_msgpack_roundtrip() {
         let ty = Type::List(Box::new(Type::String));
         let bytes = ty.to_msgpack().unwrap();
         let decoded = Type::from_msgpack(&bytes).unwrap();
         assert_eq!(decoded, ty);
-
         assert!(Type::from_msgpack(&[]).is_err());
     }
-
     #[test]
     fn test_capsule_ops_traits() {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-
         let eq_fn: CapsuleEqualsFn = std::sync::Arc::new(|_, _| true);
         let hash_fn: CapsuleHashFn = std::sync::Arc::new(|_| 42);
-
         let ops1 = CapsuleOps::new("test_ops", eq_fn.clone(), hash_fn.clone());
         let ops2 = CapsuleOps::new("test_ops", eq_fn.clone(), hash_fn.clone());
         let ops3 = CapsuleOps::new("diff_ops", eq_fn.clone(), hash_fn.clone());
-
         assert_eq!(ops1, ops2);
         assert_ne!(ops1, ops3);
-
         let mut h1 = DefaultHasher::new();
         let mut h2 = DefaultHasher::new();
         ops1.hash(&mut h1);
         ops2.hash(&mut h2);
         assert_eq!(h1.finish(), h2.finish());
-
         assert!(format!("{ops1:?}").contains("test_ops"));
-
-        // Test all builder methods and equality checks
         let add_fn: CapsuleBinaryOpFn = std::sync::Arc::new(|_, _| Ok(Box::new(0_i32)));
         let sub_fn: CapsuleBinaryOpFn = std::sync::Arc::new(|_, _| Ok(Box::new(0_i32)));
         let mul_fn: CapsuleBinaryOpFn = std::sync::Arc::new(|_, _| Ok(Box::new(0_i32)));
@@ -790,7 +712,6 @@ mod tests {
             std::sync::Arc::new(|_, _| Ok(crate::types::val::Value::null(Type::Dynamic)));
         let conv_to: CapsuleConversionToFn = std::sync::Arc::new(|_, _| None);
         let conv_from: CapsuleConversionFromFn = std::sync::Arc::new(|_| None);
-
         let ops_full = CapsuleOps::new(
             "full_ops",
             std::sync::Arc::new(|_, _| true),
@@ -807,11 +728,8 @@ mod tests {
         .with_cmp(cmp_fn.clone())
         .with_index_get(idx_fn.clone())
         .with_attr_get(attr_fn.clone());
-
         assert_eq!(ops_full, ops_full);
         assert_ne!(ops1, ops_full);
-
-        // Execute all closures in ops_full
         assert!((ops_full.equals)(&(), &()));
         assert_eq!((ops_full.hash)(&()), 1);
         assert!(ops_full.conversion_to.as_ref().unwrap()(&(), &Type::Dynamic).is_none());
@@ -839,26 +757,18 @@ mod tests {
             .is_ok()
         );
         assert!(ops_full.attr_get.as_ref().unwrap()(&(), "attr").is_ok());
-
-        // Test difference in equals and hash when type names match
         let eq_alt: CapsuleEqualsFn = std::sync::Arc::new(|_, _| false);
         assert!(!(eq_alt)(&(), &()));
         let hash_alt: CapsuleHashFn = std::sync::Arc::new(|_| 999);
         assert_eq!((hash_alt)(&()), 999);
-
         let ops_diff_eq = CapsuleOps::new("test_ops", eq_alt, hash_fn.clone());
         assert_ne!(ops1, ops_diff_eq);
-
         let ops_diff_hash = CapsuleOps::new("test_ops", eq_fn.clone(), hash_alt);
         assert_ne!(ops1, ops_diff_hash);
-
-        // Test opt_arc_ptr_eq with Some vs None and None vs Some
         let ops_none_conv = ops1.clone();
         let ops_some_conv = ops1.clone().with_conversion_to(conv_to);
         assert_ne!(ops_none_conv, ops_some_conv);
         assert_ne!(ops_some_conv, ops_none_conv);
-
-        // Check opt_arc_ptr_eq differences and invoke replacement closures
         let diff_bin: CapsuleBinaryOpFn = std::sync::Arc::new(|_, _| Ok(Box::new(1_i32)));
         assert!(diff_bin(&(), &()).is_ok());
         let diff_unary: CapsuleUnaryOpFn = std::sync::Arc::new(|_| Ok(Box::new(1_i32)));
@@ -878,7 +788,6 @@ mod tests {
         let diff_method: CapsuleMethodFn =
             std::sync::Arc::new(|_, _| Ok(crate::types::val::Value::null(Type::Dynamic)));
         assert!(diff_method(&(), &[]).is_ok());
-
         let ops_diff_add = ops_full.clone().with_add(diff_bin.clone());
         assert_ne!(ops_full, ops_diff_add);
         let ops_diff_sub = ops_full.clone().with_sub(diff_bin.clone());
@@ -903,19 +812,12 @@ mod tests {
         assert_ne!(ops_full, ops_diff_conv_from);
         let ops_diff_method = ops_full.clone().with_method("test_m", diff_method.clone());
         assert_ne!(ops_full, ops_diff_method);
-
-        // Debug formatting
         assert!(format!("{ops_full:?}").contains("CapsuleOps"));
-
-        // Compare ops with equal methods
         let ops_same_method = ops_full.clone().with_method("m1", diff_method.clone());
         let ops_same_method_2 = ops_full.clone().with_method("m1", diff_method.clone());
         assert_eq!(ops_same_method, ops_same_method_2);
-
-        // Compare ops with different method names
         let ops_diff_mname = ops_full.clone().with_method("m2", diff_method);
         assert_ne!(ops_same_method, ops_diff_mname);
-
         let cap_with_ops =
             Type::capsule_with_ops::<i32>("cap_ops", std::sync::Arc::new(ops_full.clone()));
         assert_eq!(

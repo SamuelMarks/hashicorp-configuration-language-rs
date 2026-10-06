@@ -17,12 +17,10 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::iter_on_single_items)]
-#![allow(clippy::coerce_container_to_any)]
 #![allow(clippy::trivial_regex)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::assert_is_empty)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
@@ -42,7 +40,6 @@
 #![allow(clippy::collection_is_never_read)]
 #![allow(clippy::literal_string_with_formatting_args)]
 #![allow(clippy::string_lit_as_bytes)]
-
 use hashicorp_configuration_language_rs::diagnostic::Diagnostic;
 use hashicorp_configuration_language_rs::error::HclError;
 use hashicorp_configuration_language_rs::serde::from_str;
@@ -51,7 +48,6 @@ use serde_json::Value;
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
-
 /// CLI options for `hcl2json`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Hcl2JsonOptions {
@@ -60,7 +56,6 @@ pub struct Hcl2JsonOptions {
     /// Target file paths or `"-"` for standard input.
     pub files: Vec<String>,
 }
-
 /// Parses CLI arguments into [`Hcl2JsonOptions`].
 ///
 /// # Arguments
@@ -86,7 +81,6 @@ pub fn parse_hcl2json_args<I: IntoIterator<Item = String>>(
     }
     Ok(opts)
 }
-
 /// Converts an HCL string to a pretty-printed JSON string.
 ///
 /// # Arguments
@@ -98,7 +92,6 @@ pub fn convert_to_json(hcl: &str) -> Result<String, String> {
     let v: Value = from_str(hcl)?;
     Ok(serde_json::to_string_pretty(&v).unwrap_or_default())
 }
-
 /// Runs `hcl2json` on the given input string, writing JSON to standard output.
 ///
 /// # Arguments
@@ -111,7 +104,6 @@ pub fn main_impl(hcl: &str) -> Result<(), String> {
     println!("{json}");
     Ok(())
 }
-
 /// Executes `hcl2json` using the provided options, input reader, output writer, and error writer.
 ///
 /// # Arguments
@@ -133,9 +125,7 @@ pub fn run_hcl2json(
     } else {
         opts.files.clone()
     };
-
     let mut had_error = false;
-
     for target in targets {
         let (content, display_name) = if target == "-" {
             let mut buf = String::new();
@@ -148,7 +138,6 @@ pub fn run_hcl2json(
                 .map_err(|e| format!("Failed to read file '{target}': {e}"))?;
             (buf, target)
         };
-
         match convert_to_json(&content) {
             Ok(json) => {
                 let _ = writeln!(stdout, "{json}");
@@ -176,10 +165,8 @@ pub fn run_hcl2json(
             }
         }
     }
-
     if had_error { Ok(1) } else { Ok(0) }
 }
-
 /// Runs `hcl2json` with the provided arguments.
 ///
 /// # Arguments
@@ -211,7 +198,6 @@ pub fn main_with_args<I: IntoIterator<Item = String>>(args: I) -> Result<(), Str
         }
     }
 }
-
 /// Main entry point for `hcl2json`.
 ///
 /// # Errors
@@ -223,99 +209,73 @@ pub fn main() -> Result<(), String> {
     let args = Vec::<String>::new();
     main_with_args(args)
 }
-
 #[cfg(test)]
 mod tests {
-
     use super::*;
-
     struct FailingReader;
-
     impl Read for FailingReader {
         fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
             Err(io::Error::other("simulated read failure"))
         }
     }
-
     #[test]
     fn test_convert_to_json() {
         let hcl = "name = \"test\"";
         let res = convert_to_json(hcl).unwrap();
         assert!(res.contains("\"test\""));
     }
-
     #[test]
     fn test_convert_to_json_err() {
         let hcl = "{";
         let res = convert_to_json(hcl);
         assert!(res.is_err());
     }
-
     #[test]
     fn test_main() {
         let _ = main();
     }
-
     #[test]
     fn test_main_err() {
         let _ = main_impl("{");
-
-        // 1. Argument parsing error branch in main_with_args
         assert!(main_with_args(vec!["--unknown-flag".to_string()]).is_err());
-
-        // 2. IO failure branch in main_with_args
         assert!(
             main_with_args(vec![
                 "nonexistent_file_definitely_missing_9999.hcl".to_string()
             ])
             .is_err()
         );
-
-        // 3. Execution failure when HCL parsing fails
         let dir = std::env::temp_dir().join(format!("hcl2json_args_test_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let bad_file = dir.join("bad.hcl");
         let _ = fs::write(&bad_file, "{\n");
         assert!(main_with_args(vec![bad_file.to_string_lossy().to_string()]).is_err());
-
-        // 4. Success branch
         let good_file = dir.join("good.hcl");
         let _ = fs::write(&good_file, "key = \"value\"\n");
         assert!(main_with_args(vec![good_file.to_string_lossy().to_string()]).is_ok());
-
         let _ = fs::remove_dir_all(&dir);
     }
-
     #[test]
     fn test_parse_hcl2json_args() {
         let opts = parse_hcl2json_args(vec!["--json".to_string(), "file.hcl".to_string()]).unwrap();
         assert!(opts.json);
         assert_eq!(opts.files, vec!["file.hcl".to_string()]);
-
         let short_opts = parse_hcl2json_args(vec!["-j".to_string()]).unwrap();
         assert!(short_opts.json);
-
         let stdin_opts = parse_hcl2json_args(vec!["-".to_string()]).unwrap();
         assert_eq!(stdin_opts.files, vec!["-".to_string()]);
-
         let help = parse_hcl2json_args(vec!["--help".to_string()]);
         assert!(help.is_err());
-
         let short_help = parse_hcl2json_args(vec!["-h".to_string()]);
         assert!(short_help.is_err());
-
         let unknown = parse_hcl2json_args(vec!["--unknown".to_string()]);
         assert!(unknown.is_err());
     }
-
     #[test]
     fn test_run_hcl2json_success_and_error() {
         let opts = Hcl2JsonOptions {
             json: true,
             files: vec![],
         };
-
-        // Stdin success
         let mut stdin = "name = \"sample\"".as_bytes();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -323,8 +283,6 @@ mod tests {
         assert_eq!(code, 0);
         let out_str = String::from_utf8_lossy(&stdout);
         assert!(out_str.contains("\"sample\""));
-
-        // Stdin error with json diagnostics
         let mut bad_stdin = "{".as_bytes();
         let mut bad_stdout = Vec::new();
         let mut bad_stderr = Vec::new();
@@ -333,8 +291,6 @@ mod tests {
         assert_eq!(bad_code, 1);
         let err_str = String::from_utf8_lossy(&bad_stderr);
         assert!(err_str.contains("\"severity\":\"error\""));
-
-        // Stdin error with plaintext output
         let opts_plain = Hcl2JsonOptions {
             json: false,
             files: vec![],
@@ -347,21 +303,16 @@ mod tests {
         assert_eq!(plain_code, 1);
         let plain_err_str = String::from_utf8_lossy(&plain_err);
         assert!(plain_err_str.contains("Error parsing <stdin>"));
-
-        // Stdin read failure
         let mut failing_reader = FailingReader;
         let mut fail_out = Vec::new();
         let mut fail_err = Vec::new();
         assert!(run_hcl2json(&opts, &mut failing_reader, &mut fail_out, &mut fail_err).is_err());
-
-        // File operations
         let dir = env::temp_dir().join(format!("hcl2json_test_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let valid_file = dir.join("valid.hcl");
         let _ = fs::write(&valid_file, "key = \"value\"\n");
         let bad_file = dir.join("bad.hcl");
         let _ = fs::write(&bad_file, "{\n");
-
         let opts_file = Hcl2JsonOptions {
             json: false,
             files: vec![valid_file.to_string_lossy().to_string()],
@@ -373,7 +324,6 @@ mod tests {
             run_hcl2json(&opts_file, &mut empty_in, &mut file_out, &mut file_err),
             Ok(0)
         );
-
         let opts_nonexistent = Hcl2JsonOptions {
             json: false,
             files: vec!["nonexistent_file_definitely_missing.hcl".to_string()],
@@ -387,11 +337,8 @@ mod tests {
             )
             .is_err()
         );
-
-        // main_with_args coverage
         assert!(main_with_args(vec![valid_file.to_string_lossy().to_string()]).is_ok());
         assert!(main_with_args(vec![bad_file.to_string_lossy().to_string()]).is_err());
-
         let _ = fs::remove_dir_all(&dir);
     }
 }

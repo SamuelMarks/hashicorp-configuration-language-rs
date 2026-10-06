@@ -4,7 +4,6 @@
 //! expressions and bodies, taking into account local iterator bindings from
 //! `for` expressions and dynamic blocks, as well as a [`DependencyGraph`]
 //! for cycle detection and topological sorting.
-
 use crate::ast::expr::{Directive, Expression, TemplatePart, TraversalOperator};
 use crate::ast::structure::{Body, DynamicBlock};
 use crate::ast::traversal::{AbsTraversal, abs_traversal_for_expr};
@@ -12,7 +11,6 @@ use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::error::HclError;
 use crate::span::Span;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-
 /// Extracts all static [`AbsTraversal`] dependencies referenced by an [`Expression`].
 ///
 /// Local iterator variables introduced in `for` expressions (`[for x in coll: x.attr]`)
@@ -28,11 +26,9 @@ pub fn extract_static_references(expr: &Expression) -> Result<Vec<AbsTraversal>,
     let mut refs = Vec::new();
     let mut seen = HashSet::new();
     let local_bindings = HashSet::new();
-
     extract_expr_references(expr, &local_bindings, &mut refs, &mut seen);
     Ok(refs)
 }
-
 /// Extracts all static [`AbsTraversal`] dependencies from an entire [`Body`].
 ///
 /// Traverses all attributes, regular blocks, and dynamic blocks. In dynamic blocks,
@@ -48,11 +44,9 @@ pub fn extract_static_references_from_body(body: &Body) -> Result<Vec<AbsTravers
     let mut refs = Vec::new();
     let mut seen = HashSet::new();
     let local_bindings = HashSet::new();
-
     extract_body_references(body, &local_bindings, &mut refs, &mut seen);
     Ok(refs)
 }
-
 /// Extracts all function invocations and namespaced function identifiers from an [`Expression`].
 ///
 /// # Arguments
@@ -89,7 +83,6 @@ pub fn extract_function_references(expr: &Expression) -> Vec<crate::ast::expr::N
     crate::ast::walk::walk_expression(&mut FuncVisitor(&mut funcs), expr);
     funcs
 }
-
 fn extract_body_references(
     body: &Body,
     local_bindings: &HashSet<String>,
@@ -99,58 +92,45 @@ fn extract_body_references(
     for attr in body.attributes.values() {
         extract_expr_references(&attr.expr, local_bindings, refs, seen);
     }
-
     for block in &body.blocks {
         extract_body_references(&block.body, local_bindings, refs, seen);
     }
-
     for dyn_block in &body.dynamic_blocks {
         extract_dynamic_block_references(dyn_block, local_bindings, refs, seen);
     }
-
     for val in &body.validations {
         extract_expr_references(&val.condition, local_bindings, refs, seen);
         extract_expr_references(&val.error_message, local_bindings, refs, seen);
     }
-
     for pre in &body.preconditions {
         extract_expr_references(&pre.condition, local_bindings, refs, seen);
         extract_expr_references(&pre.error_message, local_bindings, refs, seen);
     }
-
     for post in &body.postconditions {
         extract_expr_references(&post.condition, local_bindings, refs, seen);
         extract_expr_references(&post.error_message, local_bindings, refs, seen);
     }
 }
-
 fn extract_dynamic_block_references(
     dyn_block: &DynamicBlock,
     local_bindings: &HashSet<String>,
     refs: &mut Vec<AbsTraversal>,
     seen: &mut HashSet<String>,
 ) {
-    // The for_each collection expression is in the outer scope
     extract_expr_references(&dyn_block.for_each, local_bindings, refs, seen);
-
     if let Some(labels) = &dyn_block.labels {
         for lbl in labels {
             extract_expr_references(lbl, local_bindings, refs, seen);
         }
     }
-
-    // Inside content, the iterator variable is scoped locally
     let iter_name = match dyn_block.iterator.as_deref() {
         Some(name) => name,
         None => dyn_block.block_type.as_str(),
     };
-
     let mut child_bindings = local_bindings.clone();
     child_bindings.insert(iter_name.to_string());
-
     extract_body_references(&dyn_block.content, &child_bindings, refs, seen);
 }
-
 fn extract_expr_references(
     expr: &Expression,
     local_bindings: &HashSet<String>,
@@ -167,7 +147,6 @@ fn extract_expr_references(
                 }
             }
         }
-
         Expression::Traversal(trav, _) => {
             if let Ok(abs) = abs_traversal_for_expr(expr) {
                 if !local_bindings.contains(&abs.root) {
@@ -179,63 +158,52 @@ fn extract_expr_references(
             } else {
                 extract_expr_references(&trav.expr, local_bindings, refs, seen);
             }
-
             for op in &trav.operators {
                 if let TraversalOperator::Index(idx_expr, _) = op {
                     extract_expr_references(idx_expr, local_bindings, refs, seen);
                 }
             }
         }
-
         Expression::Tuple(elements, _) => {
             for elem in elements {
                 extract_expr_references(elem, local_bindings, refs, seen);
             }
         }
-
         Expression::Object(pairs, _) => {
             for (key, val) in pairs {
                 extract_expr_references(key, local_bindings, refs, seen);
                 extract_expr_references(val, local_bindings, refs, seen);
             }
         }
-
         Expression::Template(parts, _) => {
             for part in parts {
                 extract_template_part_references(part, local_bindings, refs, seen);
             }
         }
-
         Expression::FuncCall(fc, _) => {
             for arg in &fc.args {
                 extract_expr_references(arg, local_bindings, refs, seen);
             }
         }
-
         Expression::Conditional(cond, _) => {
             extract_expr_references(&cond.cond_expr, local_bindings, refs, seen);
             extract_expr_references(&cond.true_expr, local_bindings, refs, seen);
             extract_expr_references(&cond.false_expr, local_bindings, refs, seen);
         }
-
         Expression::BinaryOp(_, left, right, _) => {
             extract_expr_references(left, local_bindings, refs, seen);
             extract_expr_references(right, local_bindings, refs, seen);
         }
-
         Expression::UnaryOp(_, inner, _) | Expression::Parentheses(inner, _) => {
             extract_expr_references(inner, local_bindings, refs, seen);
         }
-
         Expression::ForExpr(fe, _) => {
             extract_expr_references(&fe.collection, local_bindings, refs, seen);
-
             let mut child_bindings = local_bindings.clone();
             child_bindings.insert(fe.val_var.clone());
             if let Some(key_var) = &fe.key_var {
                 child_bindings.insert(key_var.clone());
             }
-
             if let Some(key_expr) = &fe.key_expr {
                 extract_expr_references(key_expr, &child_bindings, refs, seen);
             }
@@ -244,14 +212,12 @@ fn extract_expr_references(
                 extract_expr_references(cond_expr, &child_bindings, refs, seen);
             }
         }
-
         Expression::Null(_)
         | Expression::Bool(_, _)
         | Expression::Number(_, _)
         | Expression::String(_, _) => {}
     }
 }
-
 fn extract_template_part_references(
     part: &TemplatePart,
     local_bindings: &HashSet<String>,
@@ -293,13 +259,11 @@ fn extract_template_part_references(
                 body,
             } => {
                 extract_expr_references(collection, local_bindings, refs, seen);
-
                 let mut child_bindings = local_bindings.clone();
                 child_bindings.insert(val_var.clone());
                 if let Some(k) = key_var {
                     child_bindings.insert(k.clone());
                 }
-
                 for p in body {
                     extract_template_part_references(p, &child_bindings, refs, seen);
                 }
@@ -308,7 +272,6 @@ fn extract_template_part_references(
         },
     }
 }
-
 /// A directed graph representing dependencies between symbols, blocks, or variables.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DependencyGraph {
@@ -316,14 +279,12 @@ pub struct DependencyGraph {
     dependencies: BTreeMap<String, BTreeSet<String>>,
     dependents: BTreeMap<String, BTreeSet<String>>,
 }
-
 impl DependencyGraph {
     /// Creates a new, empty `DependencyGraph`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Adds a node identifier to the graph.
     ///
     /// # Arguments
@@ -334,7 +295,6 @@ impl DependencyGraph {
         self.dependents.entry(n.clone()).or_default();
         self.nodes.insert(n);
     }
-
     /// Adds a directed dependency edge indicating that `from` depends on `to`.
     ///
     /// # Arguments
@@ -343,23 +303,19 @@ impl DependencyGraph {
     pub fn add_edge(&mut self, from: impl Into<String>, to: impl Into<String>) {
         let f = from.into();
         let t = to.into();
-
         self.add_node(f.clone());
         self.add_node(t.clone());
-
         self.dependencies
             .entry(f.clone())
             .or_default()
             .insert(t.clone());
         self.dependents.entry(t).or_default().insert(f);
     }
-
     /// Checks if a node exists in the dependency graph.
     #[must_use]
     pub fn has_node(&self, node: &str) -> bool {
         self.nodes.contains(node)
     }
-
     /// Returns the immediate dependencies of a node.
     #[must_use]
     pub fn dependencies(&self, node: &str) -> Option<Vec<String>> {
@@ -367,7 +323,6 @@ impl DependencyGraph {
             .get(node)
             .map(|deps| deps.iter().cloned().collect())
     }
-
     /// Returns the immediate dependents that rely on a node.
     #[must_use]
     pub fn dependents(&self, node: &str) -> Vec<String> {
@@ -376,7 +331,6 @@ impl DependencyGraph {
             None => Vec::new(),
         }
     }
-
     /// Detects if there are any cycles in the dependency graph.
     ///
     /// Returns `Some(cycle)` containing the ordered sequence of nodes forming
@@ -386,18 +340,15 @@ impl DependencyGraph {
         let mut visited = HashSet::new();
         let mut on_stack = HashSet::new();
         let mut path = Vec::new();
-
         for node in &self.nodes {
-            if !visited.contains(node)
-                && let Some(cycle) = self.dfs_cycle(node, &mut visited, &mut on_stack, &mut path)
-            {
-                return Some(cycle);
+            if !visited.contains(node) {
+                if let Some(cycle) = self.dfs_cycle(node, &mut visited, &mut on_stack, &mut path) {
+                    return Some(cycle);
+                }
             }
         }
-
         None
     }
-
     fn dfs_cycle(
         &self,
         node: &str,
@@ -408,7 +359,6 @@ impl DependencyGraph {
         visited.insert(node.to_string());
         on_stack.insert(node.to_string());
         path.push(node.to_string());
-
         for dep in self.dependencies.get(node).into_iter().flatten() {
             if on_stack.contains(dep) {
                 let mut cycle: Vec<String> =
@@ -416,19 +366,16 @@ impl DependencyGraph {
                 cycle.push(dep.clone());
                 return Some(cycle);
             }
-
-            if !visited.contains(dep)
-                && let Some(cycle) = self.dfs_cycle(dep, visited, on_stack, path)
-            {
-                return Some(cycle);
+            if !visited.contains(dep) {
+                if let Some(cycle) = self.dfs_cycle(dep, visited, on_stack, path) {
+                    return Some(cycle);
+                }
             }
         }
-
         path.pop();
         on_stack.remove(node);
         None
     }
-
     /// Produces a topologically sorted sequence of nodes in dependency-order
     /// (independent nodes first, followed by dependents).
     ///
@@ -442,24 +389,19 @@ impl DependencyGraph {
             );
             return Err(Diagnostics::from(diag));
         }
-
         let mut in_degrees: BTreeMap<String, usize> = BTreeMap::new();
         for node in &self.nodes {
             let deg = self.dependencies.get(node).map_or(0, BTreeSet::len);
             in_degrees.insert(node.clone(), deg);
         }
-
         let mut queue: Vec<String> = in_degrees
             .iter()
             .filter(|(_, deg)| **deg == 0)
             .map(|(k, _)| k.clone())
             .collect();
-
         let mut result = Vec::new();
-
         while let Some(node) = queue.pop() {
             result.push(node.clone());
-
             for dependent in self.dependents.get(&node).into_iter().flatten() {
                 let deg = in_degrees.entry(dependent.clone()).or_default();
                 *deg = deg.saturating_sub(1);
@@ -468,11 +410,9 @@ impl DependencyGraph {
                 }
             }
         }
-
         Ok(result)
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -482,15 +422,11 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::ast::expr::{BinaryOp, ForExpr, Traversal};
-
     #[test]
     fn test_extract_static_references_simple_and_nested() {
         let span = Span::new(0, 10, 1, 1, 1, 11);
-
-        // a + b.c[d]
         let trav_b = Traversal {
             expr: Box::new(Expression::Variable("b".to_string(), span.clone())),
             operators: vec![
@@ -501,25 +437,19 @@ mod tests {
                 ),
             ],
         };
-
         let expr = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Variable("a".to_string(), span.clone())),
             Box::new(Expression::Traversal(Box::new(trav_b), span.clone())),
             span,
         );
-
         let refs = extract_static_references(&expr).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
-
         assert_eq!(ref_strings, vec!["a", "b.c[...]", "d"]);
     }
-
     #[test]
     fn test_extract_static_references_for_expr_scopes() {
         let span = Span::new(0, 10, 1, 1, 1, 11);
-
-        // [for k, v in items: external_var + v.id if k != filter_val]
         let for_expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: Some("k".to_string()),
@@ -554,19 +484,13 @@ mod tests {
             }),
             span,
         );
-
         let refs = extract_static_references(&for_expr).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
-
-        // Should include `items`, `external_var`, and `filter_val`, but NOT `v` or `k`
         assert_eq!(ref_strings, vec!["items", "external_var", "filter_val"]);
     }
-
     #[test]
     fn test_extract_static_references_template_directives() {
         let span = Span::new(0, 10, 1, 1, 1, 11);
-
-        // %{ for item in source_list }${ external_prefix }-${ item }%{ endfor }
         let tpl = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::For {
@@ -588,18 +512,14 @@ mod tests {
             )],
             span,
         );
-
         let refs = extract_static_references(&tpl).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
-
         assert_eq!(ref_strings, vec!["source_list", "external_prefix"]);
     }
-
     #[test]
     fn test_extract_static_references_dynamic_blocks() {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
-
         let mut content = Body::new(span.clone());
         content.attributes.insert(
             "attr".to_string(),
@@ -630,7 +550,6 @@ mod tests {
                 trailing_comment: None,
             },
         );
-
         let dyn_block = DynamicBlock::new(
             "tag".to_string(),
             Expression::Variable("tag_list".to_string(), span.clone()),
@@ -644,7 +563,6 @@ mod tests {
             span.clone(),
         );
         body.dynamic_blocks.push(dyn_block);
-
         let dyn_block_no_labels = DynamicBlock::new(
             "tag2".to_string(),
             Expression::Variable("tag_list2".to_string(), span.clone()),
@@ -655,40 +573,31 @@ mod tests {
             span,
         );
         body.dynamic_blocks.push(dyn_block_no_labels);
-
         let refs = extract_static_references_from_body(&body).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
-
-        // `tag` is the dynamic block iterator name, so it should not appear as an external reference
         assert_eq!(
             ref_strings,
             vec!["tag_list", "tag_label", "global_setting", "tag_list2"]
         );
     }
-
     #[test]
     fn test_dependency_graph_acyclic_and_topological_sort() {
         let mut graph = DependencyGraph::new();
         graph.add_edge("a", "sub_a");
         graph.add_edge("c", "b");
         graph.add_edge("b", "a");
-
         assert!(graph.has_node("a"));
         assert!(graph.has_node("b"));
         assert!(graph.has_node("c"));
         assert!(!graph.has_node("d"));
-
         assert_eq!(graph.dependencies("c"), Some(vec!["b".to_string()]));
         assert_eq!(graph.dependencies("d"), None);
         assert_eq!(graph.dependents("a"), vec!["b".to_string()]);
         assert_eq!(graph.dependents("z"), Vec::<String>::new());
-
         assert!(graph.detect_cycles().is_none());
-
         let sorted = graph.topological_sort().unwrap();
         assert_eq!(sorted, vec!["sub_a", "a", "b", "c"]);
     }
-
     #[test]
     fn test_dependency_graph_cycle_detection() {
         let mut graph = DependencyGraph::new();
@@ -697,25 +606,20 @@ mod tests {
         graph.add_edge("a", "b");
         graph.add_edge("b", "c");
         graph.add_edge("c", "a");
-
         let cycle = graph.detect_cycles().unwrap();
         assert!(cycle.len() >= 3);
         assert_eq!(cycle.first(), cycle.last());
         assert!(!cycle.contains(&"start".to_string()));
-
         let res = graph.topological_sort();
         assert!(res.is_err());
         let err_str = format!("{res:?}");
         assert!(err_str.contains("CyclicDependency"));
     }
-
     #[test]
     fn test_extract_static_references_validations_and_assertions() {
         use crate::ast::structure::{PostconditionBlock, PreconditionBlock, ValidationBlock};
-
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
-
         body.validations.push(ValidationBlock::new(
             Expression::Variable("var_a".to_string(), span.clone()),
             Expression::Variable("msg_a".to_string(), span.clone()),
@@ -731,7 +635,6 @@ mod tests {
             Expression::Variable("msg_c".to_string(), span.clone()),
             span,
         ));
-
         let refs = extract_static_references_from_body(&body).unwrap();
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
         assert_eq!(
@@ -739,15 +642,11 @@ mod tests {
             vec!["var_a", "msg_a", "var_b", "msg_b", "var_c", "msg_c"]
         );
     }
-
     #[test]
     fn test_extract_static_references_more_expr_types() {
         use crate::ast::expr::{Conditional, FuncCall, UnaryOp};
         use crate::ast::structure::Block;
-
         let span = Span::new(0, 10, 1, 1, 1, 11);
-
-        // 1. Nested regular block in body
         let mut body = Body::new(span.clone());
         let mut inner_body = Body::new(span.clone());
         inner_body.attributes.insert(
@@ -774,7 +673,6 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         });
-
         let refs_body = extract_static_references_from_body(&body).unwrap();
         assert_eq!(
             refs_body
@@ -783,8 +681,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["block_var"]
         );
-
-        // 2. Traversal whose root expr is not a simple variable (abs traversal fails)
         let non_abs_trav = Expression::Traversal(
             Box::new(Traversal {
                 expr: Box::new(Expression::Parentheses(
@@ -811,8 +707,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["lhs", "rhs"]
         );
-
-        // 2b. Duplicate traversal reference to cover seen.insert returning false
         let trav_dup = Expression::BinaryOp(
             BinaryOp::Add,
             Box::new(Expression::Traversal(
@@ -839,8 +733,6 @@ mod tests {
         );
         let refs_dup = extract_static_references(&trav_dup).unwrap();
         assert_eq!(refs_dup.len(), 1);
-
-        // 3. Tuple, Object, FuncCall, Conditional, UnaryOp, Parentheses, Literals
         let complex_expr = Expression::Tuple(
             vec![
                 Expression::Object(
@@ -888,8 +780,6 @@ mod tests {
                 "obj_k", "obj_v", "fn_arg", "c_cond", "c_true", "c_false", "u_var"
             ]
         );
-
-        // 4. ForExpr with key_expr and cond_expr
         let for_expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: Some("k".to_string()),
@@ -913,20 +803,17 @@ mod tests {
             refs_for.iter().map(ToString::to_string).collect::<Vec<_>>(),
             vec!["for_coll", "for_k_extra", "for_cond_extra"]
         );
-
-        // 4b. ForExpr without key_var, without key_expr, and without cond_expr
-        // and with duplicate variable/traversal references + local traversal reference
         let for_expr_simple = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: None,
                 val_var: "item".to_string(),
-                collection: Box::new(Expression::Variable("for_coll".to_string(), span.clone())), // duplicate
+                collection: Box::new(Expression::Variable("for_coll".to_string(), span.clone())),
                 key_expr: None,
                 val_expr: Box::new(Expression::BinaryOp(
                     BinaryOp::Add,
                     Box::new(Expression::Traversal(
                         Box::new(Traversal {
-                            expr: Box::new(Expression::Variable("item".to_string(), span.clone())), // local binding traversal
+                            expr: Box::new(Expression::Variable("item".to_string(), span.clone())),
                             operators: vec![TraversalOperator::GetAttr(
                                 "id".to_string(),
                                 span.clone(),
@@ -937,7 +824,7 @@ mod tests {
                     Box::new(Expression::BinaryOp(
                         BinaryOp::Add,
                         Box::new(Expression::Variable("dup_var".to_string(), span.clone())),
-                        Box::new(Expression::Variable("dup_var".to_string(), span.clone())), // duplicate
+                        Box::new(Expression::Variable("dup_var".to_string(), span.clone())),
                         span.clone(),
                     )),
                     span.clone(),
@@ -955,8 +842,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["for_coll", "dup_var"]
         );
-
-        // 5. Template with Directive::If (with true, else_if, and false parts) and Literal
         let tpl_if = Expression::Template(
             vec![
                 TemplatePart::Literal("lit".to_string(), span.clone()),
@@ -986,7 +871,7 @@ mod tests {
                         cond: Expression::Variable("if_cond2".to_string(), span.clone()),
                         true_expr: vec![],
                         else_ifs: vec![],
-                        false_expr: None, // without false parts
+                        false_expr: None,
                     },
                     span.clone(),
                 ),
@@ -1012,8 +897,6 @@ mod tests {
                 "if_cond2"
             ]
         );
-
-        // 6. Template with Directive::For with key_var
         let tpl_for = Expression::Template(
             vec![TemplatePart::Directive(
                 Directive::For {
@@ -1038,38 +921,28 @@ mod tests {
             vec!["tpl_coll", "tpl_body_extra"]
         );
     }
-
     #[test]
     fn test_dependency_graph_diamond_and_disconnected() {
         let mut graph = DependencyGraph::new();
-        // Diamond: d depends on b and c, b depends on a, c depends on a
         graph.add_edge("d", "b");
         graph.add_edge("d", "c");
         graph.add_edge("b", "a");
         graph.add_edge("c", "a");
-
-        // Disconnected component
         graph.add_edge("y", "x");
-
-        // Isolated node
         graph.add_node("solo");
-
         assert!(graph.detect_cycles().is_none());
-
         let sorted = graph.topological_sort().unwrap();
         assert_eq!(sorted.len(), 7);
         let mut pos_map = std::collections::HashMap::new();
         for (i, node) in sorted.iter().enumerate() {
             pos_map.insert(node.as_str(), i);
         }
-        // "a" must precede "b", "c", "d"
         assert!(pos_map["a"] < pos_map["b"]);
         assert!(pos_map["a"] < pos_map["c"]);
         assert!(pos_map["b"] < pos_map["d"]);
         assert!(pos_map["c"] < pos_map["d"]);
         assert!(pos_map["x"] < pos_map["y"]);
     }
-
     #[test]
     fn test_extract_function_references() {
         let expr = Expression::FuncCall(

@@ -3,7 +3,6 @@
 //! Provides AST translation from [`Hcl1Body`] to canonical [`Body`],
 //! converting legacy block assignments (`block "name" = { ... }`) and interpolations (`"${expr}"`)
 //! into native HCL2 expressions and blocks, while emitting informative migration diagnostics.
-
 use crate::ast::expr::Expression;
 use crate::ast::structure::{Attribute, Block, Body};
 use crate::error::HclError;
@@ -11,7 +10,6 @@ use crate::hcl1::parser::{Hcl1Block, Hcl1Body, Hcl1Expression, Hcl1Item};
 use crate::number::Number;
 use crate::span::Span;
 use std::str::FromStr;
-
 /// A diagnostic emitted during HCL 1.0 to HCL 2.0 migration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationDiagnostic {
@@ -22,7 +20,6 @@ pub struct MigrationDiagnostic {
     /// A suggested replacement string or syntax.
     pub suggestion: Option<String>,
 }
-
 impl MigrationDiagnostic {
     /// Creates a new [`MigrationDiagnostic`].
     ///
@@ -43,7 +40,6 @@ impl MigrationDiagnostic {
         }
     }
 }
-
 /// Migrates an [`Hcl1Body`] into a modern canonical HCL2 [`Body`].
 ///
 /// # Arguments
@@ -58,20 +54,15 @@ pub fn migrate_hcl1_to_hcl2(
     let body = translate_body(hcl1_body, &mut diags)?;
     Ok((body, diags))
 }
-
 fn translate_body(
     hcl1_body: &Hcl1Body,
     diags: &mut Vec<MigrationDiagnostic>,
 ) -> Result<Body, HclError> {
     let mut body = Body::new(hcl1_body.span.clone());
-
     for item in &hcl1_body.items {
         match item {
             Hcl1Item::Attribute(attr) => {
-                // Check if this attribute is actually a legacy block: e.g. `variable = { ... }`
                 if let Hcl1Expression::Map(_pairs, map_span) = &attr.expr {
-                    // In HCL1, `variable "name" = { ... }` or `foo = { ... }`
-                    // Can be kept as an attribute or converted to block depending on context.
                     let expr = translate_expression(&attr.expr, diags)?;
                     body.attributes.insert(
                         attr.name.clone(),
@@ -107,27 +98,26 @@ fn translate_body(
             }
         }
     }
-
     Ok(body)
 }
-
 fn translate_block(
     block: &Hcl1Block,
     diags: &mut Vec<MigrationDiagnostic>,
 ) -> Result<Block, HclError> {
     if block.has_equals_assign {
-        diags.push(MigrationDiagnostic::new(
-            format!(
-                "Legacy block assignment `{} ... = {{ ... }}` migrated to native HCL2 block `{} ... {{ ... }}`",
-                block.block_type, block.block_type
-            ),
-            block.span.clone(),
-            Some(format!("{} {{ ... }}", block.block_type)),
-        ));
+        diags
+            .push(
+                MigrationDiagnostic::new(
+                    format!(
+                        "Legacy block assignment `{} ... = {{ ... }}` migrated to native HCL2 block `{} ... {{ ... }}`",
+                        block.block_type, block.block_type
+                    ),
+                    block.span.clone(),
+                    Some(format!("{} {{ ... }}", block.block_type)),
+                ),
+            );
     }
-
     let inner_body = translate_body(&block.body, diags)?;
-
     Ok(Block {
         block_type: block.block_type.clone(),
         labels: block.labels.clone(),
@@ -141,7 +131,6 @@ fn translate_block(
         trailing_comment: None,
     })
 }
-
 fn translate_expression(
     expr: &Hcl1Expression,
     diags: &mut Vec<MigrationDiagnostic>,
@@ -174,31 +163,28 @@ fn translate_expression(
             Ok(Expression::Object(hcl2_pairs, span.clone()))
         }
         Hcl1Expression::String(s, span) => {
-            // Check if string contains `${...}` interpolation
             if s.contains("${") {
-                // If it is purely a single interpolation: e.g. `"${var.foo}"`
                 let trimmed = s.trim();
                 if trimmed.starts_with("${")
                     && trimmed.ends_with('}')
                     && trimmed.matches("${").count() == 1
                 {
                     let inner_raw = &trimmed[2..trimmed.len() - 1].trim();
-                    diags.push(MigrationDiagnostic::new(
-                        format!(
-                            "Interpolated expression `\"${{{inner_raw}}}\"` migrated to native HCL2 expression `{inner_raw}`"
-                        ),
-                        span.clone(),
-                        Some((*inner_raw).to_string()),
-                    ));
-
-                    // Attempt to parse inner as HCL2 expression
+                    diags
+                        .push(
+                            MigrationDiagnostic::new(
+                                format!(
+                                    "Interpolated expression `\"${{{inner_raw}}}\"` migrated to native HCL2 expression `{inner_raw}`"
+                                ),
+                                span.clone(),
+                                Some((*inner_raw).to_string()),
+                            ),
+                        );
                     let mut parser = crate::parse::parser::Parser::new(inner_raw);
                     if let Some(parsed_expr) = parser.parse_expression() {
                         return Ok(parsed_expr);
                     }
                 }
-
-                // If mixed text and interpolation, convert to Expression::Template
                 diags.push(MigrationDiagnostic::new(
                     "String containing interpolations migrated to HCL2 template expression",
                     span.clone(),
@@ -215,14 +201,12 @@ fn translate_expression(
         }
     }
 }
-
 pub(crate) fn compile_regex(pattern: &str) -> regex::Regex {
     match regex::Regex::new(pattern) {
         Ok(re) => re,
         Err(_) => compile_regex("$^"),
     }
 }
-
 static RE_USER: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*user\s*`([^`]+)`\s*\}\}"));
 static RE_ENV: std::sync::LazyLock<regex::Regex> =
@@ -235,7 +219,6 @@ static RE_BUILD_NAME: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*build_name\s*\}\}"));
 static RE_BUILD_TYPE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*build_type\s*\}\}"));
-
 /// Translates legacy Packer and Terraform template interpolations (`"{{ ... }}"`)
 /// into modern canonical HCL2 syntax (`"${...}"` or bare expressions).
 ///
@@ -263,7 +246,6 @@ pub fn translate_legacy_interpolations(input: &str) -> String {
     let s6 = RE_BUILD_TYPE.replace_all(&s5, |_caps: &regex::Captures| "${build.type}");
     s6.into_owned()
 }
-
 /// Migrates a legacy JSON template (such as Packer JSON) into a canonical HCL2 [`Body`].
 ///
 /// Converts:
@@ -280,17 +262,14 @@ pub fn translate_legacy_interpolations(input: &str) -> String {
 pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnostic>), HclError> {
     let root: serde_json::Value = serde_json::from_str(json_str)
         .map_err(|e| HclError::Parse(format!("Invalid JSON template: {e}")))?;
-
     let serde_json::Value::Object(map) = root else {
         return Err(HclError::Parse(
             "JSON template root must be an object".to_string(),
         ));
     };
-
     let empty_span = Span::new(0, 0, 0, 0, 0, 0);
     let mut body = Body::new(empty_span.clone());
     let mut diags = Vec::new();
-
     for (k, v) in map {
         match k.as_str() {
             "variables" => {
@@ -322,11 +301,16 @@ pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnos
                             leading_comments: Vec::new(),
                             trailing_comment: None,
                         });
-                        diags.push(MigrationDiagnostic::new(
-                            format!("Migrated legacy variable '{var_name}' into HCL2 'variable \"{var_name}\"' block"),
-                            empty_span.clone(),
-                            None::<String>,
-                        ));
+                        diags
+                            .push(
+                                MigrationDiagnostic::new(
+                                    format!(
+                                        "Migrated legacy variable '{var_name}' into HCL2 'variable \"{var_name}\"' block"
+                                    ),
+                                    empty_span.clone(),
+                                    None::<String>,
+                                ),
+                            );
                     }
                 }
             }
@@ -344,7 +328,6 @@ pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnos
                                 .and_then(serde_json::Value::as_str)
                                 .unwrap_or(&builder_type)
                                 .to_string();
-
                             let mut b_body = Body::new(empty_span.clone());
                             for (bk, bv) in b_map {
                                 if bk != "type" && bk != "name" {
@@ -375,11 +358,16 @@ pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnos
                                 leading_comments: Vec::new(),
                                 trailing_comment: None,
                             });
-                            diags.push(MigrationDiagnostic::new(
-                                format!("Migrated legacy builder '{builder_type}.{builder_name}' into HCL2 'source' block"),
-                                empty_span.clone(),
-                                None::<String>,
-                            ));
+                            diags
+                                .push(
+                                    MigrationDiagnostic::new(
+                                        format!(
+                                            "Migrated legacy builder '{builder_type}.{builder_name}' into HCL2 'source' block"
+                                        ),
+                                        empty_span.clone(),
+                                        None::<String>,
+                                    ),
+                                );
                         }
                     }
                 }
@@ -393,7 +381,6 @@ pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnos
                                 .and_then(serde_json::Value::as_str)
                                 .unwrap_or("shell")
                                 .to_string();
-
                             let mut p_body = Body::new(empty_span.clone());
                             for (pk, pv) in p_map {
                                 if pk != "type" {
@@ -452,10 +439,8 @@ pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnos
             }
         }
     }
-
     Ok((body, diags))
 }
-
 fn json_to_expr(
     val: &serde_json::Value,
     span: &Span,
@@ -482,7 +467,6 @@ fn json_to_expr(
                 let single_interp = trimmed.starts_with("${")
                     && trimmed.ends_with('}')
                     && trimmed.matches("${").count() == 1;
-
                 if single_interp {
                     let inner = &trimmed[2..trimmed.len() - 1].trim();
                     let mut parser = crate::parse::parser::Parser::new(inner);

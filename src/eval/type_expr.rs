@@ -1,12 +1,10 @@
 //! Evaluator for Type Expressions.
 //!
 //! Provides the ability to convert an AST `TypeExpr` into a concrete `Type`.
-
 use crate::ast::type_expr::{CollectionType, TypeExpr};
 use crate::types::ty::Type;
 use crate::types::val::{Value, ValueData};
 use std::collections::{BTreeMap, BTreeSet};
-
 /// Evaluates a `TypeExpr` AST node into a concrete HCL `Type`.
 #[must_use]
 pub fn eval_type_expr(expr: &TypeExpr) -> Type {
@@ -40,7 +38,6 @@ pub fn eval_type_expr(expr: &TypeExpr) -> Type {
         }
     }
 }
-
 /// Coerces an object value against an object type expression schema, substituting defaults for optional attributes.
 ///
 /// # Arguments
@@ -59,13 +56,10 @@ pub fn coerce_object_with_schema(
     let TypeExpr::Object(schema_attrs, _) = schema else {
         return Err("Schema is not an object type expression".to_string());
     };
-
     let ValueData::Object(map) = &*val.data else {
         return Err("Expected object value".to_string());
     };
-
     let mut new_map = BTreeMap::new();
-
     for (attr_name, attr_spec) in schema_attrs {
         if let Some(existing) = map.get(attr_name) {
             if let (true, Some(def_expr)) = (
@@ -96,11 +90,9 @@ pub fn coerce_object_with_schema(
             return Err(format!("Missing required attribute: {attr_name}"));
         }
     }
-
     let out_ty = eval_type_expr(schema);
     Ok(Value::new(out_ty, ValueData::Object(new_map)))
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -110,15 +102,12 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::span::Span;
     use std::collections::HashMap;
-
     fn empty_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
-
     #[test]
     fn test_eval_type_expr_primitive() {
         assert_eq!(
@@ -134,11 +123,9 @@ mod tests {
             Type::Dynamic
         );
     }
-
     #[test]
     fn test_eval_type_expr_collection() {
         let prim = TypeExpr::Primitive(Type::String, empty_span());
-
         assert_eq!(
             eval_type_expr(&TypeExpr::Collection(
                 CollectionType::List,
@@ -147,7 +134,6 @@ mod tests {
             )),
             Type::List(Box::new(Type::String))
         );
-
         assert_eq!(
             eval_type_expr(&TypeExpr::Collection(
                 CollectionType::Set,
@@ -156,7 +142,6 @@ mod tests {
             )),
             Type::Set(Box::new(Type::String))
         );
-
         assert_eq!(
             eval_type_expr(&TypeExpr::Collection(
                 CollectionType::Map,
@@ -166,11 +151,9 @@ mod tests {
             Type::Map(Box::new(Type::String))
         );
     }
-
     #[test]
     fn test_eval_type_expr_object() {
         use crate::ast::type_expr::ObjectAttrType;
-
         let mut attrs = HashMap::new();
         attrs.insert(
             "foo".to_string(),
@@ -182,7 +165,6 @@ mod tests {
         );
         let obj_expr = TypeExpr::Object(attrs, empty_span());
         let ty = eval_type_expr(&obj_expr);
-
         let mut expected = std::collections::BTreeMap::new();
         expected.insert("foo".to_string(), Type::String);
         expected.insert("bar".to_string(), Type::Number);
@@ -190,16 +172,12 @@ mod tests {
         expected_opts.insert("bar".to_string());
         assert_eq!(ty, Type::object_with_optional(expected, expected_opts));
     }
-
     #[test]
     fn test_coerce_object_with_schema() {
         use crate::ast::expr::Expression;
         use crate::ast::type_expr::ObjectAttrType;
         use crate::eval::context::Context;
-
         let ctx = Context::new();
-
-        // Schema: object({ name = string, port = optional(number, 8080), desc = optional(string) })
         let mut attrs = HashMap::new();
         attrs.insert(
             "name".to_string(),
@@ -217,15 +195,12 @@ mod tests {
             ObjectAttrType::optional(TypeExpr::Primitive(Type::String, empty_span()), None),
         );
         let schema = TypeExpr::Object(attrs, empty_span());
-
-        // Case 1: input missing port and desc
         let mut in_map = BTreeMap::new();
         in_map.insert(
             "name".to_string(),
             Value::new(Type::String, ValueData::String("srv".into())),
         );
         let in_val = Value::new(Type::Dynamic, ValueData::Object(in_map));
-
         let coerced = coerce_object_with_schema(&in_val, &schema, &ctx).unwrap();
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
@@ -239,8 +214,6 @@ mod tests {
         expected_map.insert("desc".to_string(), Value::null(Type::String));
         let expected_val = Value::new(eval_type_expr(&schema), ValueData::Object(expected_map));
         assert_eq!(coerced, expected_val);
-
-        // Case 2: port is present as null -> default overrides null!
         let mut in_map2 = BTreeMap::new();
         in_map2.insert(
             "name".to_string(),
@@ -248,7 +221,6 @@ mod tests {
         );
         in_map2.insert("port".to_string(), Value::null(Type::Number));
         let in_val2 = Value::new(Type::Dynamic, ValueData::Object(in_map2));
-
         let coerced2 = coerce_object_with_schema(&in_val2, &schema, &ctx).unwrap();
         let mut expected_map2 = BTreeMap::new();
         expected_map2.insert(
@@ -262,12 +234,8 @@ mod tests {
         expected_map2.insert("desc".to_string(), Value::null(Type::String));
         let expected_val2 = Value::new(eval_type_expr(&schema), ValueData::Object(expected_map2));
         assert_eq!(coerced2, expected_val2);
-
-        // Case 3: missing required attribute fails
         let empty_obj = Value::new(Type::Dynamic, ValueData::Object(BTreeMap::new()));
         assert!(coerce_object_with_schema(&empty_obj, &schema, &ctx).is_err());
-
-        // Case 4: nested object schema success & failure
         let mut inner_attrs = HashMap::new();
         inner_attrs.insert(
             "a".to_string(),
@@ -279,7 +247,6 @@ mod tests {
             ObjectAttrType::required(TypeExpr::Object(inner_attrs, empty_span())),
         );
         let nested_schema = TypeExpr::Object(outer_attrs, empty_span());
-
         let mut inner_val_map = BTreeMap::new();
         inner_val_map.insert(
             "a".to_string(),
@@ -292,7 +259,6 @@ mod tests {
         );
         let outer_val = Value::new(Type::Dynamic, ValueData::Object(outer_val_map));
         assert!(coerce_object_with_schema(&outer_val, &nested_schema, &ctx).is_ok());
-
         let mut bad_outer_val_map = BTreeMap::new();
         bad_outer_val_map.insert(
             "inner".to_string(),
@@ -300,8 +266,6 @@ mod tests {
         );
         let bad_outer_val = Value::new(Type::Dynamic, ValueData::Object(bad_outer_val_map));
         assert!(coerce_object_with_schema(&bad_outer_val, &nested_schema, &ctx).is_err());
-
-        // Case 5: attribute coercion failure
         let mut bad_port_map = BTreeMap::new();
         bad_port_map.insert(
             "name".to_string(),
@@ -313,8 +277,6 @@ mod tests {
         );
         let bad_port_val = Value::new(Type::Dynamic, ValueData::Object(bad_port_map));
         assert!(coerce_object_with_schema(&bad_port_val, &schema, &ctx).is_err());
-
-        // Error cases: non-object value, non-object schema
         let non_obj = Value::new(Type::String, ValueData::String("str".into()));
         assert!(coerce_object_with_schema(&non_obj, &schema, &ctx).is_err());
         assert!(
@@ -326,7 +288,6 @@ mod tests {
             .is_err()
         );
     }
-
     #[test]
     fn test_eval_type_expr_tuple() {
         let elems = vec![
@@ -335,7 +296,6 @@ mod tests {
         ];
         let tuple_expr = TypeExpr::Tuple(elems, empty_span());
         let ty = eval_type_expr(&tuple_expr);
-
         assert_eq!(ty, Type::Tuple(vec![Type::String, Type::Number]));
     }
 }

@@ -1,5 +1,4 @@
 //! Collection standard library functions.
-
 use crate::eval::func::Function;
 use crate::number::Number;
 use crate::types::unify::unify;
@@ -9,7 +8,6 @@ use bigdecimal::num_traits::ToPrimitive;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
-
 #[must_use]
 /// Get all collection functions
 pub fn functions() -> Vec<Function> {
@@ -48,7 +46,6 @@ pub fn functions() -> Vec<Function> {
         zipmap_func(),
     ]
 }
-
 fn alltrue_func() -> Function {
     Function {
         name: "alltrue".to_string(),
@@ -59,13 +56,13 @@ fn alltrue_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
             }
-
             let list = match &*args[0].data {
                 ValueData::Array(arr) => arr,
-                ValueData::Set(_set) => return Err("alltrue requires a list, got set".to_string()), // actually it works for sets but we can iterate easily
+                ValueData::Set(_set) => {
+                    return Err("alltrue requires a list, got set".to_string());
+                }
                 _ => return Err("alltrue requires a list".to_string()),
             };
-
             for item in list {
                 if item.is_unknown() {
                     return Ok(Value::unknown(Type::Bool));
@@ -83,7 +80,6 @@ fn alltrue_func() -> Function {
         signature: None,
     }
 }
-
 fn anytrue_func() -> Function {
     Function {
         name: "anytrue".to_string(),
@@ -94,11 +90,9 @@ fn anytrue_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("anytrue requires a list".to_string());
             };
-
             for item in list {
                 if item.is_unknown() {
                     return Ok(Value::unknown(Type::Bool));
@@ -116,7 +110,6 @@ fn anytrue_func() -> Function {
         signature: None,
     }
 }
-
 fn chunklist_func() -> Function {
     Function {
         name: "chunklist".to_string(),
@@ -127,11 +120,9 @@ fn chunklist_func() -> Function {
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(args[0].ty().clone()))));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("chunklist requires a list".to_string());
             };
-
             let size_val = args[1]
                 .clone()
                 .coerce(&Type::Number)
@@ -140,11 +131,9 @@ fn chunklist_func() -> Function {
                 ValueData::Number(n) => n.0.to_usize().ok_or("chunklist size too large")?,
                 _ => return Err("chunklist size must be number".to_string()),
             };
-
             if size == 0 {
                 return Err("chunklist size must be greater than 0".to_string());
             }
-
             let mut result = Vec::new();
             for chunk in list.chunks(size) {
                 let inner_ty = if let Type::List(inner) = args[0].ty() {
@@ -167,7 +156,6 @@ fn chunklist_func() -> Function {
         signature: None,
     }
 }
-
 fn coalesce_func() -> Function {
     Function {
         name: "coalesce".to_string(),
@@ -175,15 +163,14 @@ fn coalesce_func() -> Function {
             if args.is_empty() {
                 return Err("coalesce expects at least 1 argument".to_string());
             }
-
             for arg in args {
                 if arg.is_null() {
                     continue;
                 }
-                if let ValueData::String(s) = &*arg.data
-                    && s.is_empty()
-                {
-                    continue;
+                if let ValueData::String(s) = &*arg.data {
+                    if s.is_empty() {
+                        continue;
+                    }
                 }
                 if arg.is_unknown() {
                     return Ok(Value::unknown(arg.ty().clone()));
@@ -195,7 +182,6 @@ fn coalesce_func() -> Function {
         signature: None,
     }
 }
-
 fn coalescelist_func() -> Function {
     Function {
         name: "coalescelist".to_string(),
@@ -203,15 +189,14 @@ fn coalescelist_func() -> Function {
             if args.is_empty() {
                 return Err("coalescelist expects at least 1 argument".to_string());
             }
-
             for arg in args {
                 if arg.is_unknown() {
                     return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
                 }
-                if let ValueData::Array(arr) = &*arg.data
-                    && !arr.is_empty()
-                {
-                    return Ok(arg.clone());
+                if let ValueData::Array(arr) = &*arg.data {
+                    if !arr.is_empty() {
+                        return Ok(arg.clone());
+                    }
                 }
             }
             Err("no non-empty list arguments".to_string())
@@ -219,7 +204,6 @@ fn coalescelist_func() -> Function {
         signature: None,
     }
 }
-
 fn compact_func() -> Function {
     Function {
         name: "compact".to_string(),
@@ -230,11 +214,9 @@ fn compact_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("compact requires a list".to_string());
             };
-
             let mut result = Vec::new();
             for item in list {
                 if item.is_null() {
@@ -259,7 +241,6 @@ fn compact_func() -> Function {
         signature: None,
     }
 }
-
 fn concat_func() -> Function {
     Function {
         name: "concat".to_string(),
@@ -267,10 +248,8 @@ fn concat_func() -> Function {
             if args.is_empty() {
                 return Err("concat expects at least 1 argument".to_string());
             }
-
             let mut res_ty = None;
             let mut result = Vec::new();
-
             for arg in args {
                 if arg.is_unknown() {
                     return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
@@ -287,7 +266,6 @@ fn concat_func() -> Function {
                     return Err("concat arguments must be lists".to_string());
                 }
             }
-
             let t = res_ty.unwrap_or(Type::Dynamic);
             Ok(Value::new(
                 Type::List(Box::new(t)),
@@ -307,7 +285,6 @@ fn contains_func() -> Function {
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
             }
-
             match &*args[0].data {
                 ValueData::Array(arr) => {
                     for item in arr {
@@ -327,7 +304,6 @@ fn contains_func() -> Function {
         signature: None,
     }
 }
-
 fn distinct_func() -> Function {
     Function {
         name: "distinct".to_string(),
@@ -338,11 +314,9 @@ fn distinct_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(args[0].ty().clone()));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("distinct requires a list".to_string());
             };
-
             let mut result = Vec::new();
             for item in list {
                 if !result.contains(item) {
@@ -354,7 +328,6 @@ fn distinct_func() -> Function {
         signature: None,
     }
 }
-
 fn element_func() -> Function {
     Function {
         name: "element".to_string(),
@@ -370,15 +343,12 @@ fn element_func() -> Function {
                 };
                 return Ok(Value::unknown(inner_ty));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("element requires a list".to_string());
             };
-
             if list.is_empty() {
                 return Err("element cannot be used on an empty list".to_string());
             }
-
             let idx_val = args[1]
                 .clone()
                 .coerce(&Type::Number)
@@ -387,19 +357,16 @@ fn element_func() -> Function {
                 ValueData::Number(n) => n.0.to_isize().ok_or("index too large")?,
                 _ => return Err("element index must be number".to_string()),
             };
-
             let len = list.len() as isize;
             let mut mod_idx = idx % len;
             if mod_idx < 0 {
                 mod_idx += len;
-            } // though TF element doesn't typically accept negative, but modulo means this. Actually TF just wraps around natively.
-
+            }
             Ok(list[mod_idx as usize].clone())
         }),
         signature: None,
     }
 }
-
 fn flatten_func() -> Function {
     Function {
         name: "flatten".to_string(),
@@ -410,17 +377,14 @@ fn flatten_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("flatten requires a list".to_string());
             };
-
             fn flatten_recurse(arr: &[Value], result: &mut Vec<Value>) {
                 for item in arr {
                     if let ValueData::Array(inner) = &*item.data {
                         flatten_recurse(inner, result);
                     } else if let ValueData::Set(inner) = &*item.data {
-                        // sets converted to list implicitly?
                         let inner_arr: Vec<Value> = inner.iter().cloned().collect();
                         flatten_recurse(&inner_arr, result);
                     } else {
@@ -428,10 +392,8 @@ fn flatten_func() -> Function {
                     }
                 }
             }
-
             let mut result = Vec::new();
             flatten_recurse(list, &mut result);
-
             let mut res_ty = None;
             for item in &result {
                 match &res_ty {
@@ -448,7 +410,6 @@ fn flatten_func() -> Function {
         signature: None,
     }
 }
-
 fn index_func() -> Function {
     Function {
         name: "index".to_string(),
@@ -459,7 +420,6 @@ fn index_func() -> Function {
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Number));
             }
-
             match &*args[0].data {
                 ValueData::Array(list) => {
                     for (i, item) in list.iter().enumerate() {
@@ -495,7 +455,6 @@ fn index_func() -> Function {
         signature: None,
     }
 }
-
 fn one_func() -> Function {
     Function {
         name: "one".to_string(),
@@ -514,7 +473,6 @@ fn one_func() -> Function {
             if args[0].is_null() {
                 return Ok(Value::null(Type::Dynamic));
             }
-
             match &*args[0].data {
                 ValueData::Array(arr) => {
                     if arr.is_empty() {
@@ -557,7 +515,6 @@ fn one_func() -> Function {
         signature: None,
     }
 }
-
 fn keys_func() -> Function {
     Function {
         name: "keys".to_string(),
@@ -568,13 +525,10 @@ fn keys_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
-
             let ValueData::Object(map) = &*args[0].data else {
                 return Err("keys requires a map".to_string());
             };
-
             let mut result = Vec::new();
-            // maps are sorted by key in BTreeMap, which is correct for HCL keys()
             for k in map.keys() {
                 result.push(Value::new(Type::String, ValueData::String(k.clone())));
             }
@@ -624,16 +578,15 @@ fn length_func() -> Function {
                 }
                 return Ok(Value::unknown(Type::Number));
             }
-
             let len = match &*args[0].data {
-                // Extended grapheme clusters count (Unicode UAX #29 parity with official go-cty)
                 ValueData::String(s) => s.graphemes(true).count(),
                 ValueData::Array(arr) => arr.len(),
                 ValueData::Set(set) => set.len(),
                 ValueData::Object(obj) => obj.len(),
-                _ => return Err("length requires a string, list, set, or map".to_string()),
+                _ => {
+                    return Err("length requires a string, list, set, or map".to_string());
+                }
             };
-
             Ok(Value::new(
                 Type::Number,
                 ValueData::Number(Number::new(BigDecimal::from(len as u64))),
@@ -642,12 +595,10 @@ fn length_func() -> Function {
         signature: None,
     }
 }
-
 fn list_func() -> Function {
     Function {
         name: "list".to_string(),
         func: Arc::new(|args: &[Value]| -> Result<Value, String> {
-            // list(args...) converts args to a tuple, which typically unifies to a list.
             let mut result = Vec::new();
             let mut res_ty = None;
             for arg in args {
@@ -666,7 +617,6 @@ fn list_func() -> Function {
         signature: None,
     }
 }
-
 fn lookup_func() -> Function {
     Function {
         name: "lookup".to_string(),
@@ -674,13 +624,11 @@ fn lookup_func() -> Function {
             if args.len() != 2 && args.len() != 3 {
                 return Err("lookup expects 2 or 3 arguments".to_string());
             }
-
             let map = match &*args[0].data {
                 ValueData::Object(obj) => obj,
                 ValueData::Unknown(_) => return Ok(Value::unknown(Type::Dynamic)),
                 _ => return Err("lookup requires a map as first argument".to_string()),
             };
-
             if args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Dynamic));
             }
@@ -692,7 +640,6 @@ fn lookup_func() -> Function {
                 ValueData::String(s) => s.as_str(),
                 _ => return Err("lookup key must be string".to_string()),
             };
-
             if let Some(val) = map.get(key_str) {
                 Ok(val.clone())
             } else if args.len() == 3 {
@@ -704,18 +651,15 @@ fn lookup_func() -> Function {
         signature: None,
     }
 }
-
 fn map_func() -> Function {
     Function {
         name: "map".to_string(),
         func: Arc::new(|args: &[Value]| -> Result<Value, String> {
-            if !args.len().is_multiple_of(2) {
+            if !args.len() % 2 == 0 {
                 return Err("map expects an even number of arguments".to_string());
             }
-
             let mut map = BTreeMap::new();
             let mut res_ty = None;
-
             for i in (0..args.len()).step_by(2) {
                 let key = args[i]
                     .clone()
@@ -725,23 +669,19 @@ fn map_func() -> Function {
                     ValueData::String(s) => s.clone(),
                     _ => return Err("map keys must be strings".to_string()),
                 };
-
                 let val = args[i + 1].clone();
                 match &res_ty {
                     None => res_ty = Some(val.ty().clone()),
                     Some(current) => res_ty = unify(current, val.ty()),
                 }
-
                 map.insert(key_str, val);
             }
-
             let t = res_ty.unwrap_or(Type::Dynamic);
             Ok(Value::new(Type::Map(Box::new(t)), ValueData::Object(map)))
         }),
         signature: None,
     }
 }
-
 fn matchkeys_func() -> Function {
     Function {
         name: "matchkeys".to_string(),
@@ -752,7 +692,6 @@ fn matchkeys_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
-
             let ValueData::Array(values) = &*args[0].data else {
                 return Err("matchkeys values must be list".to_string());
             };
@@ -762,18 +701,15 @@ fn matchkeys_func() -> Function {
             let ValueData::Array(searchset) = &*args[2].data else {
                 return Err("matchkeys searchset must be list".to_string());
             };
-
             if values.len() != keys.len() {
                 return Err("matchkeys values and keys must have same length".to_string());
             }
-
             let mut result = Vec::new();
             for (i, key) in keys.iter().enumerate() {
                 if searchset.contains(key) {
                     result.push(values[i].clone());
                 }
             }
-
             let inner_ty = if let Type::List(inner) = args[0].ty() {
                 (**inner).clone()
             } else {
@@ -794,15 +730,12 @@ fn merge_func() -> Function {
             if args.is_empty() {
                 return Err("merge expects at least 1 argument".to_string());
             }
-
             let mut res_map = BTreeMap::new();
             let mut res_ty = None;
-
             for arg in args {
                 if arg.is_unknown() {
                     return Ok(Value::unknown(Type::Map(Box::new(Type::Dynamic))));
                 }
-
                 if let ValueData::Object(obj) = &*arg.data {
                     for (k, v) in obj {
                         res_map.insert(k.clone(), v.clone());
@@ -815,7 +748,6 @@ fn merge_func() -> Function {
                     return Err("merge arguments must be maps".to_string());
                 }
             }
-
             let t = res_ty.unwrap_or(Type::Dynamic);
             Ok(Value::new(
                 Type::Map(Box::new(t)),
@@ -825,7 +757,6 @@ fn merge_func() -> Function {
         signature: None,
     }
 }
-
 fn reverse_func() -> Function {
     Function {
         name: "reverse".to_string(),
@@ -836,7 +767,6 @@ fn reverse_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(args[0].ty().clone()));
             }
-
             match &*args[0].data {
                 ValueData::Array(arr) => {
                     let mut res = arr.clone();
@@ -853,7 +783,6 @@ fn reverse_func() -> Function {
         signature: None,
     }
 }
-
 fn setintersection_func() -> Function {
     Function {
         name: "setintersection".to_string(),
@@ -861,7 +790,6 @@ fn setintersection_func() -> Function {
             if args.is_empty() {
                 return Err("setintersection expects at least 1 argument".to_string());
             }
-
             let mut sets = Vec::new();
             for arg in args {
                 if arg.is_unknown() {
@@ -876,15 +804,15 @@ fn setintersection_func() -> Function {
                         }
                         sets.push(set);
                     }
-                    _ => return Err("setintersection arguments must be sets or lists".to_string()),
+                    _ => {
+                        return Err("setintersection arguments must be sets or lists".to_string());
+                    }
                 }
             }
-
             let mut res_set = sets[0].clone();
             for set in sets.iter().skip(1) {
                 res_set = res_set.intersection(set).cloned().collect();
             }
-
             let inner_ty = if let Type::Set(inner) = args[0].ty() {
                 (**inner).clone()
             } else if let Type::List(inner) = args[0].ty() {
@@ -900,7 +828,6 @@ fn setintersection_func() -> Function {
         signature: None,
     }
 }
-
 fn setproduct_func() -> Function {
     Function {
         name: "setproduct".to_string(),
@@ -908,22 +835,23 @@ fn setproduct_func() -> Function {
             if args.len() < 2 {
                 return Err("setproduct expects at least 2 arguments".to_string());
             }
-
             let mut lists = Vec::new();
             for arg in args {
                 if arg.is_unknown() {
                     return Ok(Value::unknown(Type::List(Box::new(Type::Tuple(vec![])))));
                 }
                 match &*arg.data {
-                    ValueData::Set(set) => lists.push(set.iter().cloned().collect::<Vec<_>>()),
+                    ValueData::Set(set) => {
+                        lists.push(set.iter().cloned().collect::<Vec<_>>());
+                    }
                     ValueData::Array(arr) => lists.push(arr.clone()),
-                    _ => return Err("setproduct arguments must be sets or lists".to_string()),
+                    _ => {
+                        return Err("setproduct arguments must be sets or lists".to_string());
+                    }
                 }
             }
-
             let mut result = Vec::new();
             let mut indices = vec![0; lists.len()];
-
             if lists.iter().all(|l| !l.is_empty()) {
                 loop {
                     let mut tuple_els = Vec::new();
@@ -933,7 +861,6 @@ fn setproduct_func() -> Function {
                         ty_els.push(lists[i][indices[i]].ty().clone());
                     }
                     result.push(Value::new(Type::Tuple(ty_els), ValueData::Array(tuple_els)));
-
                     let mut pos = (lists.len() - 1) as isize;
                     while pos >= 0 {
                         indices[pos as usize] += 1;
@@ -948,7 +875,6 @@ fn setproduct_func() -> Function {
                     }
                 }
             }
-
             let mut ty_els = Vec::new();
             for arg in args {
                 if let Type::List(inner) = arg.ty() {
@@ -959,7 +885,6 @@ fn setproduct_func() -> Function {
                     ty_els.push(Type::Dynamic);
                 }
             }
-
             Ok(Value::new(
                 Type::List(Box::new(Type::Tuple(ty_els))),
                 ValueData::Array(result),
@@ -975,7 +900,6 @@ fn setsubtract_func() -> Function {
             if args.len() != 2 {
                 return Err("setsubtract expects 2 arguments".to_string());
             }
-
             let mut sets = Vec::new();
             for arg in args {
                 if arg.is_unknown() {
@@ -990,12 +914,12 @@ fn setsubtract_func() -> Function {
                         }
                         sets.push(set);
                     }
-                    _ => return Err("setsubtract arguments must be sets or lists".to_string()),
+                    _ => {
+                        return Err("setsubtract arguments must be sets or lists".to_string());
+                    }
                 }
             }
-
             let res_set: BTreeSet<_> = sets[0].difference(&sets[1]).cloned().collect();
-
             let inner_ty = if let Type::Set(inner) = args[0].ty() {
                 (**inner).clone()
             } else if let Type::List(inner) = args[0].ty() {
@@ -1011,7 +935,6 @@ fn setsubtract_func() -> Function {
         signature: None,
     }
 }
-
 /// Built-in `setsymmetricdifference` function computing elements present in either set A or set B, but not both.
 fn setsymmetricdifference_func() -> Function {
     Function {
@@ -1020,12 +943,10 @@ fn setsymmetricdifference_func() -> Function {
             if args.len() != 2 {
                 return Err("setsymmetricdifference expects 2 arguments".to_string());
             }
-
             let mut combined_marks = BTreeSet::new();
             for arg in args {
                 combined_marks.extend(arg.marks().clone());
             }
-
             let mut res_ty = None;
             for arg in args {
                 let inner = if let Type::Set(inner) = arg.ty() {
@@ -1041,7 +962,6 @@ fn setsymmetricdifference_func() -> Function {
                 }
             }
             let inner_ty = res_ty.unwrap_or(Type::Dynamic);
-
             for arg in args {
                 if arg.is_unknown() {
                     return Ok(
@@ -1049,7 +969,6 @@ fn setsymmetricdifference_func() -> Function {
                     );
                 }
             }
-
             let mut sets = Vec::new();
             for arg in args {
                 match &*arg.data {
@@ -1068,9 +987,7 @@ fn setsymmetricdifference_func() -> Function {
                     }
                 }
             }
-
             let res_set: BTreeSet<_> = sets[0].symmetric_difference(&sets[1]).cloned().collect();
-
             Ok(Value::new_with_marks(
                 Type::Set(Box::new(inner_ty)),
                 ValueData::Set(res_set),
@@ -1080,7 +997,6 @@ fn setsymmetricdifference_func() -> Function {
         signature: None,
     }
 }
-
 fn setunion_func() -> Function {
     Function {
         name: "setunion".to_string(),
@@ -1088,7 +1004,6 @@ fn setunion_func() -> Function {
             if args.is_empty() {
                 return Err("setunion expects at least 1 argument".to_string());
             }
-
             let mut sets = Vec::new();
             for arg in args {
                 if arg.is_unknown() {
@@ -1103,15 +1018,15 @@ fn setunion_func() -> Function {
                         }
                         sets.push(set);
                     }
-                    _ => return Err("setunion arguments must be sets or lists".to_string()),
+                    _ => {
+                        return Err("setunion arguments must be sets or lists".to_string());
+                    }
                 }
             }
-
             let mut res_set = sets[0].clone();
             for set in sets.iter().skip(1) {
                 res_set = res_set.union(set).cloned().collect();
             }
-
             let mut res_ty = None;
             for arg in args {
                 let inner = if let Type::Set(inner) = arg.ty() {
@@ -1127,7 +1042,6 @@ fn setunion_func() -> Function {
                 }
             }
             let inner_ty = res_ty.unwrap_or(Type::Dynamic);
-
             Ok(Value::new(
                 Type::Set(Box::new(inner_ty)),
                 ValueData::Set(res_set),
@@ -1136,7 +1050,6 @@ fn setunion_func() -> Function {
         signature: None,
     }
 }
-
 fn slice_func() -> Function {
     Function {
         name: "slice".to_string(),
@@ -1147,11 +1060,9 @@ fn slice_func() -> Function {
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("slice first argument must be a list".to_string());
             };
-
             let start_val = args[1]
                 .clone()
                 .coerce(&Type::Number)
@@ -1160,7 +1071,6 @@ fn slice_func() -> Function {
                 ValueData::Number(n) => n.0.to_isize().ok_or("start index too large")?,
                 _ => return Err("slice start index must be number".to_string()),
             };
-
             let end_val = args[2]
                 .clone()
                 .coerce(&Type::Number)
@@ -1169,14 +1079,12 @@ fn slice_func() -> Function {
                 ValueData::Number(n) => n.0.to_isize().ok_or("end index too large")?,
                 _ => return Err("slice end index must be number".to_string()),
             };
-
             if start < 0 || start > list.len() as isize {
                 return Err("slice start index out of bounds".to_string());
             }
             if end < start || end > list.len() as isize {
                 return Err("slice end index out of bounds".to_string());
             }
-
             let res = list[start as usize..end as usize].to_vec();
             Ok(Value::new(args[0].ty().clone(), ValueData::Array(res)))
         }),
@@ -1193,11 +1101,9 @@ fn sort_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
-
             let ValueData::Array(list) = &*args[0].data else {
                 return Err("sort requires a list".to_string());
             };
-
             let mut strings = Vec::new();
             for item in list {
                 let s = item
@@ -1209,7 +1115,6 @@ fn sort_func() -> Function {
                     _ => return Err("sort requires list of strings".to_string()),
                 }
             }
-
             strings.sort();
             let res = strings
                 .into_iter()
@@ -1223,7 +1128,6 @@ fn sort_func() -> Function {
         signature: None,
     }
 }
-
 fn sum_func() -> Function {
     Function {
         name: "sum".to_string(),
@@ -1234,13 +1138,11 @@ fn sum_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Number));
             }
-
             let items: Vec<Value> = match &*args[0].data {
                 ValueData::Array(arr) => arr.clone(),
                 ValueData::Set(set) => set.iter().cloned().collect(),
                 _ => return Err("sum requires a list or set".to_string()),
             };
-
             let mut total = BigDecimal::from(0);
             for item in items {
                 let num_val = item
@@ -1251,7 +1153,6 @@ fn sum_func() -> Function {
                     _ => return Err("sum requires list/set of numbers".to_string()),
                 }
             }
-
             Ok(Value::new(
                 Type::Number,
                 ValueData::Number(Number::new(total)),
@@ -1260,7 +1161,6 @@ fn sum_func() -> Function {
         signature: None,
     }
 }
-
 fn transpose_func() -> Function {
     Function {
         name: "transpose".to_string(),
@@ -1273,13 +1173,10 @@ fn transpose_func() -> Function {
                     Type::String,
                 ))))));
             }
-
             let ValueData::Object(map) = &*args[0].data else {
                 return Err("transpose requires a map".to_string());
             };
-
             let mut trans_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
-
             for (key, val) in map {
                 if let ValueData::Array(arr) = &*val.data {
                     for item in arr {
@@ -1297,10 +1194,9 @@ fn transpose_func() -> Function {
                     return Err("transpose requires map of lists".to_string());
                 }
             }
-
             let mut res_map = BTreeMap::new();
             for (k, mut v) in trans_map {
-                v.sort(); // transpose returns lexicographically sorted lists
+                v.sort();
                 let val_list: Vec<Value> = v
                     .into_iter()
                     .map(|s| Value::new(Type::String, ValueData::String(s)))
@@ -1313,7 +1209,6 @@ fn transpose_func() -> Function {
                     ),
                 );
             }
-
             Ok(Value::new(
                 Type::Map(Box::new(Type::List(Box::new(Type::String)))),
                 ValueData::Object(res_map),
@@ -1322,7 +1217,6 @@ fn transpose_func() -> Function {
         signature: None,
     }
 }
-
 fn values_func() -> Function {
     Function {
         name: "values".to_string(),
@@ -1333,14 +1227,11 @@ fn values_func() -> Function {
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
-
             let ValueData::Object(map) = &*args[0].data else {
                 return Err("values requires a map".to_string());
             };
-
             let mut result = Vec::new();
             let mut res_ty = None;
-            // maps are sorted by key in BTreeMap, which is correct for HCL values()
             for v in map.values() {
                 result.push(v.clone());
                 match &res_ty {
@@ -1348,7 +1239,6 @@ fn values_func() -> Function {
                     Some(current) => res_ty = unify(current, v.ty()),
                 }
             }
-
             let t = res_ty.unwrap_or(Type::Dynamic);
             Ok(Value::new(
                 Type::List(Box::new(t)),
@@ -1358,7 +1248,6 @@ fn values_func() -> Function {
         signature: None,
     }
 }
-
 fn zipmap_func() -> Function {
     Function {
         name: "zipmap".to_string(),
@@ -1369,18 +1258,15 @@ fn zipmap_func() -> Function {
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Map(Box::new(Type::Dynamic))));
             }
-
             let ValueData::Array(keys) = &*args[0].data else {
                 return Err("zipmap keys must be list".to_string());
             };
             let ValueData::Array(values) = &*args[1].data else {
                 return Err("zipmap values must be list".to_string());
             };
-
             if keys.len() != values.len() {
                 return Err("zipmap keys and values must have same length".to_string());
             }
-
             let mut map = BTreeMap::new();
             let mut res_ty = None;
             for (i, key) in keys.iter().enumerate() {
@@ -1391,7 +1277,6 @@ fn zipmap_func() -> Function {
                 match &*key_val.data {
                     ValueData::String(key_str) => {
                         map.insert(key_str.clone(), values[i].clone());
-
                         match &res_ty {
                             None => res_ty = Some(values[i].ty().clone()),
                             Some(current) => res_ty = unify(current, values[i].ty()),
@@ -1400,14 +1285,12 @@ fn zipmap_func() -> Function {
                     _ => return Err("zipmap keys must be strings".to_string()),
                 }
             }
-
             let t = res_ty.unwrap_or(Type::Dynamic);
             Ok(Value::new(Type::Map(Box::new(t)), ValueData::Object(map)))
         }),
         signature: None,
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -1417,49 +1300,38 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
-
     use crate::number::Number;
     use bigdecimal::BigDecimal;
     use std::str::FromStr;
-
     fn get_func(name: &str) -> Function {
         functions().into_iter().find(|f| f.name == name).unwrap()
     }
-
     fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
         let f = get_func(name);
         (f.func)(args)
     }
-
     fn str_val(s: &str) -> Value {
         Value::new(Type::String, ValueData::String(s.to_string()))
     }
-
     fn bool_val(b: bool) -> Value {
         Value::new(Type::Bool, ValueData::Bool(b))
     }
-
     fn num_val(s: &str) -> Value {
         Value::new(
             Type::Number,
             ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
         )
     }
-
     fn unk_val() -> Value {
         Value::unknown(Type::Dynamic)
     }
-
     fn null_val() -> Value {
         Value::new(Type::Dynamic, ValueData::Null)
     }
-
     fn list_val(vals: Vec<Value>) -> Value {
         Value::new(Type::List(Box::new(Type::Dynamic)), ValueData::Array(vals))
     }
-
     fn set_val(vals: Vec<Value>) -> Value {
         let mut set = BTreeSet::new();
         for v in vals {
@@ -1467,7 +1339,6 @@ mod tests {
         }
         Value::new(Type::Set(Box::new(Type::Dynamic)), ValueData::Set(set))
     }
-
     fn map_val(vals: Vec<(&str, Value)>) -> Value {
         let mut map = BTreeMap::new();
         for (k, v) in vals {
@@ -1475,21 +1346,18 @@ mod tests {
         }
         Value::new(Type::Map(Box::new(Type::Dynamic)), ValueData::Object(map))
     }
-
     fn get_arr_len(val: &Value) -> usize {
         match &*val.data {
             ValueData::Array(arr) => arr.len(),
             _ => 0,
         }
     }
-
     fn get_obj_len(val: &Value) -> usize {
         match &*val.data {
             ValueData::Object(obj) => obj.len(),
             _ => 0,
         }
     }
-
     #[test]
     fn test_alltrue_anytrue() {
         assert_eq!(
@@ -1509,7 +1377,6 @@ mod tests {
             .as_ref(),
             &ValueData::Bool(false)
         );
-
         assert_eq!(
             eval_func(
                 "anytrue",
@@ -1530,7 +1397,6 @@ mod tests {
             .as_ref(),
             &ValueData::Bool(false)
         );
-
         assert!(eval_func("alltrue", &[]).is_err());
         assert!(eval_func("alltrue", &[unk_val()]).unwrap().is_unknown());
         assert!(
@@ -1540,7 +1406,6 @@ mod tests {
         );
         assert!(eval_func("alltrue", &[list_val(vec![str_val("bad")])]).is_err());
     }
-
     #[test]
     fn test_anytrue_errors() {
         assert!(eval_func("anytrue", &[]).is_err());
@@ -1552,7 +1417,6 @@ mod tests {
         );
         assert!(eval_func("anytrue", &[list_val(vec![str_val("bad")])]).is_err());
     }
-
     #[test]
     fn test_contains_set() {
         let mut set = std::collections::BTreeSet::new();
@@ -1566,7 +1430,6 @@ mod tests {
             &ValueData::Bool(true)
         );
     }
-
     #[test]
     fn test_chunklist_errors() {
         assert!(eval_func("chunklist", &[str_val("a"), num_val("2")]).is_err());
@@ -1577,7 +1440,6 @@ mod tests {
         );
         assert!(eval_func("chunklist", &[list_val(vec![]), str_val("bad")]).is_err());
     }
-
     #[test]
     fn test_chunklist() {
         let res = eval_func(
@@ -1598,7 +1460,6 @@ mod tests {
                 .is_unknown()
         );
     }
-
     #[test]
     fn test_coalesce_coalescelist() {
         assert_eq!(
@@ -1610,7 +1471,6 @@ mod tests {
         );
         assert!(eval_func("coalesce", &[null_val(), null_val()]).is_err());
         assert!(eval_func("coalesce", &[]).is_err());
-
         assert_eq!(
             eval_func(
                 "coalescelist",
@@ -1624,7 +1484,6 @@ mod tests {
         assert!(eval_func("coalescelist", &[list_val(vec![]), list_val(vec![])]).is_err());
         assert!(eval_func("coalescelist", &[]).is_err());
     }
-
     #[test]
     fn test_compact() {
         let res = eval_func("compact", &[list_val(vec![null_val(), str_val("a")])]).unwrap();
@@ -1632,7 +1491,6 @@ mod tests {
         assert!(eval_func("compact", &[]).is_err());
         assert!(eval_func("compact", &[str_val("bad")]).is_err());
     }
-
     #[test]
     fn test_concat() {
         let res = eval_func(
@@ -1643,7 +1501,6 @@ mod tests {
         assert_eq!(get_arr_len(&res), 2);
         assert!(eval_func("concat", &[list_val(vec![str_val("a")]), str_val("bad")]).is_err());
     }
-
     #[test]
     fn test_contains() {
         assert_eq!(
@@ -1663,14 +1520,12 @@ mod tests {
         assert!(eval_func("contains", &[]).is_err());
         assert!(eval_func("contains", &[str_val("bad"), str_val("a")]).is_err());
     }
-
     #[test]
     fn test_distinct() {
         let res = eval_func("distinct", &[list_val(vec![str_val("a"), str_val("a")])]).unwrap();
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("distinct", &[]).is_err());
     }
-
     #[test]
     fn test_element() {
         assert_eq!(
@@ -1689,18 +1544,16 @@ mod tests {
                 .data
                 .as_ref(),
             &ValueData::String("a".to_string())
-        ); // wraps around
+        );
         assert!(eval_func("element", &[]).is_err());
         assert!(eval_func("element", &[list_val(vec![]), num_val("0")]).is_err());
     }
-
     #[test]
     fn test_flatten() {
         let res = eval_func("flatten", &[list_val(vec![list_val(vec![str_val("a")])])]).unwrap();
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("flatten", &[]).is_err());
     }
-
     #[test]
     fn test_index() {
         assert_eq!(
@@ -1716,7 +1569,6 @@ mod tests {
         assert!(eval_func("index", &[list_val(vec![str_val("a")]), str_val("b")]).is_err());
         assert!(eval_func("index", &[]).is_err());
     }
-
     #[test]
     fn test_keys_values() {
         let map = map_val(vec![("a", str_val("1")), ("b", str_val("2"))]);
@@ -1727,7 +1579,6 @@ mod tests {
         assert!(eval_func("keys", &[]).is_err());
         assert!(eval_func("values", &[]).is_err());
     }
-
     #[test]
     fn test_length() {
         assert_eq!(
@@ -1746,14 +1597,12 @@ mod tests {
         );
         assert!(eval_func("length", &[]).is_err());
     }
-
     #[test]
     fn test_list_map() {
         assert!(eval_func("list", &[str_val("a"), str_val("b")]).is_ok());
         assert!(eval_func("map", &[str_val("k1"), str_val("v1")]).is_ok());
-        assert!(eval_func("map", &[str_val("k1")]).is_err()); // uneven
+        assert!(eval_func("map", &[str_val("k1")]).is_err());
     }
-
     #[test]
     fn test_lookup() {
         let map = map_val(vec![("a", str_val("1"))]);
@@ -1774,7 +1623,6 @@ mod tests {
         assert!(eval_func("lookup", &[map, str_val("b")]).is_err());
         assert!(eval_func("lookup", &[]).is_err());
     }
-
     #[test]
     fn test_matchkeys() {
         let res = eval_func(
@@ -1789,7 +1637,6 @@ mod tests {
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("matchkeys", &[]).is_err());
     }
-
     #[test]
     fn test_merge() {
         let m1 = map_val(vec![("a", str_val("1"))]);
@@ -1798,7 +1645,6 @@ mod tests {
         assert_eq!(get_obj_len(&res), 2);
         assert!(eval_func("merge", &[str_val("bad")]).is_err());
     }
-
     #[test]
     fn test_reverse() {
         let res = eval_func("reverse", &[list_val(vec![str_val("a"), str_val("b")])]).unwrap();
@@ -1808,43 +1654,36 @@ mod tests {
         );
         assert!(eval_func("reverse", &[]).is_err());
     }
-
     #[test]
     fn test_set_math() {
         let s1 = set_val(vec![str_val("a"), str_val("b")]);
         let s2 = set_val(vec![str_val("b"), str_val("c")]);
-
         let union = eval_func("setunion", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*union.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-
         let int = eval_func("setintersection", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*int.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-
         let sub = eval_func("setsubtract", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*sub.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-
         let sym_diff = eval_func("setsymmetricdifference", &[s1.clone(), s2.clone()]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*sym_diff.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-
         let prod = eval_func("setproduct", &[s1, s2]).unwrap();
         assert_eq!(
             std::mem::discriminant(&*prod.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
     }
-
     #[test]
     fn test_slice() {
         let arr = list_val(vec![str_val("a"), str_val("b"), str_val("c")]);
@@ -1852,7 +1691,6 @@ mod tests {
         assert_eq!(get_arr_len(&sl), 1);
         assert!(eval_func("slice", &[]).is_err());
     }
-
     #[test]
     fn test_sort() {
         let res = eval_func("sort", &[list_val(vec![str_val("b"), str_val("a")])]).unwrap();
@@ -1862,7 +1700,6 @@ mod tests {
         );
         assert!(eval_func("sort", &[]).is_err());
     }
-
     #[test]
     fn test_sum() {
         assert_eq!(
@@ -1874,7 +1711,6 @@ mod tests {
         );
         assert!(eval_func("sum", &[]).is_err());
     }
-
     #[test]
     fn test_transpose() {
         let map = map_val(vec![("a", list_val(vec![str_val("1")]))]);
@@ -1882,7 +1718,6 @@ mod tests {
         assert_eq!(get_obj_len(&res), 1);
         assert!(eval_func("transpose", &[]).is_err());
     }
-
     #[test]
     fn test_zipmap() {
         let res = eval_func(
@@ -1892,9 +1727,8 @@ mod tests {
         .unwrap();
         assert_eq!(get_obj_len(&res), 1);
         assert!(eval_func("zipmap", &[]).is_err());
-        assert!(eval_func("zipmap", &[list_val(vec![str_val("a")]), list_val(vec![])]).is_err()); // length mismatch
+        assert!(eval_func("zipmap", &[list_val(vec![str_val("a")]), list_val(vec![])]).is_err());
     }
-
     #[test]
     fn test_coverage_gaps_collection() {
         let unk = unk_val();
@@ -1908,8 +1742,6 @@ mod tests {
                     .collect(),
             ),
         );
-
-        // alltrue
         assert!(
             eval_func("alltrue", std::slice::from_ref(&unk_bool)).is_ok_and(|v| v.is_unknown())
         );
@@ -1918,8 +1750,6 @@ mod tests {
         );
         assert!(eval_func("alltrue", std::slice::from_ref(&set_bool)).is_err());
         assert!(eval_func("alltrue", &[str_val("notlist")]).is_err());
-
-        // anytrue
         assert!(
             eval_func("anytrue", std::slice::from_ref(&unk_bool)).is_ok_and(|v| v.is_unknown())
         );
@@ -1927,28 +1757,21 @@ mod tests {
             eval_func("anytrue", &[list_val(vec![unk_bool.clone()])]).is_ok_and(|v| v.is_unknown())
         );
         assert!(eval_func("anytrue", &[str_val("notlist")]).is_err());
-
-        // chunklist
         assert!(
             eval_func("chunklist", &[unk_list.clone(), num_val("2")]).is_ok_and(|v| v.is_unknown())
         );
         assert!(eval_func("chunklist", &[list_val(vec![]), num_val("0")]).is_err());
         assert!(eval_func("chunklist", &[unk.clone(), num_val("2")]).is_ok_and(|v| v.is_unknown()));
-        assert!(eval_func("chunklist", &[list_val(vec![]), num_val("2")]).is_ok_and(|v| v.ty() == &Type::List(Box::new(Type::List(Box::new(Type::Dynamic))))));
-
-        // coalesce
+        assert!(
+            eval_func("chunklist", & [list_val(vec![]), num_val("2")]).is_ok_and(| v | v
+            .ty() == & Type::List(Box::new(Type::List(Box::new(Type::Dynamic)))))
+        );
         assert!(eval_func("coalesce", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("coalesce", &[str_val("")]).is_err());
-
-        // coalescelist
         assert!(
             eval_func("coalescelist", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown())
         );
-
-        // compact
         assert!(eval_func("compact", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
-
-        // concat
         assert!(eval_func("concat", &[]).is_err());
         assert!(eval_func("concat", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(
@@ -1958,15 +1781,9 @@ mod tests {
             )
             .is_ok()
         );
-
-        // contains
         assert!(eval_func("contains", &[unk.clone(), str_val("a")]).is_ok_and(|v| v.is_unknown()));
-
-        // distinct
         assert!(eval_func("distinct", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("distinct", &[str_val("a")]).is_err());
-
-        // element
         assert!(
             eval_func("element", &[unk_list.clone(), num_val("0")]).is_ok_and(|v| v.is_unknown())
         );
@@ -1976,8 +1793,6 @@ mod tests {
             eval_func("element", &[list_val(vec![str_val("a")]), num_val("-1")])
                 .is_ok_and(|v| v.data.as_ref() == &ValueData::String("a".to_string()))
         );
-
-        // flatten
         assert!(eval_func("flatten", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("flatten", &[str_val("a")]).is_err());
         assert!(eval_func("flatten", &[list_val(vec![set_val(vec![str_val("a")])])]).is_ok());
@@ -1991,16 +1806,10 @@ mod tests {
             )
             .is_ok()
         );
-
-        // index
         assert!(eval_func("index", &[unk.clone(), str_val("a")]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("index", &[str_val("a"), str_val("a")]).is_err());
-
-        // keys
         assert!(eval_func("keys", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("keys", &[str_val("a")]).is_err());
-
-        // length
         assert!(eval_func("length", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(
             eval_func("length", &[set_val(vec![str_val("a")])])
@@ -2011,13 +1820,9 @@ mod tests {
                 .is_ok_and(|v| v.data.as_ref() == num_val("1").data.as_ref())
         );
         assert!(eval_func("length", &[num_val("1")]).is_err());
-
-        // lookup
         assert!(eval_func("lookup", &[unk.clone(), str_val("a")]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("lookup", &[str_val("a"), str_val("b")]).is_err());
         assert!(eval_func("lookup", &[map_val(vec![]), unk.clone()]).is_ok_and(|v| v.is_unknown()));
-
-        // map
         assert!(
             eval_func(
                 "map",
@@ -2025,8 +1830,6 @@ mod tests {
             )
             .is_ok()
         );
-
-        // matchkeys
         assert!(
             eval_func("matchkeys", &[unk.clone(), unk.clone(), unk.clone()])
                 .is_ok_and(|v| v.is_unknown())
@@ -2063,29 +1866,21 @@ mod tests {
             )
             .is_err()
         );
-
-        // merge
         assert!(eval_func("merge", &[]).is_err());
         assert!(eval_func("merge", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
-
-        // reverse
         assert!(eval_func("reverse", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(
             eval_func("reverse", &[str_val("abc")])
                 .is_ok_and(|v| v.data.as_ref() == &ValueData::String("cba".to_string()))
         );
         assert!(eval_func("reverse", &[num_val("1")]).is_err());
-
-        // setintersection
         assert!(eval_func("setintersection", &[]).is_err());
         assert!(
             eval_func("setintersection", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown())
         );
         assert!(eval_func("setintersection", &[str_val("a")]).is_err());
         assert!(eval_func("setintersection", &[list_val(vec![str_val("a")])]).is_ok());
-
-        // setproduct
-        assert!(eval_func("setproduct", &[list_val(vec![])]).is_err()); // less than 2 args
+        assert!(eval_func("setproduct", &[list_val(vec![])]).is_err());
         assert!(eval_func("setproduct", &[unk.clone(), unk.clone()]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("setproduct", &[str_val("a"), str_val("b")]).is_err());
         assert!(
@@ -2105,8 +1900,6 @@ mod tests {
             )
             .is_ok()
         );
-
-        // setsubtract
         assert!(eval_func("setsubtract", &[]).is_err());
         assert!(
             eval_func("setsubtract", &[unk.clone(), unk.clone()]).is_ok_and(|v| v.is_unknown())
@@ -2129,8 +1922,6 @@ mod tests {
             )
             .is_ok()
         );
-
-        // setunion
         assert!(eval_func("setunion", &[]).is_err());
         assert!(eval_func("setunion", &[unk.clone(), unk.clone()]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("setunion", &[str_val("a"), str_val("b")]).is_err());
@@ -2151,29 +1942,21 @@ mod tests {
             )
             .is_ok()
         );
-
-        // slice
         assert!(
             eval_func("slice", &[unk.clone(), num_val("0"), num_val("1")])
                 .is_ok_and(|v| v.is_unknown())
         );
         assert!(eval_func("slice", &[str_val("a"), num_val("0"), num_val("1")]).is_err());
         assert!(eval_func("slice", &[list_val(vec![]), num_val("-1"), num_val("1")]).is_err());
-        assert!(eval_func("slice", &[list_val(vec![]), num_val("0"), num_val("1")]).is_err()); // end index out of bounds
-
-        // sort
+        assert!(eval_func("slice", &[list_val(vec![]), num_val("0"), num_val("1")]).is_err());
         assert!(eval_func("sort", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("sort", &[str_val("a")]).is_err());
-
-        // sum
         assert!(eval_func("sum", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(
             eval_func("sum", &[set_val(vec![num_val("1")])])
                 .is_ok_and(|v| v.data.as_ref() == num_val("1").data.as_ref())
         );
         assert!(eval_func("sum", &[str_val("a")]).is_err());
-
-        // transpose
         assert!(eval_func("transpose", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("transpose", &[str_val("a")]).is_err());
         assert!(eval_func("transpose", &[map_val(vec![("a", str_val("b"))])]).is_err());
@@ -2191,12 +1974,8 @@ mod tests {
             )
             .is_err()
         );
-
-        // values
         assert!(eval_func("values", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("values", &[str_val("a")]).is_err());
-
-        // zipmap
         assert!(eval_func("zipmap", &[unk.clone(), unk.clone()]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("zipmap", &[str_val("a"), list_val(vec![])]).is_err());
         assert!(eval_func("zipmap", &[list_val(vec![]), str_val("a")]).is_err());
@@ -2211,24 +1990,18 @@ mod tests {
             .is_ok()
         );
     }
-
     fn tuple_val(vals: Vec<Value>) -> Value {
         let tys = vals.iter().map(Value::ty).cloned().collect();
         Value::new(Type::Tuple(tys), ValueData::Array(vals))
     }
-
     #[test]
     fn test_collection_comprehensive_coverage() {
         let tup = tuple_val(vec![num_val("1"), num_val("2"), num_val("3")]);
-
-        // 1. chunklist with tuple
         let cl = eval_func("chunklist", &[tup.clone(), num_val("2")]).unwrap();
         assert_eq!(
             cl.ty(),
             &Type::List(Box::new(Type::List(Box::new(Type::Dynamic))))
         );
-
-        // 2. element with negative index
         let el = eval_func(
             "element",
             &[
@@ -2238,8 +2011,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(*el.data, ValueData::String("c".to_string()));
-
-        // 3. matchkeys with tuple
         let mk = eval_func(
             "matchkeys",
             &[
@@ -2250,16 +2021,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(mk.ty(), &Type::List(Box::new(Type::Dynamic)));
-
-        // 4. setintersection with tuple
         let si = eval_func(
             "setintersection",
             &[tup, list_val(vec![num_val("2"), num_val("4")])],
         )
         .unwrap();
         assert_eq!(si.ty(), &Type::Set(Box::new(Type::Dynamic)));
-
-        // 5. setproduct with multi-element lists to trigger inner index increment
         let sp = eval_func(
             "setproduct",
             &[
@@ -2269,12 +2036,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(get_arr_len(&sp), 4);
-
-        // 6. reverse with empty list
         let rev = eval_func("reverse", &[list_val(vec![])]).unwrap();
         assert_eq!(get_arr_len(&rev), 0);
-
-        // 7. lookup with default value
         let lk = eval_func(
             "lookup",
             &[
@@ -2285,8 +2048,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(*lk.data, ValueData::String("default_val".to_string()));
-
-        // 8. Coercion failure tests for map_err closures
         let bad_type = tuple_val(vec![]);
         assert!(
             eval_func(
@@ -2338,8 +2099,6 @@ mod tests {
             )
             .is_err()
         );
-
-        // 9. Huge number tests
         let huge = num_val("9999999999999999999999999999999999999999");
         assert!(eval_func("chunklist", &[list_val(vec![num_val("1")]), huge.clone()]).is_err());
         assert!(eval_func("element", &[list_val(vec![num_val("1")]), huge.clone()]).is_err());
@@ -2351,8 +2110,6 @@ mod tests {
             .is_err()
         );
         assert!(eval_func("slice", &[list_val(vec![num_val("1")]), num_val("0"), huge]).is_err());
-
-        // 10. Null typed data tests for _ => Err arms after coerce
         let null_num = Value::new(Type::Number, ValueData::Null);
         let null_str = Value::new(Type::String, ValueData::Null);
         assert!(
@@ -2397,23 +2154,18 @@ mod tests {
             )
             .is_err()
         );
-
-        // 11. Concat with tuple and setproduct with empty list
         let cc = eval_func(
             "concat",
             &[list_val(vec![num_val("1")]), tuple_val(vec![num_val("2")])],
         )
         .unwrap();
         assert_eq!(get_arr_len(&cc), 2);
-
         let spe = eval_func(
             "setproduct",
             &[list_val(vec![num_val("1")]), list_val(vec![])],
         )
         .unwrap();
         assert_eq!(get_arr_len(&spe), 0);
-
-        // 12. args[0] and args[1] unknown tests for contains, element, index, zipmap
         assert!(eval_func("contains", &[unk_val(), str_val("x")]).is_ok_and(|v| v.is_unknown()));
         assert!(
             eval_func("contains", &[list_val(vec![str_val("a")]), unk_val()])
@@ -2437,16 +2189,12 @@ mod tests {
             eval_func("zipmap", &[list_val(vec![str_val("a")]), unk_val()])
                 .is_ok_and(|v| v.is_unknown())
         );
-
-        // 13. coalesce with empty strings, null_str, and non-string fallbacks
         let coal_res = eval_func("coalesce", &[str_val(""), num_val("10")]).unwrap();
         assert_eq!(*coal_res.data, *num_val("10").data);
         let coal_res2 = eval_func("coalesce", &[str_val(""), str_val("hello")]).unwrap();
         assert_eq!(*coal_res2.data, *str_val("hello").data);
         let coal_res3 = eval_func("coalesce", &[null_str.clone(), str_val("fallback")]).unwrap();
         assert_eq!(*coal_res3.data, *str_val("fallback").data);
-
-        // 14. coalescelist with empty list and non-list error
         let cl_res = eval_func(
             "coalescelist",
             &[list_val(vec![]), list_val(vec![num_val("1")])],
@@ -2454,14 +2202,10 @@ mod tests {
         .unwrap();
         assert_eq!(get_arr_len(&cl_res), 1);
         assert!(eval_func("coalescelist", &[num_val("10")]).is_err());
-
-        // 15. compact with empty string and null_str
         let comp_res = eval_func("compact", &[list_val(vec![str_val(""), str_val("a")])]).unwrap();
         assert_eq!(get_arr_len(&comp_res), 1);
         let comp_null = eval_func("compact", &[list_val(vec![null_str.clone()])]).unwrap();
         assert_eq!(get_arr_len(&comp_null), 0);
-
-        // 16. slice with start < 0, start > len, end < start, and end > len
         assert!(
             eval_func(
                 "slice",
@@ -2494,8 +2238,6 @@ mod tests {
             )
             .is_err()
         );
-
-        // 17. transpose with null_str and default get_len arms
         let trans_null = eval_func(
             "transpose",
             &[map_val(vec![("a", list_val(vec![null_str]))])],
@@ -2504,33 +2246,25 @@ mod tests {
         assert_eq!(get_obj_len(&trans_null), 0);
         assert_eq!(get_arr_len(&num_val("1")), 0);
         assert_eq!(get_obj_len(&num_val("1")), 0);
-
-        // 18. one() tests
         let single_list = list_val(vec![str_val("solo")]);
         assert_eq!(eval_func("one", &[single_list]).unwrap(), str_val("solo"));
-
         let empty_list = Value::new(Type::List(Box::new(Type::String)), ValueData::Array(vec![]));
         let empty_res = eval_func("one", &[empty_list]).unwrap();
         assert!(empty_res.is_null());
-
         let multi_list = list_val(vec![str_val("a"), str_val("b")]);
         assert!(eval_func("one", &[multi_list]).is_err());
-
         let single_set = set_val(vec![str_val("single_set_item")]);
         assert_eq!(
             eval_func("one", &[single_set]).unwrap(),
             str_val("single_set_item")
         );
-
         let empty_set = Value::new(
             Type::Set(Box::new(Type::Number)),
             ValueData::Set(BTreeSet::new()),
         );
         assert!(eval_func("one", &[empty_set]).unwrap().is_null());
-
         let multi_set = set_val(vec![str_val("a"), str_val("b")]);
         assert!(eval_func("one", &[multi_set]).is_err());
-
         let unk_list = Value::unknown(Type::List(Box::new(Type::String)));
         assert!(eval_func("one", &[unk_list]).unwrap().is_unknown());
         let unk_set = Value::unknown(Type::Set(Box::new(Type::String)));
@@ -2541,12 +2275,10 @@ mod tests {
         assert!(eval_func("one", &[unk_empty_tuple]).unwrap().is_unknown());
         let unk_dyn = Value::unknown(Type::Dynamic);
         assert!(eval_func("one", &[unk_dyn]).unwrap().is_unknown());
-
         let empty_tup = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         assert!(eval_func("one", &[empty_tup]).unwrap().is_null());
         let empty_set_dyn = Value::new(Type::Dynamic, ValueData::Set(BTreeSet::new()));
         assert!(eval_func("one", &[empty_set_dyn]).unwrap().is_null());
-
         assert!(eval_func("one", &[str_val("not_a_collection")]).is_err());
         assert!(
             eval_func("one", &[Value::null(Type::Dynamic)])
@@ -2555,20 +2287,14 @@ mod tests {
         );
         assert!(eval_func("one", &[]).is_err());
         assert!(eval_func("one", &[num_val("123")]).is_err());
-
-        // index() on invalid type & index on map with non-string key
         assert!(eval_func("index", &[num_val("42"), str_val("k")]).is_err());
         let test_map = map_val(vec![("k", str_val("v"))]);
         assert!(eval_func("index", &[test_map, num_val("123")]).is_err());
-
-        // length() on unknown refined without length constraint
         let unk_ref = Value::unknown_refined(
             Type::String,
             crate::types::refinement::Refinement::not_null(),
         );
         assert!(eval_func("length", &[unk_ref]).unwrap().is_unknown());
-
-        // 19. coalesce() tests with nulls, empty strings, and unknowns
         assert_eq!(
             eval_func("coalesce", &[str_val(""), str_val("first")]).unwrap(),
             str_val("first")
@@ -2585,42 +2311,32 @@ mod tests {
                 .is_unknown()
         );
         assert!(eval_func("coalesce", &[str_val(""), Value::null(Type::String)]).is_err());
-
-        // 20. index() on maps/objects
         let sample_map = map_val(vec![("alpha", num_val("10")), ("beta", num_val("20"))]);
         let idx_alpha = eval_func("index", &[sample_map.clone(), str_val("alpha")]).unwrap();
         assert_eq!(idx_alpha, num_val("0"));
-
         let idx_beta = eval_func("index", &[sample_map.clone(), str_val("beta")]).unwrap();
         assert_eq!(idx_beta, num_val("1"));
-
         assert!(eval_func("index", &[sample_map, str_val("gamma")]).is_err());
         assert!(eval_func("index", &[num_val("1"), str_val("a")]).is_err());
     }
-
     #[test]
     fn test_set_functions_with_dynamic_type() {
         let mut set1 = BTreeSet::new();
         set1.insert(str_val("a"));
         let dyn_set1 = Value::new(Type::Dynamic, ValueData::Set(set1));
-
         let mut set2 = BTreeSet::new();
         set2.insert(str_val("b"));
         let dyn_set2 = Value::new(Type::Dynamic, ValueData::Set(set2));
-
         let si = eval_func("setintersection", &[dyn_set1.clone(), dyn_set2.clone()]).unwrap();
         assert_eq!(si.ty(), &Type::Set(Box::new(Type::Dynamic)));
-
         let ss = eval_func("setsubtract", &[dyn_set1.clone(), dyn_set2.clone()]).unwrap();
         assert_eq!(ss.ty(), &Type::Set(Box::new(Type::Dynamic)));
-
         let sym = eval_func(
             "setsymmetricdifference",
             &[dyn_set1.clone(), dyn_set2.clone()],
         )
         .unwrap();
         assert_eq!(sym.ty(), &Type::Set(Box::new(Type::Dynamic)));
-
         let sp = eval_func("setproduct", &[dyn_set1, dyn_set2]).unwrap();
         assert_eq!(
             sp.ty(),

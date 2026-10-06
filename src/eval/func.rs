@@ -1,19 +1,14 @@
 //! Function definitions, specifications, and signatures for HCL evaluation.
-
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::span::Span;
 use crate::types::{Type, Value};
 use std::sync::Arc;
-
 /// A native function implementation closure.
 pub type NativeFunc = Arc<dyn Fn(&[Value]) -> Result<Value, String> + Send + Sync>;
-
 /// Return type calculation closure for dynamic or static return types.
 pub type ReturnTypeCalc = Arc<dyn Fn(&[Type]) -> Result<Type, String> + Send + Sync>;
-
 /// Return type calculation closure based on evaluated input argument values.
 pub type ValueReturnTypeCalc = Arc<dyn Fn(&[Value]) -> Result<Type, String> + Send + Sync>;
-
 /// Specification for a function parameter.
 #[derive(Clone, PartialEq, Eq)]
 pub struct FunctionParamSpec {
@@ -30,7 +25,6 @@ pub struct FunctionParamSpec {
     /// Optional documentation description for this parameter.
     pub description: Option<String>,
 }
-
 impl std::fmt::Debug for FunctionParamSpec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FunctionParamSpec")
@@ -43,7 +37,6 @@ impl std::fmt::Debug for FunctionParamSpec {
             .finish()
     }
 }
-
 impl FunctionParamSpec {
     /// Creates a new parameter specification with default allowances.
     ///
@@ -61,7 +54,6 @@ impl FunctionParamSpec {
             description: None,
         }
     }
-
     /// Sets whether null values are allowed for this parameter.
     ///
     /// # Arguments
@@ -71,7 +63,6 @@ impl FunctionParamSpec {
         self.allow_null = allow;
         self
     }
-
     /// Sets whether unknown values are allowed for this parameter.
     ///
     /// # Arguments
@@ -81,7 +72,6 @@ impl FunctionParamSpec {
         self.allow_unknown = allow;
         self
     }
-
     /// Sets whether dynamic types are allowed for this parameter.
     ///
     /// # Arguments
@@ -91,7 +81,6 @@ impl FunctionParamSpec {
         self.allow_dynamic_type = allow;
         self
     }
-
     /// Sets a documentation description for this parameter.
     ///
     /// # Arguments
@@ -102,7 +91,6 @@ impl FunctionParamSpec {
         self
     }
 }
-
 /// Static signature and type-checking specification for a function.
 #[derive(Clone)]
 pub struct FunctionSignature {
@@ -119,7 +107,6 @@ pub struct FunctionSignature {
     /// Whether this function is pure and deterministic.
     pub is_deterministic: bool,
 }
-
 impl std::fmt::Debug for FunctionSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FunctionSignature")
@@ -130,7 +117,6 @@ impl std::fmt::Debug for FunctionSignature {
             .finish_non_exhaustive()
     }
 }
-
 impl FunctionSignature {
     /// Creates a new function signature with a dynamic return type calculation function.
     ///
@@ -148,7 +134,6 @@ impl FunctionSignature {
             is_deterministic: true,
         }
     }
-
     /// Creates a function signature with a constant/static return type.
     ///
     /// # Arguments
@@ -169,7 +154,6 @@ impl FunctionSignature {
             is_deterministic: true,
         }
     }
-
     /// Sets whether this function is pure and deterministic.
     ///
     /// # Arguments
@@ -179,7 +163,6 @@ impl FunctionSignature {
         self.is_deterministic = is_deterministic;
         self
     }
-
     /// Sets a value-dependent return type calculation function.
     ///
     /// # Arguments
@@ -189,7 +172,6 @@ impl FunctionSignature {
         self.value_return_type = Some(calc);
         self
     }
-
     /// Sets a variadic parameter specification.
     ///
     /// # Arguments
@@ -199,7 +181,6 @@ impl FunctionSignature {
         self.variadic_param = Some(variadic);
         self
     }
-
     /// Sets a documentation description for the signature.
     ///
     /// # Arguments
@@ -210,7 +191,6 @@ impl FunctionSignature {
         self
     }
 }
-
 /// Represents a function available in an HCL evaluation context.
 #[derive(Clone)]
 pub struct Function {
@@ -221,7 +201,6 @@ pub struct Function {
     /// Optional static signature specification.
     pub signature: Option<FunctionSignature>,
 }
-
 impl std::fmt::Debug for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Function")
@@ -230,7 +209,6 @@ impl std::fmt::Debug for Function {
             .finish_non_exhaustive()
     }
 }
-
 impl Function {
     /// Creates a new function without a signature.
     ///
@@ -245,7 +223,6 @@ impl Function {
             signature: None,
         }
     }
-
     /// Attaches a static signature specification to this function.
     ///
     /// # Arguments
@@ -255,23 +232,21 @@ impl Function {
         self.signature = Some(signature);
         self
     }
-
     /// Returns whether this function is pure and deterministic.
     ///
     /// Impure functions (like `uuid` or `timestamp`) cannot be folded during partial evaluation.
     #[must_use]
     pub fn is_deterministic(&self) -> bool {
-        if let Some(sig) = &self.signature
-            && !sig.is_deterministic
-        {
-            return false;
+        if let Some(sig) = &self.signature {
+            if !sig.is_deterministic {
+                return false;
+            }
         }
         !matches!(
             self.name.as_str(),
             "uuid" | "uuidv4" | "uuidv5" | "timestamp" | "plantimestamp" | "bcrypt"
         )
     }
-
     /// Performs ahead-of-time type checking and returns the inferred return type.
     ///
     /// # Arguments
@@ -283,10 +258,8 @@ impl Function {
         let Some(sig) = &self.signature else {
             return Ok(Type::Dynamic);
         };
-
         let mut diags = Diagnostics::new();
         let expected_fixed = sig.params.len();
-
         if let Some(variadic) = &sig.variadic_param {
             if arg_types.len() < expected_fixed {
                 diags.push(Diagnostic::error(
@@ -301,7 +274,6 @@ impl Function {
                 ));
                 return Err(diags);
             }
-
             for (idx, arg_ty) in arg_types.iter().enumerate() {
                 let spec = if idx < expected_fixed {
                     &sig.params[idx]
@@ -324,17 +296,14 @@ impl Function {
                 ));
                 return Err(diags);
             }
-
             for (idx, arg_ty) in arg_types.iter().enumerate() {
                 let spec = &sig.params[idx];
                 Self::check_param_type(&self.name, spec, arg_ty, &mut diags);
             }
         }
-
         if diags.has_errors() {
             return Err(diags);
         }
-
         match (sig.return_type)(arg_types) {
             Ok(ret_ty) => Ok(ret_ty),
             Err(e) => {
@@ -347,7 +316,6 @@ impl Function {
             }
         }
     }
-
     fn check_param_type(
         func_name: &str,
         spec: &FunctionParamSpec,
@@ -365,7 +333,6 @@ impl Function {
             ));
             return;
         }
-
         if spec.param_type != Type::Dynamic && !arg_ty.is_dynamic() && spec.param_type != *arg_ty {
             let can_coerce = matches!(
                 (&spec.param_type, arg_ty),
@@ -385,7 +352,6 @@ impl Function {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -395,10 +361,8 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::types::{Type, Value, ValueData};
-
     #[test]
     fn test_function_call() {
         let f = Function::new(
@@ -408,7 +372,6 @@ mod tests {
         let res = (f.func)(&[]);
         assert_eq!(res.unwrap(), Value::new(Type::Bool, ValueData::Bool(true)));
     }
-
     #[test]
     fn test_function_debug() {
         let f = Function::new(
@@ -420,7 +383,6 @@ mod tests {
         assert!(debug_str.contains("test_func"));
         assert!((f.func)(&[]).is_ok());
     }
-
     #[test]
     fn test_param_spec_and_signature_builders() {
         let p1 = FunctionParamSpec::new("name", Type::String)
@@ -434,7 +396,6 @@ mod tests {
         assert!(!p1.allow_unknown);
         assert!(!p1.allow_dynamic_type);
         assert_eq!(p1.description.as_deref(), Some("A name parameter"));
-
         let p_var = FunctionParamSpec::new("rest", Type::Number);
         let sig = FunctionSignature::with_static_return_type(vec![p1.clone()], Type::Bool)
             .with_variadic(p_var.clone())
@@ -450,45 +411,31 @@ mod tests {
         assert_eq!(p1, p1.clone());
         assert_ne!(p1, p_var);
     }
-
     #[test]
     fn test_function_type_check() {
         let p1 = FunctionParamSpec::new("str_arg", Type::String);
         let p2 = FunctionParamSpec::new("num_arg", Type::Number).with_allow_null(false);
         let sig = FunctionSignature::new(vec![p1, p2], Arc::new(|_| Ok(Type::Bool)));
-
         let func = Function::new("validate_types", Arc::new(|_| Ok(Value::null(Type::Bool))))
             .with_signature(sig);
         assert!((func.func)(&[]).is_ok());
-
-        // 1. Success check
         assert_eq!(
             func.type_check(&[Type::String, Type::Number]),
             Ok(Type::Bool)
         );
-
-        // 2. Coercion check (string coerced to number)
         assert_eq!(
             func.type_check(&[Type::String, Type::String]),
             Ok(Type::Bool)
         );
-
-        // 3. Arity error (too few)
         assert!(func.type_check(&[Type::String]).is_err());
-
-        // 4. Arity error (too many)
         assert!(
             func.type_check(&[Type::String, Type::Number, Type::Bool])
                 .is_err()
         );
-
-        // 5. Incompatible type error
         assert!(
             func.type_check(&[Type::String, Type::List(Box::new(Type::String))])
                 .is_err()
         );
-
-        // 6. Dynamic type rejected when allow_dynamic_type is false
         let p_no_dyn =
             FunctionParamSpec::new("strict_str", Type::String).with_allow_dynamic_type(false);
         let sig_no_dyn = FunctionSignature::with_static_return_type(vec![p_no_dyn], Type::Bool);
@@ -497,8 +444,6 @@ mod tests {
         assert!((func_no_dyn.func)(&[]).is_ok());
         assert!(func_no_dyn.type_check(&[Type::Dynamic]).is_err());
         assert_eq!(func_no_dyn.type_check(&[Type::String]), Ok(Type::Bool));
-
-        // Parameter with Type::Dynamic accepts any concrete type
         let p_dyn_param = FunctionParamSpec::new("any_val", Type::Dynamic);
         let sig_dyn_param =
             FunctionSignature::with_static_return_type(vec![p_dyn_param], Type::Bool);
@@ -506,14 +451,10 @@ mod tests {
             .with_signature(sig_dyn_param);
         assert!((func_dyn_param.func)(&[]).is_ok());
         assert_eq!(func_dyn_param.type_check(&[Type::Number]), Ok(Type::Bool));
-
-        // Argument with Type::Dynamic accepted when allow_dynamic_type is true
         assert_eq!(
             func.type_check(&[Type::String, Type::Dynamic]),
             Ok(Type::Bool)
         );
-
-        // 7. Return type calculation error
         let sig_err_ret = FunctionSignature::new(
             vec![FunctionParamSpec::new("a", Type::String)],
             Arc::new(|_| Err("custom return type calculation failure".to_string())),
@@ -522,13 +463,9 @@ mod tests {
             .with_signature(sig_err_ret);
         assert!((func_err_ret.func)(&[]).is_ok());
         assert!(func_err_ret.type_check(&[Type::String]).is_err());
-
-        // 8. No signature case returns Dynamic
         let func_nosig = Function::new("nosig", Arc::new(|_| Ok(Value::null(Type::Dynamic))));
         assert!((func_nosig.func)(&[]).is_ok());
         assert_eq!(func_nosig.type_check(&[]), Ok(Type::Dynamic));
-
-        // 9. Variadic function type check
         let var_sig = FunctionSignature::with_static_return_type(
             vec![FunctionParamSpec::new("first", Type::String)],
             Type::String,
@@ -537,7 +474,6 @@ mod tests {
         let var_func = Function::new("var_fn", Arc::new(|_| Ok(Value::null(Type::String))))
             .with_signature(var_sig);
         assert!((var_func.func)(&[]).is_ok());
-
         assert!(var_func.type_check(&[Type::String]).is_ok());
         assert!(
             var_func
@@ -547,13 +483,11 @@ mod tests {
         assert!(var_func.type_check(&[]).is_err());
         assert!(var_func.type_check(&[Type::String, Type::Bool]).is_err());
     }
-
     #[test]
     fn test_value_dependent_return_type() {
         use crate::ast::expr::{Expression, FuncCall};
         use crate::eval::context::Context;
         use crate::eval::evaluator::Evaluator;
-
         let vrt_fn = Arc::new(|args: &[Value]| {
             if args.is_empty() {
                 Ok(Type::Dynamic)
@@ -564,7 +498,6 @@ mod tests {
             }
         });
         assert_eq!(vrt_fn(&[]), Ok(Type::Dynamic));
-
         let sig = FunctionSignature::new(
             vec![
                 FunctionParamSpec::new("tag", Type::String),
@@ -573,18 +506,12 @@ mod tests {
             Arc::new(|_| Ok(Type::Dynamic)),
         )
         .with_value_return_type(vrt_fn);
-
         assert_eq!((sig.return_type)(&[]), Ok(Type::Dynamic));
-
         let func =
             Function::new("cast_by_tag", Arc::new(|args| Ok(args[1].clone()))).with_signature(sig);
-
         let mut ctx = Context::new();
         ctx.set_function("cast_by_tag", func);
-
         let span = Span::new(0, 0, 0, 0, 0, 0);
-
-        // 1. Tag "num" with string "100" -> returned value is coerced to Type::Number
         let expr1 = Expression::FuncCall(
             Box::new(FuncCall {
                 name: "cast_by_tag".into(),
@@ -599,8 +526,6 @@ mod tests {
         let val1 = Evaluator::new(&ctx).eval_expr(&expr1);
         assert_eq!(val1.ty(), &Type::Number);
         assert_eq!(val1.to_string(), "100");
-
-        // 2. Tag "str" with number 500 -> returned value has Type::String
         let expr2 = Expression::FuncCall(
             Box::new(FuncCall {
                 name: "cast_by_tag".into(),
@@ -616,7 +541,6 @@ mod tests {
         assert_eq!(val2.ty(), &Type::String);
         assert_eq!(val2.to_string(), "\"500\"");
     }
-
     #[test]
     fn test_function_deterministic() {
         let sig_impure = FunctionSignature::with_static_return_type(vec![], Type::String)
@@ -625,27 +549,22 @@ mod tests {
             .with_signature(sig_impure);
         assert!(!func_impure.is_deterministic());
         assert_eq!((func_impure.func)(&[]), Ok(Value::null(Type::String)));
-
         let func_uuid = Function::new("uuid", Arc::new(|_| Ok(Value::null(Type::String))));
         assert!(!func_uuid.is_deterministic());
         assert_eq!((func_uuid.func)(&[]), Ok(Value::null(Type::String)));
-
         let func_timestamp =
             Function::new("timestamp", Arc::new(|_| Ok(Value::null(Type::String))));
         assert!(!func_timestamp.is_deterministic());
         assert_eq!((func_timestamp.func)(&[]), Ok(Value::null(Type::String)));
-
         let func_bcrypt = Function::new("bcrypt", Arc::new(|_| Ok(Value::null(Type::String))));
         assert!(!func_bcrypt.is_deterministic());
         assert_eq!((func_bcrypt.func)(&[]), Ok(Value::null(Type::String)));
-
         let sig_pure = FunctionSignature::with_static_return_type(vec![], Type::String)
             .with_deterministic(true);
         let func_pure_sig = Function::new("my_pure", Arc::new(|_| Ok(Value::null(Type::String))))
             .with_signature(sig_pure);
         assert!(func_pure_sig.is_deterministic());
         assert!((func_pure_sig.func)(&[]).is_ok());
-
         let func_pure = Function::new("upper", Arc::new(|_| Ok(Value::null(Type::String))));
         assert!(func_pure.is_deterministic());
         assert_eq!((func_pure.func)(&[]), Ok(Value::null(Type::String)));

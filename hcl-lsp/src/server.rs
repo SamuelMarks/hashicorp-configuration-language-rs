@@ -1,7 +1,6 @@
 //! LSP server daemon and request dispatch engine.
 //!
 //! Implements document lifecycles, JSON-RPC routing, and diagnostics publishing over stdio and TCP.
-
 use crate::cache::DocumentCache;
 use crate::completion::completions_at_position;
 use crate::definition::{find_references, goto_definition};
@@ -20,7 +19,6 @@ use hashicorp_configuration_language_rs::ast::schema::BodySchema;
 use hashicorp_configuration_language_rs::diagnostic::json::DiagnosticJson;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpListener;
-
 /// The central LSP language server daemon.
 #[derive(Debug, Default)]
 pub struct LspServer {
@@ -33,14 +31,12 @@ pub struct LspServer {
     /// Whether the server has received a `shutdown` request.
     pub is_shutdown: bool,
 }
-
 impl LspServer {
     /// Creates a new `LspServer`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Configures the server with an optional declarative schema.
     ///
     /// # Arguments
@@ -53,7 +49,6 @@ impl LspServer {
         self.schema = Some(schema);
         self
     }
-
     /// Dispatches a JSON-RPC request message and generates the appropriate response.
     ///
     /// # Arguments
@@ -69,7 +64,6 @@ impl LspServer {
                 "Server is not initialized yet",
             );
         }
-
         if self.is_shutdown && req.method != "exit" {
             return Response::error(
                 Some(req.id),
@@ -77,7 +71,6 @@ impl LspServer {
                 "Server has shut down",
             );
         }
-
         match req.method.as_str() {
             "initialize" => self.handle_initialize(req.id, req.params),
             "shutdown" => {
@@ -102,7 +95,6 @@ impl LspServer {
             ),
         }
     }
-
     /// Handles a JSON-RPC notification message and optionally returns a notification to emit.
     ///
     /// # Arguments
@@ -152,15 +144,13 @@ impl LspServer {
             _ => None,
         }
     }
-
     /// Handles the `initialize` lifecycle request.
     fn handle_initialize(&mut self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let _init_params: Option<InitializeParams> =
             params.and_then(|p| serde_json::from_value(p).ok());
         self.is_initialized = true;
-
         let capabilities = ServerCapabilities {
-            text_document_sync: Some(2), // Incremental
+            text_document_sync: Some(2),
             document_symbol_provider: Some(true),
             hover_provider: Some(true),
             completion_provider: Some(crate::protocol::CompletionOptions {
@@ -175,14 +165,12 @@ impl LspServer {
             definition_provider: Some(true),
             references_provider: Some(true),
         };
-
         let result = InitializeResult { capabilities };
         Response::ok(
             id,
             serde_json::to_value(result).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Handles document outline symbol extraction requests.
     fn handle_document_symbol(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let Some(p) = params else {
@@ -192,14 +180,12 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-
         let symbols = document_symbols(doc);
         Response::ok(
             id,
             serde_json::to_value(symbols).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Handles hover documentation requests.
     fn handle_hover(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let Some(p) = params else {
@@ -209,18 +195,15 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-
         let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
         let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
         let pos = Position::new(line, char_offset);
-
         let hover = hover_at_position(doc, pos, self.schema.as_ref());
         Response::ok(
             id,
             serde_json::to_value(hover).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Handles code completion requests.
     fn handle_completion(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let Some(p) = params else {
@@ -230,18 +213,15 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-
         let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
         let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
         let pos = Position::new(line, char_offset);
-
         let completions = completions_at_position(doc, pos, self.schema.as_ref());
         Response::ok(
             id,
             serde_json::to_value(completions).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Handles full-document semantic tokens extraction requests.
     fn handle_semantic_tokens_full(
         &self,
@@ -255,14 +235,12 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-
         let tokens = semantic_tokens_full(doc);
         Response::ok(
             id,
             serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Handles range-scoped semantic tokens extraction requests.
     fn handle_semantic_tokens_range(
         &self,
@@ -276,21 +254,18 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-
         let range: Range = match serde_json::from_value(p["range"].clone()) {
             Ok(r) => r,
             Err(_) => {
                 return Response::error(Some(id), error_codes::INVALID_PARAMS, "Invalid range");
             }
         };
-
         let tokens = semantic_tokens_range(doc, range);
         Response::ok(
             id,
             serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Handles goto definition lookup requests.
     fn handle_definition(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let Some(p) = params else {
@@ -300,18 +275,15 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-
         let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
         let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
         let pos = Position::new(line, char_offset);
-
         let def = goto_definition(doc, pos, &self.cache);
         Response::ok(
             id,
             serde_json::to_value(def).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Handles find references lookup requests.
     fn handle_references(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let Some(p) = params else {
@@ -321,18 +293,15 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-
         let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
         let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
         let pos = Position::new(line, char_offset);
-
         let refs = find_references(doc, pos, &self.cache);
         Response::ok(
             id,
             serde_json::to_value(refs).unwrap_or(serde_json::Value::Null),
         )
     }
-
     /// Runs the message loop reading from a standard input stream and writing to output.
     ///
     /// # Arguments
@@ -344,7 +313,6 @@ impl LspServer {
     pub fn run_stream<R: Read, W: Write>(&mut self, input: R, output: W) -> Result<(), LspError> {
         let mut reader = BufReader::new(input);
         let mut writer = BufWriter::new(output);
-
         while let Some(msg_str) = Transport::read_message(&mut reader)? {
             if let Ok(req) = serde_json::from_str::<Request>(&msg_str) {
                 let resp = self.handle_request(req);
@@ -361,10 +329,8 @@ impl LspServer {
                 }
             }
         }
-
         Ok(())
     }
-
     /// Listens for a single TCP client connection on `addr` and runs the server loop.
     ///
     /// # Arguments
@@ -376,7 +342,6 @@ impl LspServer {
         let listener = TcpListener::bind(addr)?;
         self.run_tcp_listener(&listener)
     }
-
     /// Listens for a single TCP client connection on `listener` and runs the server loop.
     ///
     /// # Arguments
@@ -389,7 +354,6 @@ impl LspServer {
         self.run_stream(&stream, &stream)
     }
 }
-
 /// Creates a `textDocument/publishDiagnostics` notification for document diagnostics.
 fn create_publish_diagnostics_notification(
     uri: &str,
@@ -400,15 +364,9 @@ fn create_publish_diagnostics_notification(
         .iter()
         .map(|d| DiagnosticJson::from_diagnostic(d, source))
         .collect();
-
-    let params = serde_json::json!({
-        "uri": uri,
-        "diagnostics": diag_jsons,
-    });
-
+    let params = serde_json::json!({ "uri" : uri, "diagnostics" : diag_jsons, });
     Notification::new("textDocument/publishDiagnostics", Some(params))
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -418,15 +376,11 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use std::io::Cursor;
-
     #[test]
     fn test_server_initialize_and_document_lifecycle() {
         let mut server = LspServer::new();
-
-        // 1. Initialize
         let init_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(1),
@@ -436,39 +390,25 @@ mod tests {
         let init_resp = server.handle_request(init_req);
         assert!(init_resp.result.is_some());
         assert!(server.is_initialized);
-
-        // 2. Initialized notification
         let initialized_notif = Notification::new("initialized", None);
         assert!(server.handle_notification(initialized_notif).is_none());
-
-        // 3. didOpen
         let open_notif = Notification::new(
             "textDocument/didOpen",
-            Some(serde_json::json!({
-                "textDocument": {
-                    "uri": "file:///main.tf",
-                    "languageId": "hcl",
-                    "version": 1,
-                    "text": "name = \"test\"\n",
-                }
-            })),
+            Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///main.tf", "languageId" : "hcl",
+                "version" : 1, "text" : "name = \"test\"\n", } }
+            )),
         );
         let pub_diag = server.handle_notification(open_notif);
         assert!(pub_diag.is_some());
-
-        // 4. documentSymbol
         let sym_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(2),
             method: "textDocument/documentSymbol".to_string(),
-            params: Some(serde_json::json!({
-                "textDocument": { "uri": "file:///main.tf" }
-            })),
+            params: Some(serde_json::json!({ "textDocument" : { "uri" : "file:///main.tf" } })),
         };
         let sym_resp = server.handle_request(sym_req);
         assert!(sym_resp.result.is_some());
-
-        // 5. Shutdown
         let shut_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(3),
@@ -478,8 +418,6 @@ mod tests {
         let shut_resp = server.handle_request(shut_req);
         assert!(shut_resp.result.is_some());
         assert!(server.is_shutdown);
-
-        // 6. Exit request after shutdown
         let exit_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(4),
@@ -488,8 +426,6 @@ mod tests {
         };
         let exit_resp = server.handle_request(exit_req);
         assert!(exit_resp.error.is_some());
-
-        // 7. Request after shutdown fails
         let post_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(5),
@@ -499,12 +435,9 @@ mod tests {
         let post_resp = server.handle_request(post_req);
         assert!(post_resp.error.is_some());
     }
-
     #[test]
     fn test_server_all_requests_and_errors() {
         let mut server = LspServer::new().with_schema(BodySchema::new());
-
-        // Pre-initialization error
         let pre_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(1),
@@ -516,8 +449,6 @@ mod tests {
             pre_resp.error.as_ref().map(|e| e.code),
             Some(error_codes::SERVER_NOT_INITIALIZED)
         );
-
-        // Initialize
         let init_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(2),
@@ -525,21 +456,14 @@ mod tests {
             params: Some(serde_json::json!({})),
         };
         assert!(server.handle_request(init_req).result.is_some());
-
-        // Open a document
         let open_notif = Notification::new(
             "textDocument/didOpen",
-            Some(serde_json::json!({
-                "textDocument": {
-                    "uri": "file:///test.hcl",
-                    "languageId": "hcl",
-                    "version": 1,
-                    "text": "foo = 1\n",
-                }
-            })),
+            Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///test.hcl", "languageId" :
+                "hcl", "version" : 1, "text" : "foo = 1\n", } }
+            )),
         );
         assert!(server.handle_notification(open_notif).is_some());
-
         let methods = [
             "textDocument/documentSymbol",
             "textDocument/hover",
@@ -548,10 +472,8 @@ mod tests {
             "textDocument/definition",
             "textDocument/references",
         ];
-
         for (i, &method) in methods.iter().enumerate() {
             let id = RequestId::Number(10 + i as i64);
-            // 1. Missing params
             let req_no_params = Request {
                 jsonrpc: "2.0".to_string(),
                 id: id.clone(),
@@ -563,40 +485,33 @@ mod tests {
                 resp_no_params.error.as_ref().map(|e| e.code),
                 Some(error_codes::INVALID_PARAMS)
             );
-
-            // 2. Missing document
             let req_missing_doc = Request {
                 jsonrpc: "2.0".to_string(),
                 id: id.clone(),
                 method: method.to_string(),
-                params: Some(serde_json::json!({
-                    "textDocument": { "uri": "file:///nonexistent.hcl" },
-                    "position": { "line": 0, "character": 0 }
-                })),
+                params: Some(serde_json::json!(
+                    { "textDocument" : { "uri" : "file:///nonexistent.hcl" },
+                    "position" : { "line" : 0, "character" : 0 } }
+                )),
             };
             let resp_missing_doc = server.handle_request(req_missing_doc);
             assert_eq!(
                 resp_missing_doc.error.as_ref().map(|e| e.code),
                 Some(error_codes::INVALID_PARAMS)
             );
-
-            // 3. Valid document
             let req_valid = Request {
                 jsonrpc: "2.0".to_string(),
                 id,
                 method: method.to_string(),
-                params: Some(serde_json::json!({
-                    "textDocument": { "uri": "file:///test.hcl" },
-                    "position": { "line": 0, "character": 0 }
-                })),
+                params: Some(serde_json::json!(
+                    { "textDocument" : { "uri" : "file:///test.hcl" }, "position" : {
+                    "line" : 0, "character" : 0 } }
+                )),
             };
             let resp_valid = server.handle_request(req_valid);
             assert!(resp_valid.result.is_some());
         }
-
-        // semanticTokens/range special cases
         let range_method = "textDocument/semanticTokens/range";
-        // 1. Missing params
         let req_no_params = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(50),
@@ -611,15 +526,13 @@ mod tests {
                 .map(|e| e.code),
             Some(error_codes::INVALID_PARAMS)
         );
-
-        // 2. Missing doc
         let req_miss_doc = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(51),
             method: range_method.to_string(),
-            params: Some(serde_json::json!({
-                "textDocument": { "uri": "file:///nonexistent.hcl" }
-            })),
+            params: Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///nonexistent.hcl" } }
+            )),
         };
         assert_eq!(
             server
@@ -629,16 +542,14 @@ mod tests {
                 .map(|e| e.code),
             Some(error_codes::INVALID_PARAMS)
         );
-
-        // 3. Invalid range
         let req_bad_range = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(52),
             method: range_method.to_string(),
-            params: Some(serde_json::json!({
-                "textDocument": { "uri": "file:///test.hcl" },
-                "range": "invalid-range"
-            })),
+            params: Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///test.hcl" }, "range" :
+                "invalid-range" }
+            )),
         };
         assert_eq!(
             server
@@ -648,23 +559,17 @@ mod tests {
                 .map(|e| e.code),
             Some(error_codes::INVALID_PARAMS)
         );
-
-        // 4. Valid range
         let req_good_range = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(53),
             method: range_method.to_string(),
-            params: Some(serde_json::json!({
-                "textDocument": { "uri": "file:///test.hcl" },
-                "range": {
-                    "start": { "line": 0, "character": 0 },
-                    "end": { "line": 0, "character": 5 }
-                }
-            })),
+            params: Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///test.hcl" }, "range" : {
+                "start" : { "line" : 0, "character" : 0 }, "end" : { "line" : 0,
+                "character" : 5 } } }
+            )),
         };
         assert!(server.handle_request(req_good_range).result.is_some());
-
-        // Unknown method
         let req_unknown = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(60),
@@ -680,99 +585,66 @@ mod tests {
             Some(error_codes::METHOD_NOT_FOUND)
         );
     }
-
     #[test]
     fn test_server_notifications() {
         let mut server = LspServer::new();
-
-        // 0. didOpen, didChange, didClose with None params
         let none_open = Notification::new("textDocument/didOpen", None);
         assert!(server.handle_notification(none_open).is_none());
         let none_change = Notification::new("textDocument/didChange", None);
         assert!(server.handle_notification(none_change).is_none());
         let none_close = Notification::new("textDocument/didClose", None);
         assert!(server.handle_notification(none_close).is_none());
-
-        // 1. didOpen with invalid params
         let bad_open = Notification::new("textDocument/didOpen", Some(serde_json::json!("bad")));
         assert!(server.handle_notification(bad_open).is_none());
-
-        // 2. didChange with invalid params
         let bad_change =
             Notification::new("textDocument/didChange", Some(serde_json::json!("bad")));
         assert!(server.handle_notification(bad_change).is_none());
-
-        // 3. didChange on document not in cache
         let missing_doc_change = Notification::new(
             "textDocument/didChange",
-            Some(serde_json::json!({
-                "textDocument": { "uri": "file:///none.hcl", "version": 2 },
-                "contentChanges": [{ "text": "new text" }]
-            })),
+            Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///none.hcl", "version" : 2 },
+                "contentChanges" : [{ "text" : "new text" }] }
+            )),
         );
         assert!(server.handle_notification(missing_doc_change).is_none());
-
-        // 4. didOpen valid with diagnostic error to exercise diagnostic json mapping
         let err_open = Notification::new(
             "textDocument/didOpen",
-            Some(serde_json::json!({
-                "textDocument": {
-                    "uri": "file:///err.hcl",
-                    "languageId": "hcl",
-                    "version": 1,
-                    "text": "bad_syntax = \n",
-                }
-            })),
+            Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///err.hcl", "languageId" : "hcl",
+                "version" : 1, "text" : "bad_syntax = \n", } }
+            )),
         );
         assert!(server.handle_notification(err_open).is_some());
-
-        // 5. didOpen valid clean
         let good_open = Notification::new(
             "textDocument/didOpen",
-            Some(serde_json::json!({
-                "textDocument": {
-                    "uri": "file:///test.hcl",
-                    "languageId": "hcl",
-                    "version": 1,
-                    "text": "x = 1\n",
-                }
-            })),
+            Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///test.hcl", "languageId" :
+                "hcl", "version" : 1, "text" : "x = 1\n", } }
+            )),
         );
         assert!(server.handle_notification(good_open).is_some());
-
-        // 6. didChange valid
         let good_change = Notification::new(
             "textDocument/didChange",
-            Some(serde_json::json!({
-                "textDocument": { "uri": "file:///test.hcl", "version": 2 },
-                "contentChanges": [{ "text": "x = 2\n" }]
-            })),
+            Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///test.hcl", "version" : 2 },
+                "contentChanges" : [{ "text" : "x = 2\n" }] }
+            )),
         );
         assert!(server.handle_notification(good_change).is_some());
-
-        // 7. didClose with invalid params
         let bad_close = Notification::new("textDocument/didClose", Some(serde_json::json!("bad")));
         assert!(server.handle_notification(bad_close).is_none());
-
-        // 8. didClose valid
         let good_close = Notification::new(
             "textDocument/didClose",
-            Some(serde_json::json!({
-                "textDocument": { "uri": "file:///test.hcl" }
-            })),
+            Some(serde_json::json!({ "textDocument" : { "uri" : "file:///test.hcl" } })),
         );
         assert!(server.handle_notification(good_close).is_none());
         assert!(server.cache.get_document("file:///test.hcl").is_none());
-
-        // 9. Unknown notification
         let unknown_notif = Notification::new("unknown/notif", None);
         assert!(server.handle_notification(unknown_notif).is_none());
     }
-
     #[test]
     fn test_server_run_stream() {
         let mut server = LspServer::new();
-
         let mut input_buf = Vec::new();
         let _ = Transport::write_message(
             &mut input_buf,
@@ -791,14 +663,11 @@ mod tests {
             &mut input_buf,
             r#"{"jsonrpc":"2.0","method":"exit","params":null}"#,
         );
-
         let writer_success = MockStreamWriter::new(false);
         let mut output_writer = writer_success;
         let res = server.run_stream(Cursor::new(input_buf), &mut output_writer);
         assert!(res.is_ok());
         assert!(!output_writer.buf.is_empty(), "expected non-empty output");
-
-        // Stream that ends with clean EOF (no exit notification)
         let mut eof_buf = Vec::new();
         let _ = Transport::write_message(
             &mut eof_buf,
@@ -810,8 +679,6 @@ mod tests {
                 .run_stream(Cursor::new(eof_buf), &mut eof_writer)
                 .is_ok()
         );
-
-        // 1. Read message error in run_stream (corrupted header)
         let bad_header_stream = Cursor::new(b"Content-Length: not_a_num\r\n\r\n{}" as &[u8])
             .get_ref()
             .to_vec();
@@ -821,8 +688,6 @@ mod tests {
                 .run_stream(Cursor::new(bad_header_stream), &mut bad_writer)
                 .is_err()
         );
-
-        // 2. Writer error on request response
         let mut req_buf = Vec::new();
         let _ = Transport::write_message(
             &mut req_buf,
@@ -834,8 +699,6 @@ mod tests {
                 .run_stream(Cursor::new(req_buf), &mut fail_req_writer)
                 .is_err()
         );
-
-        // 3. Writer error on notification (e.g. diagnostics on didOpen)
         let mut notif_buf = Vec::new();
         let _ = Transport::write_message(
             &mut notif_buf,
@@ -850,13 +713,11 @@ mod tests {
         assert!(MockStreamWriter::new(true).flush().is_err());
         assert!(MockStreamWriter::new(false).flush().is_ok());
     }
-
     /// Mock writer that can selectively succeed or fail on writes to test all stream paths.
     struct MockStreamWriter {
         fail_writes: bool,
         buf: Vec<u8>,
     }
-
     impl MockStreamWriter {
         fn new(fail_writes: bool) -> Self {
             Self {
@@ -865,7 +726,6 @@ mod tests {
             }
         }
     }
-
     impl Write for MockStreamWriter {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             if self.fail_writes {
@@ -875,7 +735,6 @@ mod tests {
                 Ok(buf.len())
             }
         }
-
         fn flush(&mut self) -> std::io::Result<()> {
             if self.fail_writes {
                 Err(std::io::Error::other("mock flush failure"))
@@ -884,22 +743,17 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn test_server_run_tcp_lifecycle() {
         let mut server = LspServer::new();
-
-        // Non-blocking listener accept failure
         let nb_listener = TcpListener::bind("127.0.0.1:0").unwrap();
         nb_listener.set_nonblocking(true).unwrap();
         assert!(server.run_tcp_listener(&nb_listener).is_err());
-
         for target in ["invalid-address:99999", "127.0.0.1:0"] {
             match TcpListener::bind(target) {
                 Ok(listener) => {
                     let port = listener.local_addr().map_or(0, |a| a.port());
                     drop(listener);
-
                     let addr = format!("127.0.0.1:{port}");
                     let thread_addr = addr.clone();
                     let client_handle = std::thread::spawn(move || {
@@ -912,7 +766,6 @@ mod tests {
                             }
                         }
                     });
-
                     assert!(server.run_tcp(&addr).is_ok());
                     let _ = client_handle.join();
                 }

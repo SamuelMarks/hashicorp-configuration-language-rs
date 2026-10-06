@@ -3,13 +3,11 @@
 //! Provides utilities for merging top-level [`Body`] instances, multiple named files,
 //! or entire directories of HCL files into a unified AST body while preserving source spans,
 //! enforcing deterministic load orders, and checking for attribute/singleton collisions.
-
 use crate::ast::structure::Body;
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::span::Span;
 use std::collections::HashMap;
 use std::path::Path;
-
 /// Assigns an evaluation priority tier to standard HCL block types.
 ///
 /// Priority 1: Core/Root configuration (`packer`, `terraform`)
@@ -36,7 +34,6 @@ pub fn block_priority(block_type: &str) -> u32 {
         _ => 8,
     }
 }
-
 /// Configuration options for merging multiple AST bodies and files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeOptions {
@@ -47,7 +44,6 @@ pub struct MergeOptions {
     /// Whether to reorder blocks by [`block_priority`].
     pub enforce_priority: bool,
 }
-
 impl Default for MergeOptions {
     fn default() -> Self {
         Self {
@@ -57,14 +53,12 @@ impl Default for MergeOptions {
         }
     }
 }
-
 impl MergeOptions {
     /// Creates a new `MergeOptions` with default settings.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Creates unconstrained `MergeOptions` with no singletons and priority sorting disabled.
     #[must_use]
     pub fn unconstrained() -> Self {
@@ -74,7 +68,6 @@ impl MergeOptions {
             enforce_priority: false,
         }
     }
-
     /// Sets the file extensions to match when scanning directories.
     ///
     /// # Arguments
@@ -88,7 +81,6 @@ impl MergeOptions {
         self.extensions = extensions.into_iter().map(Into::into).collect();
         self
     }
-
     /// Sets the singleton block types that cannot appear multiple times.
     ///
     /// # Arguments
@@ -102,7 +94,6 @@ impl MergeOptions {
         self.singleton_blocks = singletons.into_iter().map(Into::into).collect();
         self
     }
-
     /// Configures whether block priority ordering should be enforced.
     ///
     /// # Arguments
@@ -113,7 +104,6 @@ impl MergeOptions {
         self
     }
 }
-
 /// Merges multiple `Body` structs into a single unified `Body` using default options.
 ///
 /// The order of the `bodies` slice determines the load order.
@@ -128,7 +118,6 @@ impl MergeOptions {
 pub fn merge_bodies(bodies: Vec<Body>) -> Result<Body, Diagnostics> {
     merge_bodies_with_options(bodies, &MergeOptions::unconstrained())
 }
-
 /// Merges multiple `Body` structs into a single unified `Body` with custom [`MergeOptions`].
 ///
 /// Returns an error if an attribute is defined multiple times or if any singleton
@@ -147,10 +136,8 @@ pub fn merge_bodies_with_options(
     let mut merged = Body::new(Span::new(0, 0, 0, 0, 0, 0));
     let mut diagnostics = Diagnostics::new();
     let mut seen_singletons: HashMap<String, Span> = HashMap::new();
-
     for body in bodies {
         merged.span = merged.span.merge(&body.span);
-
         for (name, attr) in body.attributes {
             if let Some(existing) = merged.attributes.get(&name) {
                 let mut diag = Diagnostic::error(
@@ -164,7 +151,6 @@ pub fn merge_bodies_with_options(
                 merged.attributes.insert(name, attr);
             }
         }
-
         for block in body.blocks {
             if options.singleton_blocks.contains(&block.block_type) {
                 if let Some(existing_span) = seen_singletons.get(&block.block_type) {
@@ -189,25 +175,21 @@ pub fn merge_bodies_with_options(
                 merged.blocks.push(block);
             }
         }
-
         merged.functions.extend(body.functions);
         merged.dynamic_blocks.extend(body.dynamic_blocks);
         merged.validations.extend(body.validations);
         merged.preconditions.extend(body.preconditions);
         merged.postconditions.extend(body.postconditions);
     }
-
     if options.enforce_priority {
         merged.blocks.sort_by_key(|b| block_priority(&b.block_type));
     }
-
     if diagnostics.has_errors() {
         Err(diagnostics)
     } else {
         Ok(merged)
     }
 }
-
 /// Parses and merges multiple named configuration files into a single unified [`Body`].
 ///
 /// Each tuple in `files` contains `(filename, content)`.
@@ -222,7 +204,6 @@ pub fn merge_bodies_with_options(
 pub fn merge_files(files: &[(&str, &str)]) -> Result<Body, Diagnostics> {
     let mut parser = crate::parse::file_manager::FileManager::new();
     let mut diags = Diagnostics::new();
-
     for (filename, content) in files {
         if let Err(d) = parser.parse_hcl_string(filename, content) {
             for diag in d.errors() {
@@ -230,14 +211,11 @@ pub fn merge_files(files: &[(&str, &str)]) -> Result<Body, Diagnostics> {
             }
         }
     }
-
     if diags.has_errors() {
         return Err(diags);
     }
-
     parser.merge_all()
 }
-
 /// Discovers and merges all matching configuration files within a directory using default options.
 ///
 /// Files matching any of `extensions` are parsed in lexicographical filename order
@@ -253,7 +231,6 @@ pub fn merge_directory<P: AsRef<Path>>(path: P, extensions: &[&str]) -> Result<B
     let opts = MergeOptions::default().with_extensions(extensions.iter().copied());
     merge_directory_with_options(path, &opts)
 }
-
 /// Discovers and merges all matching configuration files within a directory using custom [`MergeOptions`].
 ///
 /// # Arguments
@@ -268,7 +245,6 @@ pub fn merge_directory_with_options<P: AsRef<Path>>(
 ) -> Result<Body, Diagnostics> {
     merge_directory_with_options_impl(path.as_ref(), options)
 }
-
 /// Internal non-generic implementation of directory merge operating on a borrowed path.
 fn merge_directory_with_options_impl(
     dir_path: &Path,
@@ -289,37 +265,30 @@ fn merge_directory_with_options_impl(
             return Err(diags);
         }
     };
-
     let mut file_paths = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_file() {
             continue;
         }
-
         let file_name = entry.file_name();
         let name_str = file_name.to_string_lossy();
         if name_str.starts_with('.') {
             continue;
         }
-
         let matches_ext = options.extensions.is_empty()
             || options.extensions.iter().any(|ext| {
                 let clean_ext = ext.trim_start_matches('.');
                 name_str.ends_with(ext.as_str())
                     || (!ext.starts_with('.') && name_str.ends_with(&format!(".{clean_ext}")))
             });
-
         if matches_ext {
             file_paths.push(entry.path());
         }
     }
-
     file_paths.sort();
-
     let mut bodies = Vec::with_capacity(file_paths.len());
     let mut diags = Diagnostics::new();
-
     for file_path in file_paths {
         let display_name = file_path.to_string_lossy().to_string();
         let content = match std::fs::read_to_string(&file_path) {
@@ -336,7 +305,6 @@ fn merge_directory_with_options_impl(
                 continue;
             }
         };
-
         let file_arc = Some(std::sync::Arc::from(display_name.as_str()));
         let mut parser = crate::parse::parser::Parser::new_with_file(&content, file_arc);
         let body = parser.parse_body();
@@ -348,14 +316,11 @@ fn merge_directory_with_options_impl(
             bodies.push(body);
         }
     }
-
     if diags.has_errors() {
         return Err(diags);
     }
-
     merge_bodies_with_options(bodies, options)
 }
-
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -365,15 +330,12 @@ mod tests {
         clippy::pedantic,
         clippy::nursery
     )]
-
     use super::*;
     use crate::ast::expr::Expression;
     use crate::ast::structure::{Attribute, Block};
-
     fn empty_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
-
     #[test]
     fn test_merge_bodies_success() {
         let mut b1 = Body::new(empty_span());
@@ -389,7 +351,6 @@ mod tests {
                 trailing_comment: None,
             },
         );
-
         let mut b2 = Body::new(empty_span());
         b2.attributes.insert(
             "bar".to_string(),
@@ -415,14 +376,12 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         });
-
         let merged = merge_bodies(vec![b1, b2]).unwrap();
         assert_eq!(merged.attributes.len(), 2);
         assert_eq!(merged.blocks.len(), 1);
         assert!(merged.attributes.contains_key("foo"));
         assert!(merged.attributes.contains_key("bar"));
     }
-
     #[test]
     fn test_merge_bodies_duplicate_attribute() {
         let mut b1 = Body::new(empty_span());
@@ -438,7 +397,6 @@ mod tests {
                 trailing_comment: None,
             },
         );
-
         let mut b2 = Body::new(empty_span());
         b2.attributes.insert(
             "foo".to_string(),
@@ -452,7 +410,6 @@ mod tests {
                 trailing_comment: None,
             },
         );
-
         let errs = merge_bodies(vec![b1, b2]).err().unwrap();
         assert_eq!(errs.errors().len(), 1);
         assert!(
@@ -462,11 +419,9 @@ mod tests {
                 .contains("defined multiple times")
         );
     }
-
     #[test]
     fn test_merge_bodies_validations_and_assertions() {
         use crate::ast::structure::{PostconditionBlock, PreconditionBlock, ValidationBlock};
-
         let mut b1 = Body::new(empty_span());
         b1.validations.push(ValidationBlock::new(
             Expression::Null(empty_span()),
@@ -478,20 +433,17 @@ mod tests {
             Expression::Null(empty_span()),
             empty_span(),
         ));
-
         let mut b2 = Body::new(empty_span());
         b2.postconditions.push(PostconditionBlock::new(
             Expression::Null(empty_span()),
             Expression::Null(empty_span()),
             empty_span(),
         ));
-
         let merged = merge_bodies(vec![b1, b2]).unwrap();
         assert_eq!(merged.validations.len(), 1);
         assert_eq!(merged.preconditions.len(), 1);
         assert_eq!(merged.postconditions.len(), 1);
     }
-
     #[test]
     fn test_merge_files_success_and_errors() {
         let f1 = (
@@ -499,19 +451,13 @@ mod tests {
             "attr1 = \"val1\"\nservice \"web\" {\n  port = 80\n}\n",
         );
         let f2 = ("b.hcl", "attr2 = 42\nservice \"api\" {\n  port = 8080\n}\n");
-
         let merged = merge_files(&[f1, f2]).unwrap();
         assert_eq!(merged.attributes.len(), 2);
         assert_eq!(merged.blocks.len(), 2);
-
-        // Check that spans retained original file identifiers
         let attr1 = merged.attributes.get("attr1").unwrap();
         assert_eq!(attr1.span.file.as_deref(), Some("a.hcl"));
-
         let attr2 = merged.attributes.get("attr2").unwrap();
         assert_eq!(attr2.span.file.as_deref(), Some("b.hcl"));
-
-        // Conflict across files
         let f_conflict1 = (
             "conf1.hcl",
             "x = 1
@@ -530,8 +476,6 @@ mod tests {
             diag.context.as_ref().and_then(|c| c.file.as_deref()),
             Some("conf1.hcl")
         );
-
-        // Parse error in one of the files
         let f_bad = (
             "bad.hcl",
             "invalid = =
@@ -540,7 +484,6 @@ mod tests {
         let bad_errs = merge_files(&[f1, f_bad]).err().unwrap();
         assert!(bad_errs.has_errors());
     }
-
     #[test]
     fn test_block_priority_ordering() {
         assert_eq!(block_priority("packer"), 1);
@@ -556,24 +499,20 @@ mod tests {
         assert_eq!(block_priority("provisioner"), 7);
         assert_eq!(block_priority("custom"), 8);
     }
-
     #[test]
     fn test_merge_options_builder() {
         let opts = MergeOptions::new()
             .with_extensions(["hcl", "pkr.hcl"])
             .with_singleton_blocks(["packer", "custom_singleton"])
             .with_enforce_priority(true);
-
         assert_eq!(opts.extensions, vec!["hcl", "pkr.hcl"]);
         assert_eq!(opts.singleton_blocks, vec!["packer", "custom_singleton"]);
         assert!(opts.enforce_priority);
-
         let unconstrained = MergeOptions::unconstrained();
         assert_eq!(unconstrained.extensions, Vec::<String>::new());
         assert_eq!(unconstrained.singleton_blocks, Vec::<String>::new());
         assert!(!unconstrained.enforce_priority);
     }
-
     #[test]
     fn test_merge_bodies_with_options_singletons_and_priority() {
         let make_block = |b_type: &str| Block {
@@ -588,33 +527,24 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         };
-
         let mut b1 = Body::new(empty_span());
         b1.blocks.push(make_block("build"));
         b1.blocks.push(make_block("packer"));
-
         let mut b2 = Body::new(empty_span());
         b2.blocks.push(make_block("variable"));
         b2.blocks.push(make_block("locals"));
-
         let opts = MergeOptions::default();
         let merged = merge_bodies_with_options(vec![b1, b2], &opts).unwrap();
-
-        // Priority ordering: packer (1), variable (2), locals (3), build (7)
         let types: Vec<&str> = merged
             .blocks
             .iter()
             .map(|b| b.block_type.as_str())
             .collect();
         assert_eq!(types, vec!["packer", "variable", "locals", "build"]);
-
-        // Test singleton collision
         let mut b3 = Body::new(empty_span());
         b3.blocks.push(make_block("packer"));
-
         let mut b4 = Body::new(empty_span());
         b4.blocks.push(make_block("packer"));
-
         let err = merge_bodies_with_options(vec![b3, b4], &opts)
             .err()
             .unwrap();
@@ -626,52 +556,34 @@ mod tests {
                 .contains("Singleton block 'packer'")
         );
     }
-
     #[test]
     fn test_merge_directory_success_and_errors() {
         let dir_path = std::env::temp_dir().join(format!("test_merge_dir_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir_path);
         std::fs::create_dir_all(&dir_path).unwrap();
-
-        // Create a subdirectory to test non-file filtering
         let sub_dir = dir_path.join("sub_dir");
         std::fs::create_dir(&sub_dir).unwrap();
-
-        // Write files
         let f1 = dir_path.join("pkr-variables.pkr.hcl");
         std::fs::write(&f1, "variable \"foo\" {\n  default = \"bar\"\n}\n").unwrap();
-
         let f2 = dir_path.join("pkr-builder.pkr.hcl");
         std::fs::write(&f2, "build {\n  sources = [\"source.qemu.vm\"]\n}\n").unwrap();
-
         let f3 = dir_path.join("ignored.txt");
         std::fs::write(&f3, "attr_txt = 1\n").unwrap();
-
         let hidden = dir_path.join(".hidden.hcl");
         std::fs::write(&hidden, "should be ignored").unwrap();
-
         let merged = merge_directory(&dir_path, &["pkr.hcl"]).unwrap();
         assert_eq!(merged.blocks.len(), 2);
-        // "variable" (priority 2) before "build" (priority 7)
         assert_eq!(merged.blocks[0].block_type, "variable");
         assert_eq!(merged.blocks[1].block_type, "build");
         assert!(merged.blocks[0].span.file.is_some());
-
-        // Test with leading dot extension
         let merged_dot = merge_directory(&dir_path, &[".pkr.hcl"]).unwrap();
         assert_eq!(merged_dot.blocks.len(), 2);
-
-        // Test with empty extensions (includes f3)
         let merged_all = merge_directory(&dir_path, &[]).unwrap();
         assert_eq!(merged_all.blocks.len(), 2);
         assert!(merged_all.attributes.contains_key("attr_txt"));
-
-        // Test non-existent directory error
         let bad_path = dir_path.join("nonexistent_sub_dir");
         let err_dir = merge_directory(bad_path, &["hcl"]).err().unwrap();
         assert!(err_dir.has_errors());
-
-        // Test read error on unreadable file (unix only)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -683,13 +595,10 @@ mod tests {
             std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
             let _ = std::fs::remove_file(&unreadable);
         }
-
-        // Test syntax error in directory file
         let bad_file = dir_path.join("bad.pkr.hcl");
         std::fs::write(&bad_file, "invalid = = syntax").unwrap();
         let err_parse = merge_directory(&dir_path, &["pkr.hcl"]).err().unwrap();
         assert!(err_parse.has_errors());
-
         let _ = std::fs::remove_dir_all(&dir_path);
     }
 }

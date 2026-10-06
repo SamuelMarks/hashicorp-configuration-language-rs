@@ -3,7 +3,6 @@
 //! Evaluates expressions partially when some variables or functions are known,
 //! while preserving unknowns, dynamic traversals, and missing variables for runtime.
 //! Performs constant folding, operator reduction, and branch pruning.
-
 use crate::ast::expr::{
     BinaryOp, Conditional, Expression, ForExpr, FuncCall, TemplatePart, Traversal,
     TraversalOperator, UnaryOp,
@@ -17,7 +16,6 @@ use crate::eval::evaluator::Evaluator;
 use crate::span::Span;
 use crate::types::{Value, ValueData};
 use std::collections::HashMap;
-
 /// Converts an evaluated [`Value`] into an equivalent AST [`Expression`].
 ///
 /// # Arguments
@@ -73,7 +71,6 @@ pub fn value_to_expression(val: &Value, span: Span) -> Expression {
         }
     }
 }
-
 /// Checks whether an expression represents a known static literal value.
 #[must_use]
 fn is_literal(expr: &Expression) -> bool {
@@ -85,7 +82,6 @@ fn is_literal(expr: &Expression) -> bool {
             | Expression::String(_, _)
     )
 }
-
 /// Partially evaluates an [`Expression`], constant-folding operations where inputs are known.
 ///
 /// # Arguments
@@ -124,7 +120,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
         Expression::Bool(b, span) => Ok(Expression::Bool(*b, span.clone())),
         Expression::Number(n, span) => Ok(Expression::Number(n.clone(), span.clone())),
         Expression::String(s, span) => Ok(Expression::String(s.clone(), span.clone())),
-
         Expression::Parentheses(inner, span) => {
             let folded = partial_eval(inner, ctx)?;
             if is_literal(&folded) {
@@ -133,16 +128,14 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 Ok(Expression::Parentheses(Box::new(folded), span.clone()))
             }
         }
-
         Expression::Variable(name, span) => {
-            if let Some(val) = ctx.get_variable(name)
-                && !val.is_unknown()
-            {
-                return Ok(value_to_expression(val, span.clone()));
+            if let Some(val) = ctx.get_variable(name) {
+                if !val.is_unknown() {
+                    return Ok(value_to_expression(val, span.clone()));
+                }
             }
             Ok(Expression::Variable(name.clone(), span.clone()))
         }
-
         Expression::UnaryOp(op, inner, span) => {
             let folded_inner = partial_eval(inner, ctx)?;
             match (op, &folded_inner) {
@@ -157,7 +150,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 )),
             }
         }
-
         Expression::BinaryOp(op, left, right, span) => {
             let folded_left = partial_eval(left, ctx)?;
             if *op == BinaryOp::And {
@@ -175,19 +167,20 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                     return partial_eval(right, ctx);
                 }
             }
-
             let folded_right = partial_eval(right, ctx)?;
-            if *op == BinaryOp::And
-                && let Expression::Bool(true, _) = folded_right
-            {
-                return Ok(folded_left);
-            } else if *op == BinaryOp::Or
-                && let Expression::Bool(false, _) = folded_right
-            {
-                return Ok(folded_left);
+            if *op == BinaryOp::And {
+                if let Expression::Bool(true, _) = folded_right {
+                    return Ok(folded_left);
+                } else if *op == BinaryOp::Or {
+                    if let Expression::Bool(false, _) = folded_right {
+                        return Ok(folded_left);
+                    }
+                }
+            } else if *op == BinaryOp::Or {
+                if let Expression::Bool(false, _) = folded_right {
+                    return Ok(folded_left);
+                }
             }
-
-            // Constant folding for numbers
             if let (Expression::Number(n1, _), Expression::Number(n2, _)) =
                 (&folded_left, &folded_right)
             {
@@ -246,28 +239,28 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                     _ => {}
                 }
             }
-
-            // Constant folding for boolean / string equality
             if let (Expression::Bool(b1, _), Expression::Bool(b2, _)) =
                 (&folded_left, &folded_right)
             {
                 match op {
                     BinaryOp::Eq => return Ok(Expression::Bool(b1 == b2, span.clone())),
-                    BinaryOp::NotEq => return Ok(Expression::Bool(b1 != b2, span.clone())),
+                    BinaryOp::NotEq => {
+                        return Ok(Expression::Bool(b1 != b2, span.clone()));
+                    }
                     _ => {}
                 }
             }
-
             if let (Expression::String(s1, _), Expression::String(s2, _)) =
                 (&folded_left, &folded_right)
             {
                 match op {
                     BinaryOp::Eq => return Ok(Expression::Bool(s1 == s2, span.clone())),
-                    BinaryOp::NotEq => return Ok(Expression::Bool(s1 != s2, span.clone())),
+                    BinaryOp::NotEq => {
+                        return Ok(Expression::Bool(s1 != s2, span.clone()));
+                    }
                     _ => {}
                 }
             }
-
             Ok(Expression::BinaryOp(
                 *op,
                 Box::new(folded_left),
@@ -275,7 +268,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 span.clone(),
             ))
         }
-
         Expression::Conditional(cond, span) => {
             let folded_cond = partial_eval(&cond.cond_expr, ctx)?;
             match folded_cond {
@@ -299,7 +291,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 }
             }
         }
-
         Expression::Tuple(elements, span) => {
             let mut folded_elements = Vec::with_capacity(elements.len());
             for elem in elements {
@@ -307,7 +298,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
             }
             Ok(Expression::Tuple(folded_elements, span.clone()))
         }
-
         Expression::Object(elements, span) => {
             let mut folded_elements = Vec::with_capacity(elements.len());
             for (k, v) in elements {
@@ -317,12 +307,10 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
             }
             Ok(Expression::Object(folded_elements, span.clone()))
         }
-
         Expression::Template(parts, span) => {
             let mut folded_parts = Vec::with_capacity(parts.len());
             let mut combined = String::new();
             let mut all_literals = true;
-
             for part in parts {
                 match part {
                     TemplatePart::Literal(s, part_span) => {
@@ -346,27 +334,23 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                     }
                 }
             }
-
             if all_literals {
                 Ok(Expression::String(combined, span.clone()))
             } else {
                 Ok(Expression::Template(folded_parts, span.clone()))
             }
         }
-
         Expression::Traversal(trav, span) => {
-            // Check if traversal base is a variable defined in context
-            if let Expression::Variable(ref root_name, _) = *trav.expr
-                && ctx.get_variable(root_name).is_some()
-            {
-                let eval_res = Evaluator::new(ctx).evaluate(expr);
-                if let Ok((val, _)) = eval_res
-                    && !val.is_unknown()
-                {
-                    return Ok(value_to_expression(&val, span.clone()));
+            if let Expression::Variable(ref root_name, _) = *trav.expr {
+                if ctx.get_variable(root_name).is_some() {
+                    let eval_res = Evaluator::new(ctx).evaluate(expr);
+                    if let Ok((val, _)) = eval_res {
+                        if !val.is_unknown() {
+                            return Ok(value_to_expression(&val, span.clone()));
+                        }
+                    }
                 }
             }
-
             let folded_base = partial_eval(&trav.expr, ctx)?;
             let mut folded_ops = Vec::with_capacity(trav.operators.len());
             for op in &trav.operators {
@@ -378,7 +362,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                     _ => folded_ops.push(op.clone()),
                 }
             }
-
             Ok(Expression::Traversal(
                 Box::new(Traversal {
                     expr: Box::new(folded_base),
@@ -387,11 +370,9 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 span.clone(),
             ))
         }
-
         Expression::FuncCall(fc, span) => {
             let mut folded_args = Vec::with_capacity(fc.args.len());
             let mut all_args_literal = true;
-
             for arg in &fc.args {
                 let folded_arg = partial_eval(arg, ctx)?;
                 if !is_literal(&folded_arg) {
@@ -399,29 +380,24 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 }
                 folded_args.push(folded_arg);
             }
-
-            // Check if function is registered, deterministic, and all args are literals
-            if let Some(func) = ctx.get_namespaced_func(&fc.name)
-                && func.is_deterministic()
-                && all_args_literal
-                && !fc.expand_final
-            {
-                let synthetic_call = Expression::FuncCall(
-                    Box::new(FuncCall {
-                        name: fc.name.clone(),
-                        args: folded_args.clone(),
-                        expand_final: false,
-                    }),
-                    span.clone(),
-                );
-                let eval_res = Evaluator::new(ctx).evaluate(&synthetic_call);
-                if let Ok((val, _)) = eval_res
-                    && !val.is_unknown()
-                {
-                    return Ok(value_to_expression(&val, span.clone()));
+            if let Some(func) = ctx.get_namespaced_func(&fc.name) {
+                if func.is_deterministic() && all_args_literal && !fc.expand_final {
+                    let synthetic_call = Expression::FuncCall(
+                        Box::new(FuncCall {
+                            name: fc.name.clone(),
+                            args: folded_args.clone(),
+                            expand_final: false,
+                        }),
+                        span.clone(),
+                    );
+                    let eval_res = Evaluator::new(ctx).evaluate(&synthetic_call);
+                    if let Ok((val, _)) = eval_res {
+                        if !val.is_unknown() {
+                            return Ok(value_to_expression(&val, span.clone()));
+                        }
+                    }
                 }
             }
-
             Ok(Expression::FuncCall(
                 Box::new(FuncCall {
                     name: fc.name.clone(),
@@ -431,7 +407,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 span.clone(),
             ))
         }
-
         Expression::ForExpr(for_expr, span) => {
             let folded_coll = partial_eval(&for_expr.collection, ctx)?;
             let folded_val = partial_eval(&for_expr.val_expr, ctx)?;
@@ -445,8 +420,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
             } else {
                 None
             };
-
-            // If collection is completely folded and no unknown variables exist
             let synthetic_for = Expression::ForExpr(
                 Box::new(ForExpr {
                     key_var: for_expr.key_var.clone(),
@@ -460,12 +433,11 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
                 span.clone(),
             );
             let eval_res = Evaluator::new(ctx).evaluate(&synthetic_for);
-            if let Ok((val, _)) = eval_res
-                && !val.is_unknown()
-            {
-                return Ok(value_to_expression(&val, span.clone()));
+            if let Ok((val, _)) = eval_res {
+                if !val.is_unknown() {
+                    return Ok(value_to_expression(&val, span.clone()));
+                }
             }
-
             Ok(Expression::ForExpr(
                 Box::new(ForExpr {
                     key_var: for_expr.key_var.clone(),
@@ -481,7 +453,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
         }
     }
 }
-
 /// Partially evaluates an entire AST [`Body`], simplifying all attribute expressions and inner blocks.
 ///
 /// # Arguments
@@ -520,7 +491,6 @@ pub fn partial_eval_body(body: &Body, ctx: &Context) -> Result<Body, Diagnostics
             },
         );
     }
-
     let mut new_blocks = Vec::with_capacity(body.blocks.len());
     for block in &body.blocks {
         let folded_inner_body = partial_eval_body(&block.body, ctx)?;
@@ -537,7 +507,6 @@ pub fn partial_eval_body(body: &Body, ctx: &Context) -> Result<Body, Diagnostics
             trailing_comment: block.trailing_comment.clone(),
         });
     }
-
     let mut new_dyn_blocks = Vec::with_capacity(body.dynamic_blocks.len());
     for dyn_b in &body.dynamic_blocks {
         let folded_for_each = partial_eval(&dyn_b.for_each, ctx)?;
@@ -552,7 +521,6 @@ pub fn partial_eval_body(body: &Body, ctx: &Context) -> Result<Body, Diagnostics
             type_span: dyn_b.type_span.clone(),
         });
     }
-
     let mut new_validations = Vec::with_capacity(body.validations.len());
     for v in &body.validations {
         let folded_cond = partial_eval(&v.condition, ctx)?;
@@ -563,7 +531,6 @@ pub fn partial_eval_body(body: &Body, ctx: &Context) -> Result<Body, Diagnostics
             span: v.span.clone(),
         });
     }
-
     let mut new_preconditions = Vec::with_capacity(body.preconditions.len());
     for p in &body.preconditions {
         let folded_cond = partial_eval(&p.condition, ctx)?;
@@ -574,7 +541,6 @@ pub fn partial_eval_body(body: &Body, ctx: &Context) -> Result<Body, Diagnostics
             span: p.span.clone(),
         });
     }
-
     let mut new_postconditions = Vec::with_capacity(body.postconditions.len());
     for p in &body.postconditions {
         let folded_cond = partial_eval(&p.condition, ctx)?;
@@ -585,7 +551,6 @@ pub fn partial_eval_body(body: &Body, ctx: &Context) -> Result<Body, Diagnostics
             span: p.span.clone(),
         });
     }
-
     Ok(Body {
         attributes: new_attributes,
         blocks: new_blocks,

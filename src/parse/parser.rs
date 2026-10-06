@@ -10,7 +10,6 @@ use crate::lex::token::{Token, TokenKind};
 use crate::parse::type_expr::TypeExprParser;
 use crate::span::Span;
 use std::collections::HashMap;
-
 /// Strips the common leading whitespace prefix from non-empty lines in an indented heredoc.
 ///
 /// # Arguments
@@ -22,10 +21,7 @@ pub fn strip_heredoc_indentation(content: &str) -> Result<String, HclError> {
     if content.is_empty() {
         return Ok(String::new());
     }
-
     let raw_lines: Vec<&str> = content.split('\n').collect();
-
-    // Check for mixed tabs and spaces in individual lines
     for line in &raw_lines {
         let clean = line.strip_suffix('\r').unwrap_or(line);
         let leading_ws: String = clean
@@ -39,12 +35,9 @@ pub fn strip_heredoc_indentation(content: &str) -> Result<String, HclError> {
             ));
         }
     }
-
-    // Identify non-empty lines and check cross-line consistency
     let mut non_empty_prefixes: Vec<&str> = Vec::new();
     let mut has_space_indent = false;
     let mut has_tab_indent = false;
-
     for line in &raw_lines {
         let clean = line.strip_suffix('\r').unwrap_or(line);
         if clean.trim().is_empty() {
@@ -63,14 +56,11 @@ pub fn strip_heredoc_indentation(content: &str) -> Result<String, HclError> {
         }
         non_empty_prefixes.push(ws_prefix);
     }
-
     if has_space_indent && has_tab_indent {
         return Err(HclError::Heredoc(
             "Indented heredoc uses mixed tabs and spaces across lines for indentation".to_string(),
         ));
     }
-
-    // Find common prefix among all non-empty lines
     let common_prefix = if non_empty_prefixes.is_empty() {
         ""
     } else {
@@ -89,7 +79,6 @@ pub fn strip_heredoc_indentation(content: &str) -> Result<String, HclError> {
         }
         &first[..max_len]
     };
-
     let mut result_lines = Vec::with_capacity(raw_lines.len());
     for line in raw_lines {
         let has_cr = line.ends_with('\r');
@@ -98,24 +87,19 @@ pub fn strip_heredoc_indentation(content: &str) -> Result<String, HclError> {
         } else {
             line
         };
-
         let stripped = if clean.trim().is_empty() {
-            // Empty or whitespace-only lines: strip up to common_prefix, or leave blank if shorter
             clean.strip_prefix(common_prefix).unwrap_or("")
         } else {
             clean.strip_prefix(common_prefix).unwrap_or(clean)
         };
-
         if has_cr {
             result_lines.push(format!("{stripped}\r"));
         } else {
             result_lines.push(stripped.to_string());
         }
     }
-
     Ok(result_lines.join("\n"))
 }
-
 /// The HCL Parser.
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -127,14 +111,12 @@ pub struct Parser<'a> {
     last_line: usize,
     paren_depth: usize,
 }
-
 impl<'a> Parser<'a> {
     /// Create a new Parser for the given input string.
     #[must_use]
     pub fn new(input: &'a str) -> Self {
         Self::new_with_file(input, None)
     }
-
     /// Create a new Parser for the given input string with an optional source file origin.
     ///
     /// # Arguments
@@ -172,13 +154,11 @@ impl<'a> Parser<'a> {
             paren_depth: 0,
         }
     }
-
     /// Return the current diagnostics.
     #[must_use]
     pub fn errors(&self) -> &Diagnostics {
         &self.diags
     }
-
     fn advance_lexer(
         lexer: &mut Lexer<'a>,
         diags: &mut Diagnostics,
@@ -209,13 +189,19 @@ impl<'a> Parser<'a> {
                 }
                 Some(Err(err)) => {
                     #[rustfmt::skip]
-                    diags.push(Diagnostic::error( "Lexical Error".to_string(), format!("Unrecognized token '{}'", err.text), err.span, ));
+                    diags
+                        .push(
+                            Diagnostic::error(
+                                "Lexical Error".to_string(),
+                                format!("Unrecognized token '{}'", err.text),
+                                err.span,
+                            ),
+                        );
                 }
                 None => return None,
             }
         }
     }
-
     /// Advance the parser, returning the consumed token.
     fn advance(&mut self) -> Option<Token> {
         let current = self.current.take();
@@ -229,28 +215,23 @@ impl<'a> Parser<'a> {
         );
         current
     }
-
     /// Advances the parser and returns the consumed token, falling back to an empty token if at EOF.
     fn advance_token(&mut self) -> Token {
         self.advance()
             .unwrap_or_else(|| Token::new(TokenKind::Ident, String::new(), Span::default()))
     }
-
     /// Returns the span of the current token, or `fallback` if at EOF.
     fn current_span_or(&self, fallback: Span) -> Span {
         self.current.as_ref().map_or(fallback, |t| t.span.clone())
     }
-
     /// Check the current token's kind without advancing.
     fn peek_kind(&self) -> Option<TokenKind> {
         self.current.as_ref().map(|t| t.kind.clone())
     }
-
     /// Parse a top-level Body.
     pub fn parse_body(&mut self) -> Body {
         self.parse_body_inner(None)
     }
-
     fn parse_body_inner(&mut self, end_token: Option<&TokenKind>) -> Body {
         let mut attributes: HashMap<String, Attribute> = HashMap::new();
         let mut blocks = Vec::new();
@@ -261,33 +242,34 @@ impl<'a> Parser<'a> {
         let mut postconditions = Vec::new();
         let mut first_span: Option<Span> = None;
         let mut last_span: Option<Span> = None;
-
         loop {
-            // Skip leading newlines.
             while self.peek_kind() == Some(TokenKind::Newline) {
                 self.advance();
             }
-
             if self.peek_kind().as_ref() == end_token {
                 break;
             }
-
-            // A body item must start with an identifier.
             let Some(ident_tok) = self.advance() else {
                 break;
             };
             if ident_tok.kind != TokenKind::Ident {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Argument or block definition required".to_string(), "An argument or block definition is required here.".to_string(), ident_tok.span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Argument or block definition required".to_string(),
+                            "An argument or block definition is required here."
+                                .to_string(),
+                            ident_tok.span,
+                        ),
+                    );
                 self.recover_after_body_item();
                 continue;
             }
-
             if first_span.is_none() {
                 first_span = Some(ident_tok.span.clone());
             }
             last_span = Some(ident_tok.span.clone());
-
             if ident_tok.text == "function" {
                 if let Some(func_block) = self.finish_parsing_function(&ident_tok) {
                     last_span = Some(func_block.span.clone());
@@ -296,7 +278,6 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
-
             if ident_tok.text == "dynamic" && self.peek_kind() != Some(TokenKind::Assign) {
                 if let Some(dyn_block) = self.finish_parsing_dynamic_block(&ident_tok) {
                     last_span = Some(dyn_block.span.clone());
@@ -305,7 +286,6 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
-
             if ident_tok.text == "validation" && self.peek_kind() == Some(TokenKind::OBrace) {
                 if let Some(val_block) = self.finish_parsing_validation(&ident_tok) {
                     last_span = Some(val_block.span.clone());
@@ -314,7 +294,6 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
-
             if ident_tok.text == "precondition" && self.peek_kind() == Some(TokenKind::OBrace) {
                 if let Some(pre_block) = self.finish_parsing_precondition(&ident_tok) {
                     last_span = Some(pre_block.span.clone());
@@ -323,7 +302,6 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
-
             if ident_tok.text == "postcondition" && self.peek_kind() == Some(TokenKind::OBrace) {
                 if let Some(post_block) = self.finish_parsing_postcondition(&ident_tok) {
                     last_span = Some(post_block.span.clone());
@@ -332,7 +310,6 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
-
             let item_leading_comments = std::mem::take(&mut self.leading_comments);
             let next = self.peek_kind();
             match next {
@@ -343,7 +320,18 @@ impl<'a> Parser<'a> {
                         last_span = Some(attr.span.clone());
                         if let Some(existing) = attributes.get(&attr.name) {
                             #[rustfmt::skip]
-                            self.diags.push(Diagnostic::error( "Attribute redefined".to_string(), format!( "The argument {:?} was already set at line {}, col {}. Each argument may be set only once.", attr.name, existing.name_span.start_line, existing.name_span.start_col ), attr.name_span, ));
+                            self.diags
+                                .push(
+                                    Diagnostic::error(
+                                        "Attribute redefined".to_string(),
+                                        format!(
+                                            "The argument {:?} was already set at line {}, col {}. Each argument may be set only once.",
+                                            attr.name, existing.name_span.start_line, existing.name_span
+                                            .start_col
+                                        ),
+                                        attr.name_span,
+                                    ),
+                                );
                         } else {
                             attributes.insert(attr.name.clone(), attr);
                         }
@@ -358,17 +346,23 @@ impl<'a> Parser<'a> {
                 }
                 _ => {
                     #[rustfmt::skip]
-                    self.diags.push(Diagnostic::error( "Argument or block definition required".to_string(), "An argument or block definition is required here. To set an argument, use the equals sign \"=\" to introduce the argument value.".to_string(), ident_tok.span, ));
+                    self.diags
+                        .push(
+                            Diagnostic::error(
+                                "Argument or block definition required".to_string(),
+                                "An argument or block definition is required here. To set an argument, use the equals sign \"=\" to introduce the argument value."
+                                    .to_string(),
+                                ident_tok.span,
+                            ),
+                        );
                     self.recover_after_body_item();
                 }
             }
         }
-
         let mut span = Span::new(0, 0, 0, 0, 0, 0);
         if let (Some(first), Some(last)) = (first_span, last_span) {
             span = first.merge(&last);
         }
-
         Body {
             attributes,
             blocks,
@@ -380,58 +374,70 @@ impl<'a> Parser<'a> {
             span,
         }
     }
-
     fn finish_parsing_attribute(
         &mut self,
         ident: Token,
         leading_comments: Vec<String>,
     ) -> Option<Attribute> {
-        let assign_tok = self.advance_token(); // We know it's Assign
-
+        let assign_tok = self.advance_token();
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let Some(expr) = self.parse_expression() else {
             if !self.diags.has_errors() {
                 let bad_span = self.current_span_or(assign_tok.span);
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error(
-                    "Expected expression".to_string(),
-                    "An expression was expected after '='.".to_string(),
-                    bad_span,
-                ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Expected expression".to_string(),
+                            "An expression was expected after '='.".to_string(),
+                            bad_span,
+                        ),
+                    );
             }
             self.recover_after_body_item();
             return None;
         };
-
         let end_span = expr.span();
         let trailing_comment = self.trailing_comment.take();
-
-        // Must end with a newline, closing brace, or EOF.
         let next = self.peek_kind();
         match next {
             Some(TokenKind::Newline) | None => {
                 if next.is_some() {
-                    self.advance(); // eat newline
+                    self.advance();
                 }
             }
             Some(TokenKind::CBrace) => {}
             Some(TokenKind::Comma) => {
                 let bad = self.advance_token();
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Unexpected comma after argument".to_string(), "Argument definitions must be separated by newlines, not commas. An argument definition must end with a newline.".to_string(), bad.span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Unexpected comma after argument".to_string(),
+                            "Argument definitions must be separated by newlines, not commas. An argument definition must end with a newline."
+                                .to_string(),
+                            bad.span,
+                        ),
+                    );
                 self.recover_after_body_item();
             }
             Some(_) => {
                 let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Missing newline after argument".to_string(), "An argument definition must end with a newline.".to_string(), bad_span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Missing newline after argument".to_string(),
+                            "An argument definition must end with a newline."
+                                .to_string(),
+                            bad_span,
+                        ),
+                    );
                 self.recover_after_body_item();
             }
         }
-
         Some(Attribute {
             name: ident.text,
             expr,
@@ -442,141 +448,148 @@ impl<'a> Parser<'a> {
             trailing_comment,
         })
     }
-
     fn finish_parsing_function(&mut self, ident: &Token) -> Option<FunctionBlock> {
-        // Syntax: function "name" { params(a, b type) ... return_type = type ... result = expr }
-        // Wait, standard HCL function syntax is:
-        // function "name" {
-        //   params = [a, b]
-        //   result = a + b
-        // }
-        // Wait, what is the exact syntax for user-defined functions in HCL?
-        // Ah, looking at the @TODO_PLAN.md: `function "name" { ... }`.
-        // Let's implement it as a block and then extract the `params`, `result`, `return_type` attributes.
-        // Wait, `finish_parsing_function` shouldn't be a separate block if we just parse it as a block?
-        // But the prompt says "Allow the parser to recognize `function "name" { ... }` block definitions."
-        // We can parse it as a block and then convert it, or parse it directly.
-        // Let's parse it similarly to a block, but we require a string label for the name.
         let name_tok = match self.advance() {
             Some(t) if t.kind == TokenKind::String => t,
             Some(bad) => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Invalid function definition".to_string(), "A function definition requires a quoted string name.".to_string(), bad.span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Invalid function definition".to_string(),
+                            "A function definition requires a quoted string name."
+                                .to_string(),
+                            bad.span,
+                        ),
+                    );
                 self.recover_after_body_item();
                 return None;
             }
             None => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Unexpected EOF".to_string(), "Expected function name.".to_string(), ident.span.clone(), ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Unexpected EOF".to_string(),
+                            "Expected function name.".to_string(),
+                            ident.span.clone(),
+                        ),
+                    );
                 return None;
             }
         };
-
-        // Name is quoted, strip quotes
         let name = name_tok.text.trim_matches('"').to_string();
-
         let _open_brace = match self.advance() {
             Some(t) if t.kind == TokenKind::OBrace => t,
             Some(bad) => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Invalid function definition".to_string(), "Expected opening brace `{` after function name.".to_string(), bad.span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Invalid function definition".to_string(),
+                            "Expected opening brace `{` after function name."
+                                .to_string(),
+                            bad.span,
+                        ),
+                    );
                 self.recover_after_body_item();
                 return None;
             }
             None => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Unexpected EOF".to_string(), "Expected opening brace `{` after function name.".to_string(), ident.span.clone(), ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Unexpected EOF".to_string(),
+                            "Expected opening brace `{` after function name."
+                                .to_string(),
+                            ident.span.clone(),
+                        ),
+                    );
                 return None;
             }
         };
-
         let body = self.parse_body_inner(Some(&TokenKind::CBrace));
-
         let close_brace_span = if let Some(t) = self.advance() {
             t.span
         } else {
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error( "Unexpected EOF".to_string(), "Expected closing brace `}` for function.".to_string(), ident.span.clone(), ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Unexpected EOF".to_string(),
+                        "Expected closing brace `}` for function.".to_string(),
+                        ident.span.clone(),
+                    ),
+                );
             return None;
         };
-
         let next = self.peek_kind();
         match next {
             Some(TokenKind::Newline) | None => {
                 if next.is_some() {
-                    self.advance(); // eat newline
+                    self.advance();
                 }
             }
             Some(TokenKind::CBrace) => {}
             _ => {
                 let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Missing newline after function definition".to_string(), "A function definition must end with a newline.".to_string(), bad_span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Missing newline after function definition".to_string(),
+                            "A function definition must end with a newline.".to_string(),
+                            bad_span,
+                        ),
+                    );
                 self.recover_after_body_item();
             }
         }
-
-        // Now extract params and result from the body
         let mut params = Vec::new();
-        // Wait, how are params defined? In Packer/Terraform, it's typically `params = [ ... ]`
-        // We will just use `params` as a list of strings/variables?
-        // Let's check `FunctionParam` struct. It has `name: String`, `type_expr: Option<TypeExpr>`.
-        // Terraform 1.8 provider functions:
-        // function "name" {
-        //   params = [
-        //     // wait, how to type them?
-        //   ]
-        // }
-        // Wait, since we are designing the AST and parser:
-        // Let's look at standard `params = [a, b]` (list of identifiers or strings?).
-        // Actually, Packer functions:
-        // function "foo" {
-        //   params = [a, b]
-        //   result = a + b
-        // }
-        // Let's extract `params` from attributes
-        if let Some(p_attr) = body.attributes.get("params")
-            && let Expression::Tuple(elements, _) = &p_attr.expr
-        {
-            for el in elements {
-                if let Expression::Variable(var_name, span) = el {
-                    params.push(FunctionParam {
-                        name: var_name.clone(),
-                        type_expr: None,
-                        span: span.clone(),
-                    });
-                } else if let Expression::String(str_val, span) = el {
-                    params.push(FunctionParam {
-                        name: str_val.clone(),
-                        type_expr: None,
-                        span: span.clone(),
-                    });
-                } else {
-                    // ignore or error?
+        if let Some(p_attr) = body.attributes.get("params") {
+            if let Expression::Tuple(elements, _) = &p_attr.expr {
+                for el in elements {
+                    if let Expression::Variable(var_name, span) = el {
+                        params.push(FunctionParam {
+                            name: var_name.clone(),
+                            type_expr: None,
+                            span: span.clone(),
+                        });
+                    } else if let Expression::String(str_val, span) = el {
+                        params.push(FunctionParam {
+                            name: str_val.clone(),
+                            type_expr: None,
+                            span: span.clone(),
+                        });
+                    }
                 }
             }
         }
-
         let result_expr = if let Some(r_attr) = body.attributes.get("result") {
             r_attr.expr.clone()
         } else {
-            // Error, missing result
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error( "Missing result".to_string(), "A function definition must have a `result = ...` attribute.".to_string(), close_brace_span.clone(), ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Missing result".to_string(),
+                        "A function definition must have a `result = ...` attribute."
+                            .to_string(),
+                        close_brace_span.clone(),
+                    ),
+                );
             return None;
         };
-
-        // Note: We could parse `return_type` attribute if it exists
         let mut return_type = None;
-        if let Some(rt_attr) = body.attributes.get("return_type")
-            && let Expression::Variable(ty_name, _) = &rt_attr.expr
-        {
-            let mut p = TypeExprParser::new(ty_name);
-            if let Ok(te) = p.parse() {
-                return_type = Some(te);
+        if let Some(rt_attr) = body.attributes.get("return_type") {
+            if let Expression::Variable(ty_name, _) = &rt_attr.expr {
+                let mut p = TypeExprParser::new(ty_name);
+                if let Ok(te) = p.parse() {
+                    return_type = Some(te);
+                }
             }
         }
-
         let mut variadic_param = None;
         if let Some(vp_attr) = body.attributes.get("variadic_param") {
             match &vp_attr.expr {
@@ -597,7 +610,6 @@ impl<'a> Parser<'a> {
                 _ => {}
             }
         }
-
         for block in &body.blocks {
             if block.block_type == "variadic_param" {
                 let var_name = if let Some(n_attr) = block.body.attributes.get("name") {
@@ -610,7 +622,6 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-
                 let type_expr = if let Some(t_attr) = block.body.attributes.get("type") {
                     if let Expression::Variable(s, _) | Expression::String(s, _) = &t_attr.expr {
                         TypeExprParser::new(s).parse().ok()
@@ -620,7 +631,6 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-
                 if let Some(name) = var_name {
                     variadic_param = Some(FunctionParam {
                         name,
@@ -630,15 +640,12 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-
         let span = ident.span.merge(&close_brace_span);
-
         Some(
             FunctionBlock::new(name, params, return_type, result_expr, span)
                 .with_variadic_param(variadic_param),
         )
     }
-
     fn finish_parsing_dynamic_block(&mut self, ident: &Token) -> Option<DynamicBlock> {
         let (block_type, type_span) = match self.advance() {
             Some(t) if t.kind == TokenKind::String => {
@@ -648,79 +655,92 @@ impl<'a> Parser<'a> {
             Some(t) if t.kind == TokenKind::Ident => (t.text.clone(), t.span),
             Some(bad) => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error(
-                    "Invalid dynamic block definition".to_string(),
-                    "A dynamic block definition requires a label specifying the block type to generate.".to_string(),
-                    bad.span,
-                ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Invalid dynamic block definition".to_string(),
+                            "A dynamic block definition requires a label specifying the block type to generate."
+                                .to_string(),
+                            bad.span,
+                        ),
+                    );
                 self.recover_after_body_item();
                 return None;
             }
             None => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error(
-                    "Unexpected EOF".to_string(),
-                    "Expected dynamic block type label.".to_string(),
-                    ident.span.clone(),
-                ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Unexpected EOF".to_string(),
+                            "Expected dynamic block type label.".to_string(),
+                            ident.span.clone(),
+                        ),
+                    );
                 return None;
             }
         };
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let open_brace = match self.advance() {
             Some(t) if t.kind == TokenKind::OBrace => t,
             Some(bad) => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error(
-                    "Block opening brace expected".to_string(),
-                    "Expected '{' after dynamic block type label.".to_string(),
-                    bad.span,
-                ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Block opening brace expected".to_string(),
+                            "Expected '{' after dynamic block type label.".to_string(),
+                            bad.span,
+                        ),
+                    );
                 self.recover_after_body_item();
                 return None;
             }
             None => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error(
-                    "Unexpected EOF".to_string(),
-                    "Expected '{' to start dynamic block body.".to_string(),
-                    type_span.clone(),
-                ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Unexpected EOF".to_string(),
+                            "Expected '{' to start dynamic block body.".to_string(),
+                            type_span.clone(),
+                        ),
+                    );
                 return None;
             }
         };
-
         let inner_body = self.parse_body_inner(Some(&TokenKind::CBrace));
-
         let close_brace_span = if let Some(t) = self.advance() {
             t.span
         } else {
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error(
-                "Unclosed block".to_string(),
-                "Expected '}' to close dynamic block body.".to_string(),
-                open_brace.span.clone(),
-            ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Unclosed block".to_string(),
+                        "Expected '}' to close dynamic block body.".to_string(),
+                        open_brace.span.clone(),
+                    ),
+                );
             open_brace.span
         };
-
         let span = ident.span.merge(&close_brace_span);
-
         let Some(for_each_attr) = inner_body.attributes.get("for_each") else {
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error(
-                "Missing required argument".to_string(),
-                "A dynamic block must contain a 'for_each' argument.".to_string(),
-                span,
-            ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Missing required argument".to_string(),
+                        "A dynamic block must contain a 'for_each' argument."
+                            .to_string(),
+                        span,
+                    ),
+                );
             return None;
         };
         let for_each = for_each_attr.expr.clone();
-
         let iterator = inner_body.attributes.get("iterator").and_then(|attr| {
             if let Expression::Variable(name, _) = &attr.expr {
                 Some(name.clone())
@@ -733,7 +753,6 @@ impl<'a> Parser<'a> {
                 None
             }
         });
-
         let labels = inner_body.attributes.get("labels").and_then(|attr| {
             if let Expression::Tuple(elems, _) = &attr.expr {
                 Some(elems.clone())
@@ -746,7 +765,6 @@ impl<'a> Parser<'a> {
                 None
             }
         });
-
         let Some(content_block) = inner_body.blocks.iter().find(|b| b.block_type == "content")
         else {
             self.diags.push(Diagnostic::error(
@@ -756,9 +774,7 @@ impl<'a> Parser<'a> {
             ));
             return None;
         };
-
         let content_body = content_block.body.clone();
-
         Some(DynamicBlock::new(
             block_type,
             for_each,
@@ -769,75 +785,77 @@ impl<'a> Parser<'a> {
             type_span,
         ))
     }
-
     fn finish_parsing_assertion_block(
         &mut self,
         ident: &Token,
         block_type: &str,
     ) -> Option<(Expression, Expression, Span)> {
         let open_brace = self.advance_token();
-
         let inner_body = self.parse_body_inner(Some(&TokenKind::CBrace));
-
         let close_brace_span = if let Some(t) = self.advance() {
             t.span
         } else {
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error(
-                "Unclosed block".to_string(),
-                format!("Expected '}}' to close {block_type} block body."),
-                open_brace.span.clone(),
-            ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Unclosed block".to_string(),
+                        format!("Expected '}}' to close {block_type} block body."),
+                        open_brace.span.clone(),
+                    ),
+                );
             open_brace.span
         };
-
         let span = ident.span.merge(&close_brace_span);
-
         let Some(condition_attr) = inner_body.attributes.get("condition") else {
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error(
-                "Missing required argument".to_string(),
-                format!("A {block_type} block must contain a 'condition' argument."),
-                span,
-            ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Missing required argument".to_string(),
+                        format!(
+                            "A {block_type} block must contain a 'condition' argument."
+                        ),
+                        span,
+                    ),
+                );
             return None;
         };
-
         let Some(error_msg_attr) = inner_body.attributes.get("error_message") else {
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error(
-                "Missing required argument".to_string(),
-                format!("A {block_type} block must contain an 'error_message' argument."),
-                span,
-            ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Missing required argument".to_string(),
+                        format!(
+                            "A {block_type} block must contain an 'error_message' argument."
+                        ),
+                        span,
+                    ),
+                );
             return None;
         };
-
         Some((
             condition_attr.expr.clone(),
             error_msg_attr.expr.clone(),
             span,
         ))
     }
-
     fn finish_parsing_validation(&mut self, ident: &Token) -> Option<ValidationBlock> {
         let (condition, error_message, span) =
             self.finish_parsing_assertion_block(ident, "validation")?;
         Some(ValidationBlock::new(condition, error_message, span))
     }
-
     fn finish_parsing_precondition(&mut self, ident: &Token) -> Option<PreconditionBlock> {
         let (condition, error_message, span) =
             self.finish_parsing_assertion_block(ident, "precondition")?;
         Some(PreconditionBlock::new(condition, error_message, span))
     }
-
     fn finish_parsing_postcondition(&mut self, ident: &Token) -> Option<PostconditionBlock> {
         let (condition, error_message, span) =
             self.finish_parsing_assertion_block(ident, "postcondition")?;
         Some(PostconditionBlock::new(condition, error_message, span))
     }
-
     fn finish_parsing_block(
         &mut self,
         ident: Token,
@@ -845,7 +863,6 @@ impl<'a> Parser<'a> {
     ) -> Option<Block> {
         let mut labels = Vec::new();
         let mut label_spans = Vec::new();
-
         let open_brace = loop {
             match self.peek_kind() {
                 Some(TokenKind::OBrace) => {
@@ -875,14 +892,30 @@ impl<'a> Parser<'a> {
                 Some(TokenKind::Assign) => {
                     let bad = self.advance_token();
                     #[rustfmt::skip]
-                    self.diags.push(Diagnostic::error( "Invalid block definition".to_string(), "The equals sign \"=\" indicates an argument definition, and must not be used when defining a block.".to_string(), bad.span, ));
+                    self.diags
+                        .push(
+                            Diagnostic::error(
+                                "Invalid block definition".to_string(),
+                                "The equals sign \"=\" indicates an argument definition, and must not be used when defining a block."
+                                    .to_string(),
+                                bad.span,
+                            ),
+                        );
                     self.recover_after_body_item();
                     return None;
                 }
                 Some(TokenKind::Newline) => {
                     let bad = self.advance_token();
                     #[rustfmt::skip]
-                    self.diags.push(Diagnostic::error( "Invalid block definition".to_string(), "A block definition must have block content delimited by \"{\" and \"}\", starting on the same line as the block header.".to_string(), bad.span, ));
+                    self.diags
+                        .push(
+                            Diagnostic::error(
+                                "Invalid block definition".to_string(),
+                                "A block definition must have block content delimited by \"{\" and \"}\", starting on the same line as the block header."
+                                    .to_string(),
+                                bad.span,
+                            ),
+                        );
                     self.recover_after_body_item();
                     return None;
                 }
@@ -892,44 +925,60 @@ impl<'a> Parser<'a> {
                         None => ident.span.clone(),
                     };
                     #[rustfmt::skip]
-                    self.diags.push(Diagnostic::error( "Invalid block definition".to_string(), "Either a quoted string block label or an opening brace (\"{\") is expected here.".to_string(), span, ));
+                    self.diags
+                        .push(
+                            Diagnostic::error(
+                                "Invalid block definition".to_string(),
+                                "Either a quoted string block label or an opening brace (\"{\") is expected here."
+                                    .to_string(),
+                                span,
+                            ),
+                        );
                     self.recover_after_body_item();
                     return None;
                 }
             }
         };
-
         let body = self.parse_body_inner(Some(&TokenKind::CBrace));
-
-        // Expect CBrace
         let close_brace_span = if let Some(cbrace) = self.advance() {
             cbrace.span
         } else {
             let span = open_brace.span.clone();
             #[rustfmt::skip]
-            self.diags.push(Diagnostic::error( "Unclosed configuration block".to_string(), "There is no closing brace for this block before the end of the file.".to_string(), span.clone(), ));
+            self.diags
+                .push(
+                    Diagnostic::error(
+                        "Unclosed configuration block".to_string(),
+                        "There is no closing brace for this block before the end of the file."
+                            .to_string(),
+                        span.clone(),
+                    ),
+                );
             span
         };
-
         let trailing_comment = self.trailing_comment.take();
-
-        // Must end with a newline, closing brace, or EOF.
         let next = self.peek_kind();
         match next {
             Some(TokenKind::Newline) | None => {
                 if next.is_some() {
-                    self.advance(); // eat newline
+                    self.advance();
                 }
             }
             Some(TokenKind::CBrace) => {}
             _ => {
                 let bad_span = self.current_span_or(ident.span.clone());
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Missing newline after block definition".to_string(), "A block definition must end with a newline.".to_string(), bad_span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Missing newline after block definition".to_string(),
+                            "A block definition must end with a newline.".to_string(),
+                            bad_span,
+                        ),
+                    );
                 self.recover_after_body_item();
             }
         }
-
         Some(Block {
             block_type: ident.text,
             labels,
@@ -943,7 +992,6 @@ impl<'a> Parser<'a> {
             trailing_comment,
         })
     }
-
     /// Recovers from an error by skipping until a newline or EOF,
     /// attempting to resync at the start of the next body item.
     fn recover_after_body_item(&mut self) {
@@ -954,7 +1002,6 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 Some(TokenKind::OBrace) => {
-                    // Try to skip the whole block to recover
                     self.advance();
                     let mut depth = 1;
                     loop {
@@ -976,7 +1023,7 @@ impl<'a> Parser<'a> {
                             }
                         }
                     }
-                    break; // stop recovering after we cleared the block
+                    break;
                 }
                 None => break,
                 _ => {
@@ -985,34 +1032,28 @@ impl<'a> Parser<'a> {
             }
         }
     }
-
     /// Parses an expression.
     pub fn parse_expression(&mut self) -> Option<Expression> {
         self.parse_expression_precedence(crate::parse::Precedence::Lowest)
     }
-
     fn parse_expression_precedence(
         &mut self,
         precedence: crate::parse::Precedence,
     ) -> Option<Expression> {
         let prefix_tok = self.advance()?;
         let mut left = self.parse_prefix(prefix_tok)?;
-
         while let Some(next_kind) = self.peek_kind() {
             let next_prec = crate::parse::Precedence::from_token(&next_kind);
             if precedence >= next_prec {
                 break;
             }
-
             let infix_tok = self.advance_token();
             left = self.parse_infix(left, &infix_tok)?;
         }
-
         Some(left)
     }
-
     fn parse_for_tuple(&mut self, open_span: &Span) -> Option<Expression> {
-        self.advance(); // consume "for"
+        self.advance();
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
@@ -1025,9 +1066,8 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         let (key_var, val_var) = if self.peek_kind() == Some(TokenKind::Comma) {
-            self.advance(); // consume comma
+            self.advance();
             while self.peek_kind() == Some(TokenKind::Newline) {
                 self.advance();
             }
@@ -1044,11 +1084,9 @@ impl<'a> Parser<'a> {
         } else {
             (None, first_var.text)
         };
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let in_tok = self.advance_token();
         if in_tok.kind != TokenKind::Ident || in_tok.text != "in" {
             self.diags.push(Diagnostic::error(
@@ -1058,17 +1096,13 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let collection = self.parse_expression()?;
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let colon = self.advance_token();
         if colon.kind != TokenKind::Colon {
             self.diags.push(Diagnostic::error(
@@ -1078,34 +1112,33 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let val_expr = self.parse_expression()?;
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
-        let cond_expr = if let Some(t) = &self.current
-            && t.kind == TokenKind::Ident
-            && t.text == "if"
-        {
-            self.advance(); // consume "if"
-            while self.peek_kind() == Some(TokenKind::Newline) {
-                self.advance();
+        let cond_expr = if let Some(t) = &self.current {
+            if t.kind == TokenKind::Ident {
+                if t.text == "if" {
+                    self.advance();
+                    while self.peek_kind() == Some(TokenKind::Newline) {
+                        self.advance();
+                    }
+                    Some(Box::new(self.parse_expression()?))
+                } else {
+                    None
+                }
+            } else {
+                None
             }
-            Some(Box::new(self.parse_expression()?))
         } else {
             None
         };
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let close_tok = self.advance_token();
         if close_tok.kind != TokenKind::CBrack {
             self.diags.push(Diagnostic::error(
@@ -1115,7 +1148,6 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         let span = Span::new(
             open_span.start_byte,
             close_tok.span.end_byte,
@@ -1124,7 +1156,6 @@ impl<'a> Parser<'a> {
             close_tok.span.end_line,
             close_tok.span.end_col,
         );
-
         Some(Expression::ForExpr(
             Box::new(crate::ast::expr::ForExpr {
                 key_var,
@@ -1138,9 +1169,8 @@ impl<'a> Parser<'a> {
             span,
         ))
     }
-
     fn parse_for_object(&mut self, open_span: &Span) -> Option<Expression> {
-        self.advance(); // consume "for"
+        self.advance();
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
@@ -1153,9 +1183,8 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         let (key_var, val_var) = if self.peek_kind() == Some(TokenKind::Comma) {
-            self.advance(); // consume comma
+            self.advance();
             while self.peek_kind() == Some(TokenKind::Newline) {
                 self.advance();
             }
@@ -1172,11 +1201,9 @@ impl<'a> Parser<'a> {
         } else {
             (None, first_var.text)
         };
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let in_tok = self.advance_token();
         if in_tok.kind != TokenKind::Ident || in_tok.text != "in" {
             self.diags.push(Diagnostic::error(
@@ -1186,17 +1213,13 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let collection = self.parse_expression()?;
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let colon = self.advance_token();
         if colon.kind != TokenKind::Colon {
             self.diags.push(Diagnostic::error(
@@ -1206,17 +1229,13 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let key_expr = self.parse_expression()?;
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let arrow = self.advance_token();
         if arrow.kind != TokenKind::FatArrow {
             self.diags.push(Diagnostic::error(
@@ -1227,41 +1246,39 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let val_expr = self.parse_expression()?;
-
         let grouping = if self.peek_kind() == Some(TokenKind::Ellipsis) {
-            self.advance(); // consume "..."
+            self.advance();
             true
         } else {
             false
         };
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
-        let cond_expr = if let Some(t) = &self.current
-            && t.kind == TokenKind::Ident
-            && t.text == "if"
-        {
-            self.advance(); // consume "if"
-            while self.peek_kind() == Some(TokenKind::Newline) {
-                self.advance();
+        let cond_expr = if let Some(t) = &self.current {
+            if t.kind == TokenKind::Ident {
+                if t.text == "if" {
+                    self.advance();
+                    while self.peek_kind() == Some(TokenKind::Newline) {
+                        self.advance();
+                    }
+                    Some(Box::new(self.parse_expression()?))
+                } else {
+                    None
+                }
+            } else {
+                None
             }
-            Some(Box::new(self.parse_expression()?))
         } else {
             None
         };
-
         while self.peek_kind() == Some(TokenKind::Newline) {
             self.advance();
         }
-
         let close_tok = self.advance_token();
         if close_tok.kind != TokenKind::CBrace {
             self.diags.push(Diagnostic::error(
@@ -1271,7 +1288,6 @@ impl<'a> Parser<'a> {
             ));
             return None;
         }
-
         let span = Span::new(
             open_span.start_byte,
             close_tok.span.end_byte,
@@ -1280,7 +1296,6 @@ impl<'a> Parser<'a> {
             close_tok.span.end_line,
             close_tok.span.end_col,
         );
-
         Some(Expression::ForExpr(
             Box::new(crate::ast::expr::ForExpr {
                 key_var,
@@ -1294,7 +1309,6 @@ impl<'a> Parser<'a> {
             span,
         ))
     }
-
     /// Parses the content of a string or heredoc into template parts.
     pub(crate) fn parse_template(
         diags: &mut Diagnostics,
@@ -1302,7 +1316,6 @@ impl<'a> Parser<'a> {
         span: &Span,
     ) -> Vec<crate::ast::expr::TemplatePart> {
         use crate::ast::expr::{Directive, TemplatePart};
-
         #[derive(Clone, Debug)]
         enum RawDirective {
             If(Expression),
@@ -1312,14 +1325,12 @@ impl<'a> Parser<'a> {
             For(Option<String>, String, Expression),
             EndFor,
         }
-
         #[derive(Clone, Debug)]
         enum RawItem {
             Literal(String, Span),
             Interpolation(Expression, Span, bool, bool),
             Directive(RawDirective, Span, bool, bool),
         }
-
         let mut raw_items = Vec::new();
         let is_heredoc = text.starts_with("<<");
         let is_indented_heredoc = text.starts_with("<<-");
@@ -1340,7 +1351,6 @@ impl<'a> Parser<'a> {
         } else {
             ""
         };
-
         let normalized_content = if is_indented_heredoc {
             match strip_heredoc_indentation(raw_content) {
                 Ok(stripped) => stripped,
@@ -1429,7 +1439,6 @@ impl<'a> Parser<'a> {
                 } else {
                     directive_str_raw.replace("\\\"", "\"")
                 };
-
                 let directive = if directive_str == "endif" {
                     Some(RawDirective::EndIf)
                 } else if directive_str == "endfor" {
@@ -1463,12 +1472,15 @@ impl<'a> Parser<'a> {
                             .parse_expression()
                             .map(|collection| RawDirective::For(key_var, val_var, collection))
                     } else {
-                        diags.push(crate::diagnostic::Diagnostic::error(
-                            "Invalid %{ for } directive".to_string(),
-                            "Expected `in` keyword in for directive, e.g., `%{ for val in collection }`"
-                                .to_string(),
-                            span.clone(),
-                        ));
+                        diags
+                            .push(
+                                crate::diagnostic::Diagnostic::error(
+                                    "Invalid %{ for } directive".to_string(),
+                                    "Expected `in` keyword in for directive, e.g., `%{ for val in collection }`"
+                                        .to_string(),
+                                    span.clone(),
+                                ),
+                            );
                         None
                     }
                 } else {
@@ -1479,7 +1491,6 @@ impl<'a> Parser<'a> {
                     ));
                     None
                 };
-
                 if let Some(d) = directive {
                     raw_items.push(RawItem::Directive(
                         d,
@@ -1493,10 +1504,18 @@ impl<'a> Parser<'a> {
                 let mut literal_content = String::new();
                 while i < content.len() {
                     let mut matched = false;
-                    if content[i..].starts_with("$$") && content[i + 2..].starts_with('{') {
-                        literal_content.push_str("${");
-                        i += 3;
-                        matched = true;
+                    if content[i..].starts_with("$$") {
+                        if content[i + 2..].starts_with('{') {
+                            literal_content.push_str("${");
+                            i += 3;
+                            matched = true;
+                        } else if content[i..].starts_with("%%")
+                            && content[i + 2..].starts_with('{')
+                        {
+                            literal_content.push_str("%{");
+                            i += 3;
+                            matched = true;
+                        }
                     } else if content[i..].starts_with("%%") && content[i + 2..].starts_with('{') {
                         literal_content.push_str("%{");
                         i += 3;
@@ -1508,7 +1527,11 @@ impl<'a> Parser<'a> {
                     if content[i..].starts_with("${") || content[i..].starts_with("%{") {
                         break;
                     }
-                    if !is_heredoc && content[i..].starts_with('\\') {
+                    if is_heredoc {
+                        let c = content[i..].chars().next().unwrap_or_default();
+                        literal_content.push(c);
+                        i += c.len_utf8();
+                    } else if content[i..].starts_with('\\') {
                         i += 1;
                         if let Some(c) = content[i..].chars().next() {
                             match c {
@@ -1541,12 +1564,26 @@ impl<'a> Parser<'a> {
                                             literal_content.push(ch);
                                         } else {
                                             #[rustfmt::skip]
-                                            diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Invalid Unicode scalar value.".to_string(), span.clone()));
+                                            diags
+                                                .push(
+                                                    crate::diagnostic::Diagnostic::error(
+                                                        "Invalid Unicode escape".to_string(),
+                                                        "Invalid Unicode scalar value.".to_string(),
+                                                        span.clone(),
+                                                    ),
+                                                );
                                         }
                                         i += 4;
                                     } else {
                                         #[rustfmt::skip]
-                                        diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Expected 4 hexadecimal digits after \\u.".to_string(), span.clone()));
+                                        diags
+                                            .push(
+                                                crate::diagnostic::Diagnostic::error(
+                                                    "Invalid Unicode escape".to_string(),
+                                                    "Expected 4 hexadecimal digits after \\u.".to_string(),
+                                                    span.clone(),
+                                                ),
+                                            );
                                         i = content.len();
                                     }
                                 }
@@ -1559,12 +1596,26 @@ impl<'a> Parser<'a> {
                                             literal_content.push(ch);
                                         } else {
                                             #[rustfmt::skip]
-                                            diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Invalid Unicode scalar value.".to_string(), span.clone()));
+                                            diags
+                                                .push(
+                                                    crate::diagnostic::Diagnostic::error(
+                                                        "Invalid Unicode escape".to_string(),
+                                                        "Invalid Unicode scalar value.".to_string(),
+                                                        span.clone(),
+                                                    ),
+                                                );
                                         }
                                         i += 8;
                                     } else {
                                         #[rustfmt::skip]
-                                        diags.push(crate::diagnostic::Diagnostic::error("Invalid Unicode escape".to_string(), "Expected 8 hexadecimal digits after \\U.".to_string(), span.clone()));
+                                        diags
+                                            .push(
+                                                crate::diagnostic::Diagnostic::error(
+                                                    "Invalid Unicode escape".to_string(),
+                                                    "Expected 8 hexadecimal digits after \\U.".to_string(),
+                                                    span.clone(),
+                                                ),
+                                            );
                                         i = content.len();
                                     }
                                 }
@@ -1583,13 +1634,11 @@ impl<'a> Parser<'a> {
                         i += c.len_utf8();
                     }
                 }
-
                 if !literal_content.is_empty() {
                     raw_items.push(RawItem::Literal(literal_content, span.clone()));
                 }
             }
         }
-
         for idx in 0..raw_items.len() {
             let (strip_left, strip_right) = match &raw_items[idx] {
                 RawItem::Literal(_, _) => (false, false),
@@ -1597,28 +1646,23 @@ impl<'a> Parser<'a> {
                     (*sl, *sr)
                 }
             };
-            if strip_left
-                && idx > 0
-                && let RawItem::Literal(ref mut s, _) = raw_items[idx - 1]
-            {
-                *s = s.trim_end().to_string();
+            if strip_left && idx > 0 {
+                if let RawItem::Literal(ref mut s, _) = raw_items[idx - 1] {
+                    *s = s.trim_end().to_string();
+                }
             }
-            if strip_right
-                && idx + 1 < raw_items.len()
-                && let RawItem::Literal(ref mut s, _) = raw_items[idx + 1]
-            {
-                *s = s.trim_start().to_string();
+            if strip_right && idx + 1 < raw_items.len() {
+                if let RawItem::Literal(ref mut s, _) = raw_items[idx + 1] {
+                    *s = s.trim_start().to_string();
+                }
             }
         }
-
         fn is_end_if(item: Option<&RawItem>) -> bool {
             matches!(item, Some(RawItem::Directive(RawDirective::EndIf, ..)))
         }
-
         fn is_end_for(item: Option<&RawItem>) -> bool {
             matches!(item, Some(RawItem::Directive(RawDirective::EndFor, ..)))
         }
-
         fn build_template_tree(
             items: &[RawItem],
             pos: &mut usize,
@@ -1668,12 +1712,12 @@ impl<'a> Parser<'a> {
                                 }
                             }
                             let mut false_expr = None;
-                            if *pos < items.len()
-                                && let RawItem::Directive(RawDirective::Else, ..) = &items[*pos]
-                            {
-                                *pos += 1;
-                                false_expr =
-                                    Some(build_template_tree(items, pos, diags, &["endif"]));
+                            if *pos < items.len() {
+                                if let RawItem::Directive(RawDirective::Else, ..) = &items[*pos] {
+                                    *pos += 1;
+                                    false_expr =
+                                        Some(build_template_tree(items, pos, diags, &["endif"]));
+                                }
                             }
                             if is_end_if(items.get(*pos)) {
                                 *pos += 1;
@@ -1741,11 +1785,9 @@ impl<'a> Parser<'a> {
             }
             parts
         }
-
         let mut pos = 0;
         build_template_tree(&raw_items, &mut pos, diags, &[])
     }
-
     fn parse_prefix(&mut self, tok: Token) -> Option<Expression> {
         match tok.kind {
             TokenKind::Number => {
@@ -1755,18 +1797,17 @@ impl<'a> Parser<'a> {
                     .unwrap_or_else(|_| crate::number::Number(bigdecimal::BigDecimal::from(0)));
                 Some(Expression::Number(n, tok.span))
             }
-
             TokenKind::String | TokenKind::Heredoc => {
                 let template_parts = Self::parse_template(&mut self.diags, &tok.text, &tok.span);
-                if template_parts.len() == 1
-                    && let crate::ast::expr::TemplatePart::Literal(ref s, _) = template_parts[0]
-                    && tok.kind == TokenKind::String
-                {
-                    return Some(Expression::String(s.clone(), tok.span));
+                if template_parts.len() == 1 {
+                    if let crate::ast::expr::TemplatePart::Literal(ref s, _) = template_parts[0] {
+                        if tok.kind == TokenKind::String {
+                            return Some(Expression::String(s.clone(), tok.span));
+                        }
+                    }
                 }
                 Some(Expression::Template(template_parts, tok.span))
             }
-
             TokenKind::ColonColon => {
                 self.diags.push(Diagnostic::error(
                     "Syntax error",
@@ -1775,7 +1816,6 @@ impl<'a> Parser<'a> {
                 ));
                 None
             }
-
             TokenKind::Ident if tok.text == "null" => Some(Expression::Null(tok.span)),
             TokenKind::Ident if tok.text == "true" => Some(Expression::Bool(true, tok.span)),
             TokenKind::Ident if tok.text == "false" => Some(Expression::Bool(false, tok.span)),
@@ -1824,7 +1864,14 @@ impl<'a> Parser<'a> {
                 let cparen = self.advance_token();
                 if cparen.kind != TokenKind::CParen {
                     #[rustfmt::skip]
-                    self.diags.push(Diagnostic::error( "Expected closing parenthesis".to_string(), "Expected `)` to close the expression.".to_string(), cparen.span, ));
+                    self.diags
+                        .push(
+                            Diagnostic::error(
+                                "Expected closing parenthesis".to_string(),
+                                "Expected `)` to close the expression.".to_string(),
+                                cparen.span,
+                            ),
+                        );
                     return None;
                 }
                 let span = Span::new(
@@ -1841,11 +1888,10 @@ impl<'a> Parser<'a> {
                 while self.peek_kind() == Some(TokenKind::Newline) {
                     self.advance();
                 }
-                if let Some(t) = &self.current
-                    && t.kind == TokenKind::Ident
-                    && t.text == "for"
-                {
-                    return self.parse_for_tuple(&tok.span);
+                if let Some(t) = &self.current {
+                    if t.kind == TokenKind::Ident && t.text == "for" {
+                        return self.parse_for_tuple(&tok.span);
+                    }
                 }
                 let mut elements = Vec::new();
                 let end_span = loop {
@@ -1870,7 +1916,15 @@ impl<'a> Parser<'a> {
                         _ => {
                             let bad = self.advance_token();
                             #[rustfmt::skip]
-                            self.diags.push(Diagnostic::error( "Expected comma or `]`".to_string(), "Expected a comma to separate tuple elements, or `]` to close the tuple.".to_string(), bad.span, ));
+                            self.diags
+                                .push(
+                                    Diagnostic::error(
+                                        "Expected comma or `]`".to_string(),
+                                        "Expected a comma to separate tuple elements, or `]` to close the tuple."
+                                            .to_string(),
+                                        bad.span,
+                                    ),
+                                );
                             return None;
                         }
                     }
@@ -1889,11 +1943,10 @@ impl<'a> Parser<'a> {
                 while self.peek_kind() == Some(TokenKind::Newline) {
                     self.advance();
                 }
-                if let Some(t) = &self.current
-                    && t.kind == TokenKind::Ident
-                    && t.text == "for"
-                {
-                    return self.parse_for_object(&tok.span);
+                if let Some(t) = &self.current {
+                    if t.kind == TokenKind::Ident && t.text == "for" {
+                        return self.parse_for_object(&tok.span);
+                    }
                 }
                 let mut elements = Vec::new();
                 let end_span = loop {
@@ -1905,18 +1958,21 @@ impl<'a> Parser<'a> {
                         continue;
                     }
                     let key = self.parse_expression()?;
-
                     let op = self.advance_token();
                     if op.kind != TokenKind::Assign && op.kind != TokenKind::Colon {
                         #[rustfmt::skip]
-                        self.diags.push(Diagnostic::error( "Expected `=` or `:`".to_string(), "Expected `=` or `:` in object constructor.".to_string(), op.span, ));
+                        self.diags
+                            .push(
+                                Diagnostic::error(
+                                    "Expected `=` or `:`".to_string(),
+                                    "Expected `=` or `:` in object constructor.".to_string(),
+                                    op.span,
+                                ),
+                            );
                         return None;
                     }
-
                     let val = self.parse_expression()?;
-
                     elements.push((key, val));
-
                     match self.peek_kind() {
                         Some(TokenKind::Comma | TokenKind::Newline) => {
                             self.advance();
@@ -1927,7 +1983,15 @@ impl<'a> Parser<'a> {
                         _ => {
                             let bad = self.advance_token();
                             #[rustfmt::skip]
-                            self.diags.push(Diagnostic::error( "Expected comma, newline, or `}`".to_string(), "Expected a separator or `}` in object constructor.".to_string(), bad.span, ));
+                            self.diags
+                                .push(
+                                    Diagnostic::error(
+                                        "Expected comma, newline, or `}`".to_string(),
+                                        "Expected a separator or `}` in object constructor."
+                                            .to_string(),
+                                        bad.span,
+                                    ),
+                                );
                             return None;
                         }
                     }
@@ -1976,12 +2040,18 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 #[rustfmt::skip]
-                self.diags.push(Diagnostic::error( "Expected expression".to_string(), "An expression was expected here.".to_string(), tok.span, ));
+                self.diags
+                    .push(
+                        Diagnostic::error(
+                            "Expected expression".to_string(),
+                            "An expression was expected here.".to_string(),
+                            tok.span,
+                        ),
+                    );
                 None
             }
         }
     }
-
     fn parse_infix(&mut self, left: Expression, tok: &Token) -> Option<Expression> {
         match tok.kind {
             TokenKind::Plus
@@ -2043,7 +2113,14 @@ impl<'a> Parser<'a> {
                 let colon = self.advance()?;
                 if colon.kind != TokenKind::Colon {
                     #[rustfmt::skip]
-                    self.diags.push(Diagnostic::error( "Expected `:`".to_string(), "Expected `:` for the conditional expression.".to_string(), colon.span, ));
+                    self.diags
+                        .push(
+                            Diagnostic::error(
+                                "Expected `:`".to_string(),
+                                "Expected `:` for the conditional expression.".to_string(),
+                                colon.span,
+                            ),
+                        );
                     return None;
                 }
                 while self.paren_depth > 0 && self.peek_kind() == Some(TokenKind::Newline) {
@@ -2097,13 +2174,28 @@ impl<'a> Parser<'a> {
                             crate::ast::expr::TraversalOperator::LegacyIndex(idx, op_span)
                         } else {
                             #[rustfmt::skip]
-                            self.diags.push(Diagnostic::error( "Expected integer index".to_string(), "Expected an integer for legacy index after `.`.".to_string(), attr_tok.span, ));
+                            self.diags
+                                .push(
+                                    Diagnostic::error(
+                                        "Expected integer index".to_string(),
+                                        "Expected an integer for legacy index after `.`."
+                                            .to_string(),
+                                        attr_tok.span,
+                                    ),
+                                );
                             return None;
                         }
                     }
                     _ => {
                         #[rustfmt::skip]
-                        self.diags.push(Diagnostic::error( "Expected identifier".to_string(), "Expected attribute name after `.`.".to_string(), attr_tok.span, ));
+                        self.diags
+                            .push(
+                                Diagnostic::error(
+                                    "Expected identifier".to_string(),
+                                    "Expected attribute name after `.`.".to_string(),
+                                    attr_tok.span,
+                                ),
+                            );
                         return None;
                     }
                 };
@@ -2134,16 +2226,28 @@ impl<'a> Parser<'a> {
                     let _star_tok = self.advance_token();
                     let Some(cbrack) = self.advance() else {
                         #[rustfmt::skip]
-                        self.diags.push(Diagnostic::error(
-                            "Expected `]`".to_string(),
-                            "Expected `]` to close the full splat operator.".to_string(),
-                            tok.span.clone(),
-                        ));
+                        self.diags
+                            .push(
+                                Diagnostic::error(
+                                    "Expected `]`".to_string(),
+                                    "Expected `]` to close the full splat operator."
+                                        .to_string(),
+                                    tok.span.clone(),
+                                ),
+                            );
                         return None;
                     };
                     if cbrack.kind != TokenKind::CBrack {
                         #[rustfmt::skip]
-                        self.diags.push(Diagnostic::error( "Expected `]`".to_string(), "Expected `]` to close the full splat operator.".to_string(), cbrack.span, ));
+                        self.diags
+                            .push(
+                                Diagnostic::error(
+                                    "Expected `]`".to_string(),
+                                    "Expected `]` to close the full splat operator."
+                                        .to_string(),
+                                    cbrack.span,
+                                ),
+                            );
                         return None;
                     }
                     let op_span = Span::new(
@@ -2162,16 +2266,26 @@ impl<'a> Parser<'a> {
                     let index_expr = self.parse_expression()?;
                     let Some(cbrack) = self.advance() else {
                         #[rustfmt::skip]
-                        self.diags.push(Diagnostic::error(
-                            "Expected `]`".to_string(),
-                            "Expected `]` to close the index expression.".to_string(),
-                            tok.span.clone(),
-                        ));
+                        self.diags
+                            .push(
+                                Diagnostic::error(
+                                    "Expected `]`".to_string(),
+                                    "Expected `]` to close the index expression.".to_string(),
+                                    tok.span.clone(),
+                                ),
+                            );
                         return None;
                     };
                     if cbrack.kind != TokenKind::CBrack {
                         #[rustfmt::skip]
-                        self.diags.push(Diagnostic::error( "Expected `]`".to_string(), "Expected `]` to close the index expression.".to_string(), cbrack.span, ));
+                        self.diags
+                            .push(
+                                Diagnostic::error(
+                                    "Expected `]`".to_string(),
+                                    "Expected `]` to close the index expression.".to_string(),
+                                    cbrack.span,
+                                ),
+                            );
                         return None;
                     }
                     let op_span = Span::new(
@@ -2221,11 +2335,9 @@ impl<'a> Parser<'a> {
                     let cparen = loop {
                         let expr = self.parse_expression()?;
                         args.push(expr);
-
                         while self.peek_kind() == Some(TokenKind::Newline) {
                             self.advance();
                         }
-
                         match self.peek_kind() {
                             Some(TokenKind::Comma) => {
                                 self.advance();
@@ -2245,7 +2357,14 @@ impl<'a> Parser<'a> {
                                 let next = self.advance_token();
                                 if next.kind != TokenKind::CParen {
                                     #[rustfmt::skip]
-                                    self.diags.push(Diagnostic::error( "Expected `)`".to_string(), "Expected `)` after `...`.".to_string(), next.span, ));
+                                    self.diags
+                                        .push(
+                                            Diagnostic::error(
+                                                "Expected `)`".to_string(),
+                                                "Expected `)` after `...`.".to_string(),
+                                                next.span,
+                                            ),
+                                        );
                                     return None;
                                 }
                                 break next;
@@ -2256,14 +2375,21 @@ impl<'a> Parser<'a> {
                             _ => {
                                 let bad = self.advance_token();
                                 #[rustfmt::skip]
-                                self.diags.push(Diagnostic::error( "Expected `,` or `)`".to_string(), "Expected a comma to separate function arguments, or `)` to close the call.".to_string(), bad.span, ));
+                                self.diags
+                                    .push(
+                                        Diagnostic::error(
+                                            "Expected `,` or `)`".to_string(),
+                                            "Expected a comma to separate function arguments, or `)` to close the call."
+                                                .to_string(),
+                                            bad.span,
+                                        ),
+                                    );
                                 return None;
                             }
                         }
                     };
                     (cparen, expand)
                 };
-
                 let span = Span::new(
                     left.span().start_byte,
                     cparen_tok.span.end_byte,
@@ -2272,15 +2398,21 @@ impl<'a> Parser<'a> {
                     cparen_tok.span.end_line,
                     cparen_tok.span.end_col,
                 );
-
                 let name = if let Expression::Variable(ref name, _) = left {
                     crate::ast::expr::NamespacedIdent::parse(name, left.span())
                 } else {
                     #[rustfmt::skip]
-                    self.diags.push(Diagnostic::error( "Invalid function call".to_string(), "Only top-level identifiers can be called as functions.".to_string(), left.span(), ));
+                    self.diags
+                        .push(
+                            Diagnostic::error(
+                                "Invalid function call".to_string(),
+                                "Only top-level identifiers can be called as functions."
+                                    .to_string(),
+                                left.span(),
+                            ),
+                        );
                     crate::ast::expr::NamespacedIdent::simple("invalid_call", left.span())
                 };
-
                 let func_call = crate::ast::expr::FuncCall {
                     name,
                     args,
@@ -2291,7 +2423,6 @@ impl<'a> Parser<'a> {
         }
     }
 }
-
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
