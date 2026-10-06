@@ -1,6 +1,6 @@
 //! AST Body and Multi-File Merging Engine.
 //!
-//! Provides utilities for merging top-level [`Body`] instances, multiple named files,
+//! Provides utilities for merging top-level [`crate::ast::structure::Body`] instances, multiple named files,
 //! or entire directories of HCL files into a unified AST body while preserving source spans,
 //! enforcing deterministic load orders, and checking for attribute/singleton collisions.
 use crate::ast::structure::Body;
