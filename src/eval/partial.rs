@@ -171,10 +171,6 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
             if *op == BinaryOp::And {
                 if let Expression::Bool(true, _) = folded_right {
                     return Ok(folded_left);
-                } else if *op == BinaryOp::Or {
-                    if let Expression::Bool(false, _) = folded_right {
-                        return Ok(folded_left);
-                    }
                 }
             } else if *op == BinaryOp::Or {
                 if let Expression::Bool(false, _) = folded_right {

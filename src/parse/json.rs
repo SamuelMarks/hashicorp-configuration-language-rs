@@ -816,7 +816,7 @@ mod tests {
                 .any(|e| e.error.to_string().contains(expected_err));
             assert!(
                 found,
-                "Expected error containing '{expected_err}' for input '{input}'"
+                "Expected error containing expected_err for input input"
             );
         }
     }

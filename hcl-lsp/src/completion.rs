@@ -172,7 +172,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let list = completions_at_position(&doc, Position::new(0, 0), Some(&schema));
         assert_ne!(list.items.len(), 0);
         assert!(list.items.iter().any(|i| i.label == "instance_type"));
@@ -188,7 +188,7 @@ mod tests {
             version: 1,
             text: String::new(),
         };
-        let mut unparsed_doc = VirtualDocument::new(item_empty);
+        let mut unparsed_doc = VirtualDocument::new(item_empty, None);
         unparsed_doc.parsed_body = None;
         let list_no_schema = completions_at_position(&unparsed_doc, Position::new(0, 0), None);
         assert!(list_no_schema.items.iter().any(|i| i.label == "abs"));
@@ -198,7 +198,7 @@ mod tests {
             version: 1,
             text: "variable { default = 1 }".to_string(),
         };
-        let doc_unlabeled = VirtualDocument::new(item_unlabeled_var);
+        let doc_unlabeled = VirtualDocument::new(item_unlabeled_var, None);
         let list_unlabeled = completions_at_position(&doc_unlabeled, Position::new(0, 0), None);
         assert!(
             !list_unlabeled

@@ -1335,3 +1335,15 @@ fn test_macro_edge_cases_and_attribute_conflicts() {
             .is_empty()
     );
 }
+
+#[test]
+fn test_unparsed_remainder_handling_parity() {
+    let input: syn::DeriveInput = syn::parse_quote! {
+        struct ConfigWithRemain {
+            #[hcl(remain)]
+            rem_map: std::collections::HashMap<String, crate::types::val::Value>,
+        }
+    };
+    let output = crate::expand_derive_decode_body(input);
+    assert!(output.to_string().contains("rem_map"));
+}

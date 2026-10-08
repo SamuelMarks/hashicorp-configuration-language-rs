@@ -9,6 +9,7 @@ use std::fmt::Write;
 /// Returns an error if the value cannot be serialized.
 pub fn to_string<T: Serialize>(value: &T) -> Result<String, String> {
     let json_val = serde_json::to_value(value).map_err(|e| format!("Serialize error: {e}"))?;
+    // In a real scenario we might deeply inspect for Ephemeral but T is an arbitrary type.
     let mut out = String::new();
     format_hcl(&json_val, &mut out, 0);
     Ok(out)

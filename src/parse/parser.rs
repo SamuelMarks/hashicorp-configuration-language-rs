@@ -1509,12 +1509,6 @@ impl<'a> Parser<'a> {
                             literal_content.push_str("${");
                             i += 3;
                             matched = true;
-                        } else if content[i..].starts_with("%%")
-                            && content[i + 2..].starts_with('{')
-                        {
-                            literal_content.push_str("%{");
-                            i += 3;
-                            matched = true;
                         }
                     } else if content[i..].starts_with("%%") && content[i + 2..].starts_with('{') {
                         literal_content.push_str("%{");
@@ -2426,3 +2420,26 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod tests_template_directives_edge_cases {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    #[test]
+    fn test_parse_template_escapes_edge_cases() {
+        let input = "\"hello $${ world %%{foo\"";
+        let mut p = Parser::new(input);
+        let expr = p.parse_expression().unwrap();
+        // Escaped interpolations don't break out of the string token, so it parses as a simple string.
+        assert!(matches!(expr, crate::ast::expr::Expression::String(_, _)));
+    }
+
+    #[test]
+    fn test_parse_template_escapes_edge_cases_2() {
+        let input = "\"$$%%{\"";
+        let mut p = Parser::new(input);
+        let _ = p.parse_expression();
+    }
+}

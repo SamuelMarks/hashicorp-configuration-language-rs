@@ -1600,13 +1600,47 @@ impl<'a> Evaluator<'a> {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    #[test]
+    fn test_ephemeral_propagation() {
+        let mut ctx = crate::eval::context::Context::new();
+        ctx.set_variable(
+            "var1",
+            crate::types::val::Value::new(
+                crate::types::ty::Type::Number,
+                crate::types::val::ValueData::Number(crate::number::Number::from(10i64)),
+            ),
+        );
+        ctx.set_variable(
+            "var2",
+            crate::types::val::Value::new(
+                crate::types::ty::Type::Number,
+                crate::types::val::ValueData::Number(crate::number::Number::from(20i64)),
+            )
+            .mark_ephemeral(),
+        );
+
+        let mut evaluator = Evaluator::new(&ctx);
+
+        let span = crate::span::Span::new(0, 0, 1, 1, 1, 1);
+        let expr = crate::ast::expr::Expression::BinaryOp(
+            crate::ast::expr::BinaryOp::Add,
+            Box::new(crate::ast::expr::Expression::Variable(
+                "var1".to_string(),
+                span.clone(),
+            )),
+            Box::new(crate::ast::expr::Expression::Variable(
+                "var2".to_string(),
+                span.clone(),
+            )),
+            span.clone(),
+        );
+
+        let val = evaluator.eval_expr(&expr);
+        assert!(val.is_ephemeral());
+    }
+
     #[test]
     fn test_eval_binary_logical_right_errors() {
         let ctx = Context::new();
@@ -4510,10 +4544,7 @@ mod tests {
             let expr = parse_expr(expr_str);
             let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
             assert_eq!(val.ty(), &expected_ty);
-            assert!(
-                val.has_mark(&ValueMark::Sensitive),
-                "Expression {expr_str} should retain Sensitive mark"
-            );
+            assert!(val.has_mark(&ValueMark::Sensitive),);
         }
         let div_zero = parse_expr("sens_num / 0");
         let mut sub_eval = Evaluator::new(&ctx);
@@ -4550,10 +4581,7 @@ mod tests {
             let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
             assert_eq!(val.ty(), &Type::Bool);
             assert_eq!(val.data.as_ref(), &ValueData::Bool(true));
-            assert!(
-                val.has_mark(&ValueMark::Sensitive),
-                "Expression {expr_str} should retain Sensitive mark"
-            );
+            assert!(val.has_mark(&ValueMark::Sensitive),);
         }
         let log_cases = [
             "sens_bool && true",
@@ -4565,10 +4593,7 @@ mod tests {
             let expr = parse_expr(expr_str);
             let (val, _) = Evaluator::new(&ctx).evaluate(&expr).unwrap();
             assert_eq!(val.data.as_ref(), &ValueData::Bool(true));
-            assert!(
-                val.has_mark(&ValueMark::Sensitive),
-                "Expression {expr_str} should retain Sensitive mark"
-            );
+            assert!(val.has_mark(&ValueMark::Sensitive),);
         }
         let not_expr = parse_expr("!sens_bool");
         let (val, _) = Evaluator::new(&ctx).evaluate(&not_expr).unwrap();
@@ -4662,10 +4687,7 @@ mod tests {
         let is_sens = parse_expr("issensitive(sens_str)");
         let (val, _) = Evaluator::new(&ctx).evaluate(&is_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(true));
-        assert!(
-            !val.has_mark(&ValueMark::Sensitive),
-            "issensitive result must NOT be marked sensitive"
-        );
+        assert!(!val.has_mark(&ValueMark::Sensitive));
         let is_not_sens = parse_expr("issensitive(\"plain\")");
         let (val, _) = Evaluator::new(&ctx).evaluate(&is_not_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::Bool(false));
@@ -4673,10 +4695,7 @@ mod tests {
         let non_sens = parse_expr("nonsensitive(sens_str)");
         let (val, _) = Evaluator::new(&ctx).evaluate(&non_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("vault".into()));
-        assert!(
-            !val.has_mark(&ValueMark::Sensitive),
-            "nonsensitive result must NOT be marked sensitive"
-        );
+        assert!(!val.has_mark(&ValueMark::Sensitive));
         let make_sens = parse_expr("sensitive(\"raw\")");
         let (val, _) = Evaluator::new(&ctx).evaluate(&make_sens).unwrap();
         assert_eq!(val.data.as_ref(), &ValueData::String("raw".into()));

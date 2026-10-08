@@ -30,6 +30,7 @@ pub fn functions() -> Vec<Function> {
         urlencode_func(),
         regex_func(),
         regexall_func(),
+        strlen_func(),
         regex_replace_func(),
         format_func(),
         formatlist_func(),
@@ -937,6 +938,38 @@ fn formatlist_func() -> Function {
         signature: None,
     }
 }
+
+fn strlen_func() -> Function {
+    Function {
+        name: "strlen".to_string(),
+        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+            if args.len() != 1 {
+                return Err("strlen expects exactly 1 argument".to_string());
+            }
+            if args[0].is_unknown() {
+                if let Some(r) = args[0].refinement() {
+                    let mut num_ref = crate::types::refinement::Refinement::not_null();
+                    if let Some(min) = r.string_length_min {
+                        num_ref.number_min = Some(crate::number::Number::from(min as i64));
+                    }
+                    if let Some(max) = r.string_length_max {
+                        num_ref.number_max = Some(crate::number::Number::from(max as i64));
+                    }
+                    return Ok(Value::unknown_refined(crate::types::Type::Number, num_ref));
+                }
+                return Ok(Value::unknown(crate::types::Type::Number));
+            }
+            let s = coerce_to_string(&args[0], "strlen")?;
+            let len = s.graphemes(true).count();
+            Ok(Value::new(
+                crate::types::Type::Number,
+                crate::types::ValueData::Number(crate::number::Number::from(len as i64)),
+            ))
+        }),
+        signature: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -1915,6 +1948,31 @@ mod tests {
             eval_func("substr", &[unk_val(), num_val("0"), unk_val()])
                 .unwrap()
                 .is_unknown()
+        );
+    }
+
+    #[test]
+    fn test_strlen() {
+        assert!(eval_func("strlen", &[]).is_err());
+        assert_eq!(
+            *eval_func("strlen", &[str_val("hello")]).unwrap().data,
+            ValueData::Number(crate::number::Number::from(5))
+        );
+        assert!(eval_func("strlen", &[unk_val()]).unwrap().is_unknown());
+        let mut r = crate::types::refinement::Refinement::not_null();
+        r.string_length_min = Some(2);
+        r.string_length_max = Some(5);
+        let refined_unk = Value::unknown_refined(Type::String, r);
+        let res = eval_func("strlen", &[refined_unk]).unwrap();
+        assert!(res.is_unknown());
+        let out_r = res.refinement().unwrap();
+        assert_eq!(
+            out_r.number_min.as_ref().unwrap(),
+            &crate::number::Number::from(2)
+        );
+        assert_eq!(
+            out_r.number_max.as_ref().unwrap(),
+            &crate::number::Number::from(5)
         );
     }
 }

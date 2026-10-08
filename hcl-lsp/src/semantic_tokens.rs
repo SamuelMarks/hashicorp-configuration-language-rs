@@ -213,7 +213,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let legend = semantic_tokens_legend();
         assert_eq!(legend.token_types.len(), 10);
         assert_eq!(legend.token_modifiers.len(), 3);
@@ -232,7 +232,7 @@ mod tests {
             version: 1,
             text: String::new(),
         };
-        let mut doc = VirtualDocument::new(item);
+        let mut doc = VirtualDocument::new(item, None);
         doc.parsed_body = None;
         let full = semantic_tokens_full(&doc);
         assert_eq!(full.data.len(), 0);
@@ -262,7 +262,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let tokens = semantic_tokens_full(&doc);
         assert_ne!(tokens.data.len(), 0);
     }
@@ -285,7 +285,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let range1 = Range::new(Position::new(1, 2), Position::new(3, 2));
         let tokens1 = semantic_tokens_range(&doc, range1);
         assert_ne!(tokens1.data.len(), 0);

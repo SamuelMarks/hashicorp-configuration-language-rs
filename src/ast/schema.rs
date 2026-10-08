@@ -838,3 +838,54 @@ mod tests {
         assert_eq!(s, BodySchema::new());
     }
 }
+
+#[cfg(test)]
+mod extra_tests {
+    use super::*;
+    use crate::span::Span;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_body_content_coverage() {
+        let span = Span::new(0, 10, 1, 1, 1, 10);
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "foo".to_string(),
+            crate::ast::structure::Attribute {
+                name: "foo".to_string(),
+                name_span: span.clone(),
+                equals_span: span.clone(),
+                expr: crate::ast::expr::Expression::Bool(true, span.clone()),
+                span: span.clone(),
+                leading_comments: vec![],
+                trailing_comment: None,
+            },
+        );
+
+        let content = BodyContent::new(attrs, vec![], span.clone());
+
+        // test Clone
+        let content2 = content.clone();
+
+        // test PartialEq
+        assert_eq!(content, content2);
+
+        // test Debug
+        let dbg_str = format!("{:?}", content);
+        assert!(dbg_str.contains("BodyContent"));
+
+        // test get_attribute
+        assert!(content.get_attribute("foo").is_some());
+        assert!(content.get_attribute("bar").is_none());
+
+        // test implied_label_names default impl
+        struct Dummy;
+        impl ImpliedBodySchema for Dummy {
+            fn implied_body_schema() -> BodySchema {
+                BodySchema::new()
+            }
+        }
+        assert!(Dummy::implied_label_names().is_empty());
+        let _ = Dummy::implied_body_schema();
+    }
+}

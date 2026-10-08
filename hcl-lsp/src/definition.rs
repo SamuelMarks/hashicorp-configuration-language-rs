@@ -286,7 +286,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = cache.open_document(item).clone();
+        let doc = cache.open_document(item, None).clone();
         let local_ref_offset = doc.text.find("local.my_setting").unwrap_or(0);
         let pos = doc.offset_to_position(local_ref_offset + 6);
         let def = goto_definition(&doc, pos, &cache);
@@ -324,7 +324,7 @@ mod tests {
             version: 1,
             text: "foo = 1".to_string(),
         };
-        let mut doc = cache.open_document(item).clone();
+        let mut doc = cache.open_document(item, None).clone();
         doc.parsed_body = None;
         assert!(goto_definition(&doc, Position::new(0, 0), &cache).is_none());
         assert_eq!(find_references(&doc, Position::new(0, 0), &cache).len(), 0);
@@ -334,7 +334,7 @@ mod tests {
             version: 1,
             text: "val = 42\n".to_string(),
         };
-        let doc_valid = cache.open_document(item_valid).clone();
+        let doc_valid = cache.open_document(item_valid, None).clone();
         assert!(goto_definition(&doc_valid, Position::new(0, 2), &cache).is_none());
         assert_eq!(
             find_references(&doc_valid, Position::new(0, 2), &cache).len(),
@@ -370,14 +370,14 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = cache.open_document(item).clone();
+        let doc = cache.open_document(item, None).clone();
         let broken_item = TextDocumentItem {
             uri: "file:///broken_cache.hcl".to_string(),
             language_id: "hcl".to_string(),
             version: 1,
             text: String::new(),
         };
-        let mut broken_doc = cache.open_document(broken_item).clone();
+        let mut broken_doc = cache.open_document(broken_item, None).clone();
         broken_doc.parsed_body = None;
         cache
             .documents
@@ -434,7 +434,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = cache.open_document(item).clone();
+        let doc = cache.open_document(item, None).clone();
         let mut start_idx = 0;
         while let Some(pos_idx) = doc.text[start_idx..].find("local.k") {
             let actual_idx = start_idx + pos_idx;
@@ -452,7 +452,7 @@ mod tests {
             version: 1,
             text: "invalid hcl".to_string(),
         };
-        let mut broken_doc = cache.open_document(item_broken).clone();
+        let mut broken_doc = cache.open_document(item_broken, None).clone();
         broken_doc.parsed_body = None;
         cache
             .documents
@@ -501,7 +501,7 @@ mod tests {
             text: hcl.to_string(),
         };
         for has_body in [true, false] {
-            let mut doc = VirtualDocument::new(item.clone());
+            let mut doc = VirtualDocument::new(item.clone(), None);
             if !has_body {
                 doc.parsed_body = None;
             }

@@ -700,7 +700,10 @@ mod tests {
             eval_fs_func(
                 "templatefile",
                 &[
-                    Value::new(Type::String, ValueData::String("missing.txt".into())),
+                    Value::new(
+                        Type::String,
+                        ValueData::String("truly_nonexistent_file_12345.txt".into())
+                    ),
                     Value::new(Type::Dynamic, ValueData::Object(BTreeMap::new())),
                 ]
             )

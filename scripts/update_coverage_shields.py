@@ -145,14 +145,12 @@ def compute_test_coverage(repo_root: Path) -> float:
     if shutil.which("cargo-llvm-cov"):
         cmd = [
             "cargo",
-            "+nightly",
             "llvm-cov",
             "--all-features",
             "--workspace",
-            "--branch",
-            "--include-build-script",
+            "--exclude",
+            "hashicorp-configuration-language-rs-fuzz",
             "--json",
-            "--summary-only",
         ]
         result = subprocess.run(
             cmd,

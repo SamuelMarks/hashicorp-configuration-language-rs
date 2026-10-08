@@ -895,6 +895,7 @@ fn encode_value_internal(w: &mut MsgPackWriter, val: &Value) {
         for m in &val.marks {
             match m {
                 ValueMark::Sensitive => w.write_str("sensitive"),
+                ValueMark::Ephemeral => w.write_str("ephemeral"),
                 ValueMark::Custom(s) => w.write_str(s),
                 ValueMark::Typed(t) => w.write_str(&t.to_string()),
             }
@@ -1080,6 +1081,11 @@ fn decode_value_data(
 /// # Errors
 /// Returns [`HclError::MsgPackEncode`] if the value cannot be encoded.
 pub fn encode_value(val: &Value) -> Result<Vec<u8>, HclError> {
+    if val.is_ephemeral() {
+        return Err(HclError::Validation(
+            "Cannot serialize ephemeral value".to_string(),
+        ));
+    }
     let mut writer = MsgPackWriter::new();
     encode_value_internal(&mut writer, val);
     Ok(writer.into_bytes())
@@ -1321,6 +1327,26 @@ mod tests {
         assert!(Type::from_msgpack(&[0xa1, b'X']).is_err());
         assert!(Type::from_msgpack(&[0x92, 0xa1, b'X']).is_err());
         assert!(Value::from_msgpack(&[0xc1], &Type::Dynamic).is_err());
+
+        // Test root ephemeral value encoding failure
+        let mut ephemeral_val = Value::new(
+            Type::String,
+            crate::types::val::ValueData::String("test".to_string()),
+        );
+        ephemeral_val = ephemeral_val.mark(crate::types::val::ValueMark::Ephemeral);
+        assert!(encode_value(&ephemeral_val).is_err());
+
+        // Test nested ephemeral value encoding success (it gets serialized)
+        use std::collections::BTreeMap;
+        let mut map = BTreeMap::new();
+        map.insert("key".to_string(), ephemeral_val);
+        let mut type_map = BTreeMap::new();
+        type_map.insert("key".to_string(), Type::String);
+        let obj_val = Value::new(
+            Type::object(type_map),
+            crate::types::val::ValueData::Object(map),
+        );
+        assert!(encode_value(&obj_val).is_ok());
     }
     /// Tests all integer encoding and decoding representations in `MsgPack`.
     #[test]

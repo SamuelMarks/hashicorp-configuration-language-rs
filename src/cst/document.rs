@@ -880,3 +880,24 @@ mod tests {
         assert_eq!(visited_kinds.len(), token_count);
     }
 }
+
+#[cfg(test)]
+mod extra_tests {
+    use super::*;
+    use crate::lex::token::TokenKind;
+    use crate::span::Span;
+
+    #[test]
+    fn test_token_stream_methods_and_traits() {
+        let mut stream = TokenStream::new();
+        stream.push(Token::new(
+            TokenKind::Whitespace,
+            " ",
+            Span::new(0, 0, 1, 1, 1, 1),
+        ));
+        assert_eq!(stream.tokens.len(), 1);
+        let cloned = stream.clone();
+        assert_eq!(stream, cloned);
+        assert!(format!("{:?}", stream).contains("TokenStream"));
+    }
+}

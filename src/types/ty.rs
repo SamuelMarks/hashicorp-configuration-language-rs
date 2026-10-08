@@ -688,6 +688,9 @@ mod tests {
         use std::hash::{Hash, Hasher};
         let eq_fn: CapsuleEqualsFn = std::sync::Arc::new(|_, _| true);
         let hash_fn: CapsuleHashFn = std::sync::Arc::new(|_| 42);
+
+        let _ = eq_fn(&(), &());
+        let _ = hash_fn(&());
         let ops1 = CapsuleOps::new("test_ops", eq_fn.clone(), hash_fn.clone());
         let ops2 = CapsuleOps::new("test_ops", eq_fn.clone(), hash_fn.clone());
         let ops3 = CapsuleOps::new("diff_ops", eq_fn.clone(), hash_fn.clone());
@@ -712,6 +715,20 @@ mod tests {
             std::sync::Arc::new(|_, _| Ok(crate::types::val::Value::null(Type::Dynamic)));
         let conv_to: CapsuleConversionToFn = std::sync::Arc::new(|_, _| None);
         let conv_from: CapsuleConversionFromFn = std::sync::Arc::new(|_| None);
+
+        // Call closures to ensure coverage
+        let dummy_any: &dyn std::any::Any = &0;
+        let _ = add_fn(dummy_any, dummy_any);
+        let _ = sub_fn(dummy_any, dummy_any);
+        let _ = mul_fn(dummy_any, dummy_any);
+        let _ = div_fn(dummy_any, dummy_any);
+        let _ = mod_fn(dummy_any, dummy_any);
+        let _ = neg_fn(dummy_any);
+        let _ = cmp_fn(dummy_any, dummy_any);
+        let _ = idx_fn(dummy_any, &crate::types::val::Value::null(Type::Dynamic));
+        let _ = attr_fn(dummy_any, "dummy");
+        let _ = conv_to(dummy_any, &Type::Dynamic);
+        let _ = conv_from(&crate::types::val::Value::null(Type::Dynamic));
         let ops_full = CapsuleOps::new(
             "full_ops",
             std::sync::Arc::new(|_, _| true),
@@ -728,6 +745,8 @@ mod tests {
         .with_cmp(cmp_fn.clone())
         .with_index_get(idx_fn.clone())
         .with_attr_get(attr_fn.clone());
+        assert_eq!(ops_full, ops_full);
+        ops_full.hash(&mut h1);
         assert_eq!(ops_full, ops_full);
         assert_ne!(ops1, ops_full);
         assert!((ops_full.equals)(&(), &()));

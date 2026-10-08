@@ -173,45 +173,9 @@ impl<'a> Lexer<'a> {
                             interp_depth = 1;
                             idx += 2;
                         }
-                    } else if b == b'"' {
-                        idx += 1;
-                        let full_match = &remainder[..idx];
-                        let span_start = self.source_len - remainder.len();
-                        self.inner.bump(idx);
-                        let span_end = span_start + idx;
-                        let (start_line, start_col) = self.line_col(span_start);
-                        let (end_line, end_col) = self.line_col(span_end);
-                        let span = Span::new_with_file(
-                            span_start,
-                            span_end,
-                            start_line,
-                            start_col,
-                            end_line,
-                            end_col,
-                            self.file.clone(),
-                        );
-                        return Some(Token::new(TokenKind::String, full_match.to_string(), span));
                     } else {
                         idx += 1;
                     }
-                } else if b == b'"' {
-                    idx += 1;
-                    let full_match = &remainder[..idx];
-                    let span_start = self.source_len - remainder.len();
-                    self.inner.bump(idx);
-                    let span_end = span_start + idx;
-                    let (start_line, start_col) = self.line_col(span_start);
-                    let (end_line, end_col) = self.line_col(span_end);
-                    let span = Span::new_with_file(
-                        span_start,
-                        span_end,
-                        start_line,
-                        start_col,
-                        end_line,
-                        end_col,
-                        self.file.clone(),
-                    );
-                    return Some(Token::new(TokenKind::String, full_match.to_string(), span));
                 } else {
                     idx += 1;
                 }
@@ -232,6 +196,7 @@ impl<'a> Lexer<'a> {
                     end_col,
                     self.file.clone(),
                 );
+                println!("parse_quoted_string returning SOME: {}", full_match);
                 return Some(Token::new(TokenKind::String, full_match.to_string(), span));
             } else {
                 idx += 1;
@@ -561,6 +526,21 @@ mod tests {
         assert!(lex_unclosed_dollar.parse_quoted_string().is_none());
         let mut lex_unclosed_percent = Lexer::new("\"unclosed %");
         assert!(lex_unclosed_percent.parse_quoted_string().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_lexer_extra_coverage() -> Result<(), crate::error::HclError> {
+        let mut lex = Lexer::new("\"foo $\" \"bar %\" \"baz $x %y\"");
+        assert!(next_tok(&mut lex).is_ok());
+        assert!(next_tok(&mut lex).is_ok());
+        assert!(next_tok(&mut lex).is_ok());
+        assert!(next_tok(&mut lex).is_ok());
+        assert!(next_tok(&mut lex).is_ok());
+        let mut lex2 = Lexer::new("\"unclosed string");
+        assert!(lex2.next().is_some());
+        let mut lex_empty = Lexer::new("");
+        assert!(next_tok(&mut lex_empty).is_err());
         Ok(())
     }
 }

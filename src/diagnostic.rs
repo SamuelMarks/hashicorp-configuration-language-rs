@@ -736,7 +736,7 @@ fn style_underline_colored(chars: &[char]) -> String {
                     if current_style != 0 {
                         out.push_str("\x1b[0m");
                     }
-                    out.push_str("\x1b[1;33m");
+                    out.push_str("\x1b[1;34m");
                     current_style = 1;
                 }
                 out.push('~');
@@ -912,7 +912,7 @@ mod tests {
         assert!(rendered_err.contains("\x1b[1;31m^"));
         let rendered_warn = writer.format_diagnostic(&diag_warn, "test.hcl", source);
         assert!(rendered_warn.contains("\x1b[1;33mWarning:\x1b[0m"));
-        assert!(rendered_warn.contains("\x1b[1;33m~"));
+        assert!(rendered_warn.contains("\x1b[1;34m~"));
     }
     #[test]
     fn test_diagnostic_writer_empty_source_and_out_of_bounds() {
@@ -993,7 +993,7 @@ mod tests {
         let chars = vec!['^', '^', ' ', ' ', '~', '~', ' ', '^', '~', '^'];
         let styled = style_underline_colored(&chars);
         assert!(styled.contains("\x1b[1;31m^^"));
-        assert!(styled.contains("\x1b[1;33m~~"));
+        assert!(styled.contains("\x1b[1;34m~~"));
         assert!(styled.contains("\x1b[0m"));
         assert_eq!(style_underline_colored(&[]), "");
         assert_eq!(style_underline_colored(&[' ']), " ");

@@ -189,49 +189,26 @@ pub fn generate_unified_diff(original: &str, formatted: &str, file_name: &str) -
     let mut ops = Vec::new();
     let mut i = m;
     let mut j = n;
-    while i > 0 || j > 0 {
-        if i > 0 {
-            if j > 0 {
-                if orig_lines[i - 1] == form_lines[j - 1] {
-                    ops.push(DiffOp::Equal(orig_lines[i - 1]));
-                    i -= 1;
-                    j -= 1;
-                } else if j > 0 {
-                    if i == 0 || table[i][j - 1] >= table[i - 1][j] {
-                        ops.push(DiffOp::Insert(form_lines[j - 1]));
-                        j -= 1;
-                    } else {
-                        ops.push(DiffOp::Delete(orig_lines[i - 1]));
-                        i -= 1;
-                    }
-                } else {
-                    ops.push(DiffOp::Delete(orig_lines[i - 1]));
-                    i -= 1;
-                }
-            } else if j > 0 {
-                if i == 0 || table[i][j - 1] >= table[i - 1][j] {
-                    ops.push(DiffOp::Insert(form_lines[j - 1]));
-                    j -= 1;
-                } else {
-                    ops.push(DiffOp::Delete(orig_lines[i - 1]));
-                    i -= 1;
-                }
-            } else {
-                ops.push(DiffOp::Delete(orig_lines[i - 1]));
-                i -= 1;
-            }
-        } else if j > 0 {
-            if i == 0 || table[i][j - 1] >= table[i - 1][j] {
-                ops.push(DiffOp::Insert(form_lines[j - 1]));
-                j -= 1;
-            } else {
-                ops.push(DiffOp::Delete(orig_lines[i - 1]));
-                i -= 1;
-            }
-        } else {
+    while i > 0 && j > 0 {
+        if orig_lines[i - 1] == form_lines[j - 1] {
+            ops.push(DiffOp::Equal(orig_lines[i - 1]));
+            i -= 1;
+            j -= 1;
+        } else if table[i - 1][j] > table[i][j - 1] {
             ops.push(DiffOp::Delete(orig_lines[i - 1]));
             i -= 1;
+        } else {
+            ops.push(DiffOp::Insert(form_lines[j - 1]));
+            j -= 1;
         }
+    }
+    while i > 0 {
+        ops.push(DiffOp::Delete(orig_lines[i - 1]));
+        i -= 1;
+    }
+    while j > 0 {
+        ops.push(DiffOp::Insert(form_lines[j - 1]));
+        j -= 1;
     }
     ops.reverse();
     format_unified_hunks(&ops, file_name)
@@ -836,5 +813,58 @@ c = 3
         assert_eq!(code, 1);
         assert!(err_str.contains("\"severity\":\"error\""));
         assert!(err_str.contains("<stdin>"));
+    }
+
+    #[test]
+    fn test_format_unified_hunks_complex_cases_extra() {
+        let orig = "line1\nline2\nline3\nline4";
+        let form = "line1\nlineX\nline3\nlineY";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("lineX"));
+        assert!(diff.contains("lineY"));
+
+        let orig = "a\nb\nc\nd";
+        let form = "a\nc\nd\ne";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("e"));
+
+        let orig = "A";
+        let form = "B";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("A"));
+
+        let orig = "";
+        let form = "line1";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("line1"));
+
+        let orig = "line1";
+        let form = "";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("line1"));
+    }
+
+    #[test]
+    fn test_diff_branches() {
+        let orig = "line1\nline2";
+        let form = "line2";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("line1"));
+
+        let orig = "line1\nline2";
+        let form = "line1\nline2\nline3";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("line3"));
+
+        let orig = "a\nb";
+        let form = "a\nc";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("c"));
+
+        let orig = "a\nx\nc";
+        let form = "a\ny\nc";
+        let diff = generate_unified_diff(orig, form, "test.hcl");
+        assert!(diff.contains("x"));
+        assert!(diff.contains("y"));
     }
 }

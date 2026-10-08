@@ -594,6 +594,10 @@ mod tests {
         assert_eq!(mixed_len.to_string(), "8");
         let sub_flag = (substr_fn.func)(&[str_val(mixed_flag), num_val(6), num_val(1)]).unwrap();
         assert_eq!(sub_flag.to_string(), "\"🇺🇸\"");
+        let strlen_fn = get_stdlib_function("strlen").unwrap();
+        let len_res2 = (strlen_fn.func)(&[str_val(flag)]).unwrap();
+        assert_eq!(len_res2.to_string(), "1");
+
         let rev_flag = (strrev_fn.func)(&[str_val("A🇺🇸B")]).unwrap();
         assert_eq!(rev_flag.to_string(), "\"B🇺🇸A\"");
         let family = "👨‍👩‍👧‍👦";
@@ -620,5 +624,36 @@ mod tests {
         assert_eq!(thumb_rev.to_string(), "\"👍🏽\"");
         let neg_sub = (substr_fn.func)(&[str_val(mixed_flag), num_val(-2), num_val(1)]).unwrap();
         assert_eq!(neg_sub.to_string(), "\"🇺🇸\"");
+    }
+
+    #[test]
+    fn test_large_integers_exceeding_64_bits() {
+        use crate::eval::stdlib::get_stdlib_function;
+        use crate::types::ValueData;
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+
+        let pow_fn = get_stdlib_function("pow").unwrap();
+        let parseint_fn = get_stdlib_function("parseint").unwrap();
+        let num_val = |s: &str| {
+            crate::types::Value::new(
+                crate::types::Type::Number,
+                ValueData::Number(crate::number::Number::new(BigDecimal::from_str(s).unwrap())),
+            )
+        };
+        let str_val = |s: &str| {
+            crate::types::Value::new(crate::types::Type::String, ValueData::String(s.to_string()))
+        };
+
+        let giant_num_str = "1234567890123456789012345678901234567890";
+        let parsed = (parseint_fn.func)(&[str_val(giant_num_str), num_val("10")]).unwrap();
+        assert_eq!(parsed.to_string(), giant_num_str);
+
+        // Let's do 10^40
+        let pow_res = (pow_fn.func)(&[num_val("10"), num_val("40")]).unwrap();
+        assert_eq!(
+            pow_res.to_string(),
+            "10000000000000000000000000000000000000000"
+        );
     }
 }

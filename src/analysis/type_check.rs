@@ -2752,4 +2752,37 @@ mod tests {
                 .is_ok()
         );
     }
+
+    #[test]
+    fn test_type_checker_function_calls_strict_args() {
+        let sig_variadic = FunctionSignature::with_static_return_type(
+            vec![FunctionParamSpec::new("fixed", Type::Number).with_allow_dynamic_type(false)],
+            Type::String,
+        )
+        .with_variadic(FunctionParamSpec::new("var", Type::String).with_allow_dynamic_type(false));
+
+        let sig_fixed = FunctionSignature::with_static_return_type(
+            vec![FunctionParamSpec::new("fixed", Type::Number).with_allow_dynamic_type(false)],
+            Type::String,
+        );
+
+        let scope = ScopeSchema::new()
+            .with_function("strict_var_fn", sig_variadic)
+            .with_function("strict_fixed_fn", sig_fixed);
+
+        let checker = TypeChecker::new().with_scope(scope);
+
+        let expr_fixed = crate::parse::parser::Parser::new(r#"strict_fixed_fn([1])"#)
+            .parse_expression()
+            .unwrap();
+        let res_fixed = checker.infer_expression_type(&expr_fixed);
+        println!("res_fixed: {:?}", res_fixed);
+        assert!(res_fixed.is_err());
+
+        let expr_var = crate::parse::parser::Parser::new(r#"strict_var_fn(1, [2])"#)
+            .parse_expression()
+            .unwrap();
+        let res_var = checker.infer_expression_type(&expr_var);
+        assert!(res_var.is_err());
+    }
 }

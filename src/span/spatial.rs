@@ -61,6 +61,37 @@ impl AstNodeRef<'_> {
         }
     }
 }
+/// Finds the hierarchical path of nested blocks enclosing the given offset.
+///
+/// Returns a vector of block types and labels, e.g. `["resource", "aws_s3_bucket", "b"]`.
+#[must_use]
+pub fn find_block_path_at_offset(
+    body: &crate::ast::structure::Body,
+    offset: usize,
+) -> Option<Vec<String>> {
+    let mut path = Vec::new();
+    find_block_path_recursive(body, offset, &mut path);
+    if path.is_empty() { None } else { Some(path) }
+}
+
+fn find_block_path_recursive(
+    body: &crate::ast::structure::Body,
+    offset: usize,
+    path: &mut Vec<String>,
+) -> bool {
+    for block in &body.blocks {
+        if block.span.start_byte <= offset && offset <= block.span.end_byte {
+            path.push(block.block_type.clone());
+            for label in &block.labels {
+                path.push(label.clone());
+            }
+            find_block_path_recursive(&block.body, offset, path);
+            return true; // Found the innermost matching block chain
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -174,5 +205,43 @@ mod tests {
         let pos_inner = Position::new(3, 5, 22);
         let enc = body.enclosing_block_at(&pos_inner).unwrap();
         assert_eq!(enc.block_type, "inner");
+    }
+
+    #[test]
+    fn test_find_block_path_at_offset() {
+        use crate::ast::structure::{Block, Body};
+        use crate::span::Span;
+
+        let mut body = Body::new(Span::new(0, 100, 0, 0, 0, 0));
+        let mut block = Block::new(
+            "resource",
+            vec!["aws_s3_bucket".to_string(), "b".to_string()],
+            Body::new(Span::new(20, 50, 0, 0, 0, 0)),
+            Span::new(10, 50, 0, 0, 0, 0),
+        );
+
+        let child_block = Block::new(
+            "rule",
+            vec![],
+            Body::new(Span::new(30, 40, 0, 0, 0, 0)),
+            Span::new(20, 40, 0, 0, 0, 0),
+        );
+        block.body.blocks.push(child_block);
+
+        body.blocks.push(block);
+
+        let path = super::find_block_path_at_offset(&body, 30);
+        assert_eq!(
+            path,
+            Some(vec![
+                "resource".to_string(),
+                "aws_s3_bucket".to_string(),
+                "b".to_string(),
+                "rule".to_string()
+            ])
+        );
+
+        let no_path = super::find_block_path_at_offset(&body, 5);
+        assert_eq!(no_path, None);
     }
 }

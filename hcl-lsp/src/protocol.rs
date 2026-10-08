@@ -501,3 +501,18 @@ mod tests {
         assert_eq!(markup.kind, "markdown");
     }
 }
+
+/// Represents a symbol found across the workspace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSymbol {
+    /// The name of this symbol.
+    pub name: String,
+    /// The kind of this symbol.
+    pub kind: u32,
+    /// The location of this symbol.
+    pub location: Location,
+    /// The name of the symbol containing this symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
+}

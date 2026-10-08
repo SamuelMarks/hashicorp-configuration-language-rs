@@ -258,7 +258,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let name_pos = Position::new(1, 13);
         let hover_attr = hover_at_position(&doc, name_pos, Some(&schema));
         assert_eq!(
@@ -299,26 +299,32 @@ mod tests {
             version: 1,
             text: "foo = 1".to_string(),
         };
-        let mut doc = VirtualDocument::new(item);
+        let mut doc = VirtualDocument::new(item, None);
         doc.parsed_body = None;
         assert!(hover_at_position(&doc, Position::new(0, 0), None).is_none());
-        let doc2 = VirtualDocument::new(TextDocumentItem {
-            uri: "file:///miss2.hcl".to_string(),
-            language_id: "hcl".to_string(),
-            version: 1,
-            text: "foo = 1".to_string(),
-        });
+        let doc2 = VirtualDocument::new(
+            TextDocumentItem {
+                uri: "file:///miss2.hcl".to_string(),
+                language_id: "hcl".to_string(),
+                version: 1,
+                text: "foo = 1".to_string(),
+            },
+            None,
+        );
         assert!(hover_at_position(&doc2, Position::new(10, 10), None).is_none());
     }
     #[test]
     fn test_hover_attribute_without_schema_and_optional() {
         let hcl = "tag = \"prod\"\n";
-        let doc = VirtualDocument::new(TextDocumentItem {
-            uri: "file:///tag.hcl".to_string(),
-            language_id: "hcl".to_string(),
-            version: 1,
-            text: hcl.to_string(),
-        });
+        let doc = VirtualDocument::new(
+            TextDocumentItem {
+                uri: "file:///tag.hcl".to_string(),
+                language_id: "hcl".to_string(),
+                version: 1,
+                text: hcl.to_string(),
+            },
+            None,
+        );
         let h_no_schema = hover_at_position(&doc, Position::new(0, 1), None);
         assert_eq!(
             h_no_schema
@@ -362,12 +368,15 @@ mod tests {
                     .with_body_schema(inner_schema),
             )
             .with_block(BlockHeaderSchema::new("untyped", vec![]));
-        let doc = VirtualDocument::new(TextDocumentItem {
-            uri: "file:///block.hcl".to_string(),
-            language_id: "hcl".to_string(),
-            version: 1,
-            text: hcl.to_string(),
-        });
+        let doc = VirtualDocument::new(
+            TextDocumentItem {
+                uri: "file:///block.hcl".to_string(),
+                language_id: "hcl".to_string(),
+                version: 1,
+                text: hcl.to_string(),
+            },
+            None,
+        );
         assert!(hover_at_position(&doc, Position::new(0, 0), Some(&schema)).is_none());
         let cluster_offset = doc.text.find("cluster").unwrap_or(0);
         let cluster_pos = doc.offset_to_position(cluster_offset + 2);
@@ -413,12 +422,15 @@ mod tests {
     #[test]
     fn test_hover_user_functions() {
         let hcl = "x = 1\n          ";
-        let mut doc = VirtualDocument::new(TextDocumentItem {
-            uri: "file:///func.hcl".to_string(),
-            language_id: "hcl".to_string(),
-            version: 1,
-            text: hcl.to_string(),
-        });
+        let mut doc = VirtualDocument::new(
+            TextDocumentItem {
+                uri: "file:///func.hcl".to_string(),
+                language_id: "hcl".to_string(),
+                version: 1,
+                text: hcl.to_string(),
+            },
+            None,
+        );
         let fn_span = Span::new(10, 15, 1, 11, 1, 16);
         let param_span = Span::new(12, 13, 1, 13, 1, 14);
         let ufunc = FunctionBlock {
@@ -475,12 +487,15 @@ mod tests {
             i = regex_replace("abc", "b", "z")
             j = range(5)
         "#;
-        let doc = VirtualDocument::new(TextDocumentItem {
-            uri: "file:///expr.hcl".to_string(),
-            language_id: "hcl".to_string(),
-            version: 1,
-            text: hcl.to_string(),
-        });
+        let doc = VirtualDocument::new(
+            TextDocumentItem {
+                uri: "file:///expr.hcl".to_string(),
+                language_id: "hcl".to_string(),
+                version: 1,
+                text: hcl.to_string(),
+            },
+            None,
+        );
         let mut start_idx = 0;
         while let Some(pos_idx) = doc.text[start_idx..].find("upper") {
             let actual_idx = start_idx + pos_idx;

@@ -550,22 +550,10 @@ mod tests {
         let linter = Linter::new();
         let diags = linter.lint_body(&body);
         let msgs: Vec<String> = diags.iter().map(|d| d.error.to_string()).collect();
-        assert!(
-            msgs.iter().any(|m| m.contains("unused_local")),
-            "Expected unused local warning, got: {msgs:?}"
-        );
-        assert!(
-            msgs.iter().any(|m| m.contains("unused_var")),
-            "Expected unused variable warning, got: {msgs:?}"
-        );
-        assert!(
-            !msgs.iter().any(|m| m.contains("\"used_local\"")),
-            "Did not expect warning for used_local: {msgs:?}"
-        );
-        assert!(
-            !msgs.iter().any(|m| m.contains("\"used_var\"")),
-            "Did not expect warning for used_var: {msgs:?}"
-        );
+        assert!(msgs.iter().any(|m| m.contains("unused_local")));
+        assert!(msgs.iter().any(|m| m.contains("unused_var")));
+        assert!(!msgs.iter().any(|m| m.contains("\"used_local\"")));
+        assert!(!msgs.iter().any(|m| m.contains("\"used_var\"")));
     }
     #[test]
     fn test_lint_tautological_conditionals() {
@@ -574,29 +562,25 @@ mod tests {
         let d1 = linter.lint_body(&b1);
         assert!(
             d1.iter()
-                .any(|d| d.summary.as_deref() == Some("Condition is constant true")),
-            "Expected constant true warning: {d1:?}"
+                .any(|d| d.summary.as_deref() == Some("Condition is constant true"))
         );
         let b2 = parse_body("val = false ? 1 : 2");
         let d2 = linter.lint_body(&b2);
         assert!(
             d2.iter()
-                .any(|d| d.summary.as_deref() == Some("Condition is constant false")),
-            "Expected constant false warning: {d2:?}"
+                .any(|d| d.summary.as_deref() == Some("Condition is constant false"))
         );
         let b3 = parse_body("val = 1 == 1 ? 1 : 2");
         let d3 = linter.lint_body(&b3);
         assert!(
             d3.iter()
-                .any(|d| d.summary.as_deref() == Some("Comparison of identical expressions")),
-            "Expected identical comparison warning: {d3:?}"
+                .any(|d| d.summary.as_deref() == Some("Comparison of identical expressions"))
         );
         let b4 = parse_body("val = 1 != 1 ? 1 : 2");
         let d4 = linter.lint_body(&b4);
         assert!(
             d4.iter()
-                .any(|d| d.summary.as_deref() == Some("Comparison of identical expressions")),
-            "Expected identical comparison warning: {d4:?}"
+                .any(|d| d.summary.as_deref() == Some("Comparison of identical expressions"))
         );
         let b_clean = parse_body("val = count > 0 ? 1 : 2");
         let d_clean = linter.lint_body(&b_clean);
@@ -611,26 +595,22 @@ mod tests {
         let linter = Linter::new();
         let b1 = parse_body(r#"val = "hello %{ if false }unreachable%{ endif } world""#);
         let d1 = linter.lint_body(&b1);
-        assert!(
-            d1.iter().any(|d| d
-                .error
+        assert!(d1.iter().any(|d| {
+            d.error
                 .to_string()
-                .contains("Unreachable template directive")),
-            "Expected unreachable template directive: {d1:?}"
-        );
+                .contains("Unreachable template directive")
+        }));
         let b2 = parse_body(r#"val = "hello %{ if true }always%{ else }never%{ endif }""#);
         let d2 = linter.lint_body(&b2);
         assert!(
             d2.iter()
-                .any(|d| d.error.to_string().contains("Unreachable else/elif")),
-            "Expected unreachable else warning: {d2:?}"
+                .any(|d| d.error.to_string().contains("Unreachable else/elif"))
         );
         let b3 = parse_body(r#"val = "hello %{ if cond }a%{ elif false }never%{ endif }""#);
         let d3 = linter.lint_body(&b3);
         assert!(
             d3.iter()
-                .any(|d| d.error.to_string().contains("Unreachable template else-if")),
-            "Expected unreachable elif warning: {d3:?}"
+                .any(|d| d.error.to_string().contains("Unreachable template else-if"))
         );
     }
     #[test]
@@ -646,48 +626,42 @@ mod tests {
         assert!(
             d_str
                 .iter()
-                .any(|d| d.summary.as_deref() == Some("Redundant `tostring` call")),
-            "Expected redundant tostring: {d_str:?}"
+                .any(|d| d.summary.as_deref() == Some("Redundant `tostring` call"))
         );
         let b_num = parse_body("val = tonumber(42)");
         let d_num = linter.lint_body(&b_num);
         assert!(
             d_num
                 .iter()
-                .any(|d| d.summary.as_deref() == Some("Redundant `tonumber` call")),
-            "Expected redundant tonumber: {d_num:?}"
+                .any(|d| d.summary.as_deref() == Some("Redundant `tonumber` call"))
         );
         let b_bool = parse_body("val = tobool(true)");
         let d_bool = linter.lint_body(&b_bool);
         assert!(
             d_bool
                 .iter()
-                .any(|d| d.summary.as_deref() == Some("Redundant `tobool` call")),
-            "Expected redundant tobool: {d_bool:?}"
+                .any(|d| d.summary.as_deref() == Some("Redundant `tobool` call"))
         );
         let b_list = parse_body("val = tolist(my_list)");
         let d_list = linter.lint_body(&b_list);
         assert!(
             d_list
                 .iter()
-                .any(|d| d.summary.as_deref() == Some("Redundant `tolist` call")),
-            "Expected redundant tolist: {d_list:?}"
+                .any(|d| d.summary.as_deref() == Some("Redundant `tolist` call"))
         );
         let b_map = parse_body("val = tomap(my_map)");
         let d_map = linter.lint_body(&b_map);
         assert!(
             d_map
                 .iter()
-                .any(|d| d.summary.as_deref() == Some("Redundant `tomap` call")),
-            "Expected redundant tomap: {d_map:?}"
+                .any(|d| d.summary.as_deref() == Some("Redundant `tomap` call"))
         );
         let b_set = parse_body("val = toset(my_set)");
         let d_set = linter.lint_body(&b_set);
         assert!(
             d_set
                 .iter()
-                .any(|d| d.summary.as_deref() == Some("Redundant `toset` call")),
-            "Expected redundant toset: {d_set:?}"
+                .any(|d| d.summary.as_deref() == Some("Redundant `toset` call"))
         );
         let b_ok = parse_body("val = tostring(123)");
         let d_ok = linter.lint_body(&b_ok);
@@ -712,11 +686,7 @@ mod tests {
         let body = parse_body(input);
         let linter = Linter::new();
         let diags = linter.lint_body(&body);
-        assert_eq!(
-            diags.iter().count(),
-            0,
-            "Expected 0 diagnostics, got: {diags:?}"
-        );
+        assert_eq!(diags.iter().count(), 0);
     }
     /// Tests `are_expressions_equivalent` covering all variants and mismatches.
     #[test]

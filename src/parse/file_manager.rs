@@ -5,7 +5,6 @@
 use crate::ast::structure::Body;
 use crate::diagnostic::{Diagnostic, DiagnosticWriter, Diagnostics};
 use crate::error::HclError;
-use crate::parse::json::parse_json;
 use crate::parse::merge::merge_bodies;
 use crate::parse::parser::Parser;
 use crate::span::Span;
@@ -105,6 +104,19 @@ impl HclParser {
     /// # Errors
     /// Returns [`Diagnostics`] if file reading or JSON parsing fails.
     pub fn parse_json_file(&mut self, path: &str) -> Result<&Body, Diagnostics> {
+        self.parse_json_file_with_schema(path, &crate::ast::schema::BodySchema::default())
+    }
+
+    /// Parses a JSON configuration file from disk with a schema.
+    ///
+    /// # Errors
+    /// Returns `Diagnostics` if the file cannot be read, contains invalid JSON,
+    /// or fails schema validation.
+    pub fn parse_json_file_with_schema(
+        &mut self,
+        path: &str,
+        schema: &crate::ast::schema::BodySchema,
+    ) -> Result<&Body, Diagnostics> {
         let content = fs::read_to_string(path).map_err(|err| {
             let mut diags = Diagnostics::new();
             diags.push(
@@ -117,7 +129,7 @@ impl HclParser {
             );
             diags
         })?;
-        self.parse_json_string(path, &content)
+        self.parse_json_string_with_schema(path, &content, schema)
     }
     /// Parses an in-memory JSON string and stores it under `filename`.
     ///
@@ -132,7 +144,25 @@ impl HclParser {
         filename: &str,
         content: &str,
     ) -> Result<&Body, Diagnostics> {
-        let body = parse_json(content)?;
+        self.parse_json_string_with_schema(
+            filename,
+            content,
+            &crate::ast::schema::BodySchema::default(),
+        )
+    }
+
+    /// Parses an in-memory JSON string with a schema and stores it under `filename`.
+    ///
+    /// # Errors
+    /// Returns `Diagnostics` if the string contains invalid JSON or fails
+    /// schema validation.
+    pub fn parse_json_string_with_schema(
+        &mut self,
+        filename: &str,
+        content: &str,
+        schema: &crate::ast::schema::BodySchema,
+    ) -> Result<&Body, Diagnostics> {
+        let body = crate::parse::json::parse_json_with_schema(content, schema)?;
         use std::collections::btree_map::Entry;
         let body_ref = match self.files.entry(filename.to_string()) {
             Entry::Vacant(v) => &v.insert((content.to_string(), body)).1,

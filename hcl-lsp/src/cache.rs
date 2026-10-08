@@ -5,6 +5,8 @@
 use crate::error::LspError;
 use crate::protocol::{Position, Range, TextDocumentContentChangeEvent, TextDocumentItem};
 use hashicorp_configuration_language_rs::analysis::Linter;
+use hashicorp_configuration_language_rs::analysis::type_check::TypeChecker;
+use hashicorp_configuration_language_rs::ast::schema::BodySchema;
 use hashicorp_configuration_language_rs::ast::structure::Body;
 use hashicorp_configuration_language_rs::cst::CstFile;
 use hashicorp_configuration_language_rs::diagnostic::Diagnostics;
@@ -34,7 +36,7 @@ impl VirtualDocument {
     /// # Arguments
     /// * `item` - The document item provided by the client.
     #[must_use]
-    pub fn new(item: TextDocumentItem) -> Self {
+    pub fn new(item: TextDocumentItem, schema: Option<&BodySchema>) -> Self {
         let mut doc = Self {
             uri: item.uri,
             language_id: item.language_id,
@@ -44,20 +46,24 @@ impl VirtualDocument {
             cst_file: None,
             diagnostics: Diagnostics::new(),
         };
-        doc.reparse();
+        doc.reparse(schema);
         doc
     }
     /// Applies an incremental or full content change event and reparses the document.
     ///
     /// # Arguments
     /// * `change` - The change event from `textDocument/didChange`.
-    pub fn apply_change(&mut self, change: &TextDocumentContentChangeEvent) {
+    pub fn apply_change(
+        &mut self,
+        change: &TextDocumentContentChangeEvent,
+        schema: Option<&BodySchema>,
+    ) {
         if let Some(range) = change.range {
             self.apply_incremental_change(range, &change.text);
         } else {
             self.text.clone_from(&change.text);
         }
-        self.reparse();
+        self.reparse(schema);
     }
     fn apply_incremental_change(&mut self, range: Range, new_text: &str) {
         let start_offset = self.position_to_offset(range.start);
@@ -115,7 +121,7 @@ impl VirtualDocument {
         Position::new(line, character)
     }
     /// Reparses the AST and CST from `self.text`, regenerating diagnostics and linter warnings.
-    pub fn reparse(&mut self) {
+    pub fn reparse(&mut self, schema: Option<&BodySchema>) {
         let mut diags = Diagnostics::new();
         let mut parser = Parser::new(&self.text);
         let body = parser.parse_body();
@@ -123,6 +129,12 @@ impl VirtualDocument {
         let linter = Linter::new();
         let lint_diags = linter.lint_body(&body);
         diags.extend(lint_diags);
+        if let Some(s) = schema {
+            let checker = TypeChecker::new();
+            if let Err(type_diags) = checker.check_body(&body, s) {
+                diags.extend(type_diags);
+            }
+        }
         self.parsed_body = Some(body);
         if let Ok(cst) = CstFile::parse(&self.text) {
             self.cst_file = Some(cst);
@@ -151,9 +163,13 @@ impl DocumentCache {
     ///
     /// # Returns
     /// A reference to the newly cached document.
-    pub fn open_document(&mut self, item: TextDocumentItem) -> &VirtualDocument {
+    pub fn open_document(
+        &mut self,
+        item: TextDocumentItem,
+        schema: Option<&BodySchema>,
+    ) -> &VirtualDocument {
         let uri = item.uri.clone();
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, schema);
         self.documents.insert(uri.clone(), doc);
         &self.documents[&uri]
     }
@@ -171,13 +187,14 @@ impl DocumentCache {
         uri: &str,
         version: i32,
         changes: &[TextDocumentContentChangeEvent],
+        schema: Option<&BodySchema>,
     ) -> Result<&VirtualDocument, LspError> {
         let Some(doc) = self.documents.get_mut(uri) else {
             return Err(LspError::DocumentNotFound(uri.to_string()));
         };
         doc.version = version;
         for change in changes {
-            doc.apply_change(change);
+            doc.apply_change(change, schema);
         }
         Ok(&self.documents[uri])
     }
@@ -235,7 +252,7 @@ mod tests {
 "
             .to_string(),
         };
-        let doc = cache.open_document(item);
+        let doc = cache.open_document(item, None);
         assert_eq!(doc.version, 1);
         assert_eq!(cache.len(), 1);
         let change_full = TextDocumentContentChangeEvent {
@@ -247,7 +264,7 @@ b = 3
             .to_string(),
         };
         let updated = cache
-            .change_document("file:///test.hcl", 2, &[change_full])
+            .change_document("file:///test.hcl", 2, &[change_full], None)
             .unwrap();
         assert_eq!(updated.version, 2);
         assert_eq!(
@@ -262,7 +279,7 @@ b = 3
             text: "42".to_string(),
         };
         let updated_inc = cache
-            .change_document("file:///test.hcl", 3, &[change_inc])
+            .change_document("file:///test.hcl", 3, &[change_inc], None)
             .unwrap();
         assert_eq!(
             updated_inc.text,
@@ -273,7 +290,7 @@ b = 3
         let closed = cache.close_document("file:///test.hcl");
         assert!(closed.is_some());
         assert!(cache.is_empty());
-        let err = cache.change_document("file:///nonexistent.tf", 2, &[]);
+        let err = cache.change_document("file:///nonexistent.tf", 2, &[], None);
         assert!(matches!(err, Err(LspError::DocumentNotFound(_))));
     }
     #[test]
@@ -287,7 +304,7 @@ line2";
             version: 1,
             text: text.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let pos = Position::new(1, 2);
         let offset = doc.position_to_offset(pos);
         assert_eq!(offset, 8);

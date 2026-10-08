@@ -36,3 +36,15 @@ path = "fuzz_targets/hcl1.rs"
 [[bin]]
 name = "hcl-testdata"
 path = "fuzz_targets/hcl_testdata.rs"
+
+[[bin]]
+name = "hclsimple"
+path = "fuzz_targets/hclsimple.rs"
+
+[[bin]]
+name = "transform"
+path = "fuzz_targets/transform.rs"
+
+[[bin]]
+name = "json_schema"
+path = "fuzz_targets/json_schema.rs"

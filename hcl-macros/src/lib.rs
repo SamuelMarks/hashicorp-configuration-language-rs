@@ -69,6 +69,8 @@ struct HclFieldAttrs {
     is_flatten: bool,
     /// True if field is marked with `#[hcl(body)]`.
     is_body: bool,
+    /// True if field is marked with `#[hcl(custom)]`.
+    is_custom: bool,
     /// Custom name override if specified via `#[hcl(name = "...")]`.
     custom_name: Option<String>,
     /// Custom decoding function path via `#[hcl(with = "...")]`.
@@ -1008,7 +1010,9 @@ fn handle_attribute_field(
 
     let slot_ident = syn::Ident::new(&format!("__slot_{}", fname), proc_macro2::Span::call_site());
 
-    let decode_val_call = if let Some(ref custom_dec) = attrs.custom_decoder {
+    let decode_val_call = if attrs.is_custom {
+        quote! { <#ty as crate::ext::customdecode::CustomDecodeExpression>::custom_decode_expr(&attr.expr, ctx) }
+    } else if let Some(ref custom_dec) = attrs.custom_decoder {
         quote! { #custom_dec(&value, attr.span.clone(), ctx) }
     } else {
         quote! { crate::decode::DecodeValue::decode_value(&value, attr.span.clone()) }
@@ -1096,22 +1100,35 @@ fn handle_attribute_field(
         }
     };
 
+    let evaluate_val = if attrs.is_custom {
+        quote! {
+            // For custom decoders, we don't evaluate the expression structurally.
+            // The value variable is unused, but we provide a dummy null value to satisfy the let binding
+            // in case the macro generation puts it somewhere (though the decode call won't use it).
+            let value = crate::types::val::Value::null(crate::types::ty::Type::Dynamic);
+        }
+    } else {
+        quote! {
+            let value = match crate::eval::evaluator::Evaluator::new(ctx).evaluate(&attr.expr) {
+                Ok((v, mut d)) => {
+                    diags.extend(d);
+                    v
+                }
+                Err(d) => {
+                    diags.extend(d);
+                    crate::types::val::Value::null(crate::types::ty::Type::Dynamic)
+                }
+            };
+        }
+    };
+
     if is_option {
         decode_fields.push(quote! {
             let #slot_ident: Option<#ty> = if let Some(attr) = body.attributes.get(#name_str) {
                 if let Some(r) = remain_body.as_mut() {
                     r.attributes.remove(#name_str);
                 }
-                let value = match crate::eval::evaluator::Evaluator::new(ctx).evaluate(&attr.expr) {
-                    Ok((v, mut d)) => {
-                        diags.extend(d);
-                        v
-                    }
-                    Err(d) => {
-                        diags.extend(d);
-                        crate::types::val::Value::null(crate::types::ty::Type::Dynamic)
-                    }
-                };
+                #evaluate_val
                 match #decode_val_call {
                     Ok(v) => Some(Some(v)),
                     Err(d) => {
@@ -1129,16 +1146,7 @@ fn handle_attribute_field(
                 if let Some(r) = remain_body.as_mut() {
                     r.attributes.remove(#name_str);
                 }
-                let value = match crate::eval::evaluator::Evaluator::new(ctx).evaluate(&attr.expr) {
-                    Ok((v, mut d)) => {
-                        diags.extend(d);
-                        v
-                    }
-                    Err(d) => {
-                        diags.extend(d);
-                        crate::types::val::Value::null(crate::types::ty::Type::Dynamic)
-                    }
-                };
+                #evaluate_val
                 match #decode_val_call {
                     Ok(v) => Some(v),
                     Err(d) => {
@@ -1514,6 +1522,8 @@ fn parse_hcl_field_attrs(
                     attrs.is_flatten = true;
                 } else if meta.path.is_ident("body") {
                     attrs.is_body = true;
+                } else if meta.path.is_ident("custom") {
+                    attrs.is_custom = true;
                 } else if meta.path.is_ident("with") {
                     if let Ok(val) = meta.value() {
                         if let Ok(lit) = val.parse::<syn::LitStr>() {

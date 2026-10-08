@@ -3,7 +3,8 @@
 //! Generates hierarchical symbols for blocks, labels, attributes, and functions
 //! according to Language Server Protocol 3.17 (`textDocument/documentSymbol`).
 use crate::cache::VirtualDocument;
-use crate::protocol::{DocumentSymbol, Position, Range, SymbolKind};
+use crate::protocol::{DocumentSymbol, Location, Position, Range, SymbolKind, WorkspaceSymbol};
+
 use hashicorp_configuration_language_rs::ast::structure::{Block, Body};
 use hashicorp_configuration_language_rs::span::Span;
 /// Generates hierarchical document symbols for the outline view of a document.
@@ -107,6 +108,50 @@ pub fn span_to_range(span: &Span) -> Range {
         Position::new(end_line, end_col),
     )
 }
+
+/// Generates flattened workspace symbols for a virtual document.
+///
+/// # Arguments
+/// * `uri` - The URI of the document.
+/// * `doc` - The virtual document to analyze.
+/// * `query` - Optional query string to filter symbols.
+///
+/// # Returns
+/// A vector of flat [`WorkspaceSymbol`]s.
+#[must_use]
+pub fn workspace_symbols(uri: &str, doc: &VirtualDocument, query: &str) -> Vec<WorkspaceSymbol> {
+    let mut ws_symbols = Vec::new();
+    let doc_symbols = document_symbols(doc);
+    flatten_symbols(uri, None, &doc_symbols, &mut ws_symbols, query);
+    ws_symbols
+}
+
+fn flatten_symbols(
+    uri: &str,
+    container_name: Option<String>,
+    symbols: &[DocumentSymbol],
+    out: &mut Vec<WorkspaceSymbol>,
+    query: &str,
+) {
+    for sym in symbols {
+        let matches = query.is_empty() || sym.name.to_lowercase().contains(&query.to_lowercase());
+        if matches {
+            out.push(WorkspaceSymbol {
+                name: sym.name.clone(),
+                kind: sym.kind,
+                location: Location {
+                    uri: uri.to_string(),
+                    range: sym.selection_range,
+                },
+                container_name: container_name.clone(),
+            });
+        }
+        if let Some(ref children) = sym.children {
+            flatten_symbols(uri, Some(sym.name.clone()), children, out, query);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -138,7 +183,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let symbols = document_symbols(&doc);
         assert_eq!(symbols.len(), 2);
         let attr_sym = symbols.iter().find(|s| s.name == "region").unwrap();
@@ -163,7 +208,7 @@ mod tests {
             version: 1,
             text: String::new(),
         };
-        let mut empty_doc = VirtualDocument::new(item_empty);
+        let mut empty_doc = VirtualDocument::new(item_empty, None);
         empty_doc.parsed_body = None;
         assert_eq!(document_symbols(&empty_doc), []);
         let hcl = r"
@@ -176,7 +221,7 @@ mod tests {
             version: 1,
             text: hcl.to_string(),
         };
-        let doc = VirtualDocument::new(item);
+        let doc = VirtualDocument::new(item, None);
         let symbols = document_symbols(&doc);
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "locals");
@@ -193,7 +238,7 @@ mod tests {
             version: 1,
             text: func_hcl.to_string(),
         };
-        let mut doc_func = VirtualDocument::new(item_func);
+        let mut doc_func = VirtualDocument::new(item_func, None);
         let sp = Span::new(0, 0, 1, 1, 1, 1);
         let mut block_no_label_spans = Block::new(
             "server".to_string(),

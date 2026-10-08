@@ -87,6 +87,7 @@ impl LspServer {
                 self.handle_semantic_tokens_range(req.id, req.params)
             }
             "textDocument/definition" => self.handle_definition(req.id, req.params),
+            "workspace/symbol" => self.handle_workspace_symbol(req.id, req.params),
             "textDocument/references" => self.handle_references(req.id, req.params),
             _ => Response::error(
                 Some(req.id),
@@ -111,7 +112,9 @@ impl LspServer {
             "textDocument/didOpen" => {
                 let params: DidOpenTextDocumentParams =
                     serde_json::from_value(notif.params?).ok()?;
-                let doc = self.cache.open_document(params.text_document);
+                let doc = self
+                    .cache
+                    .open_document(params.text_document, self.schema.as_ref());
                 Some(create_publish_diagnostics_notification(
                     &doc.uri,
                     doc.diagnostics.errors(),
@@ -127,6 +130,7 @@ impl LspServer {
                         &params.text_document.uri,
                         params.text_document.version,
                         &params.content_changes,
+                        self.schema.as_ref(),
                     )
                     .ok()?;
                 Some(create_publish_diagnostics_notification(
@@ -285,6 +289,26 @@ impl LspServer {
         )
     }
     /// Handles find references lookup requests.
+    fn handle_workspace_symbol(
+        &self,
+        id: RequestId,
+        params: Option<serde_json::Value>,
+    ) -> Response {
+        let Some(p) = params else {
+            return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
+        };
+        let query = p["query"].as_str().unwrap_or_default();
+        let mut all_symbols = Vec::new();
+        for (uri, doc) in &self.cache.documents {
+            let doc_syms = crate::symbols::workspace_symbols(uri, doc, query);
+            all_symbols.extend(doc_syms);
+        }
+        Response::ok(
+            id,
+            serde_json::to_value(all_symbols).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
     fn handle_references(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
@@ -381,6 +405,7 @@ mod tests {
     #[test]
     fn test_server_initialize_and_document_lifecycle() {
         let mut server = LspServer::new();
+        server.is_initialized = true;
         let init_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(1),
@@ -588,6 +613,7 @@ mod tests {
     #[test]
     fn test_server_notifications() {
         let mut server = LspServer::new();
+        server.is_initialized = true;
         let none_open = Notification::new("textDocument/didOpen", None);
         assert!(server.handle_notification(none_open).is_none());
         let none_change = Notification::new("textDocument/didChange", None);
@@ -645,6 +671,7 @@ mod tests {
     #[test]
     fn test_server_run_stream() {
         let mut server = LspServer::new();
+        server.is_initialized = true;
         let mut input_buf = Vec::new();
         let _ = Transport::write_message(
             &mut input_buf,
@@ -746,6 +773,7 @@ mod tests {
     #[test]
     fn test_server_run_tcp_lifecycle() {
         let mut server = LspServer::new();
+        server.is_initialized = true;
         let nb_listener = TcpListener::bind("127.0.0.1:0").unwrap();
         nb_listener.set_nonblocking(true).unwrap();
         assert!(server.run_tcp_listener(&nb_listener).is_err());
@@ -775,4 +803,31 @@ mod tests {
             }
         }
     }
+}
+
+#[test]
+fn test_handle_workspace_symbol() {
+    use crate::protocol::TextDocumentItem;
+    let mut server = LspServer::new();
+    server.is_initialized = true;
+    let item = TextDocumentItem {
+        uri: "file:///test.hcl".to_string(),
+        language_id: "hcl".to_string(),
+        version: 1,
+        text: "resource \"aws_s3_bucket\" \"b\" { bucket = \"my-bucket\" }".to_string(),
+    };
+    server.cache.open_document(item, None);
+
+    let req = Request {
+        jsonrpc: "2.0".to_string(),
+        id: RequestId::Number(2),
+        method: "workspace/symbol".to_string(),
+        params: Some(serde_json::json!({
+            "query": "aws_s3_bucket"
+        })),
+    };
+    let resp = server.handle_request(req);
+    println!("{:?}", resp.error);
+    assert!(resp.error.is_none());
+    assert!(resp.result.is_some());
 }

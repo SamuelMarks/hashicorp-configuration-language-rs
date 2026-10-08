@@ -153,6 +153,8 @@ where
 pub enum ValueMark {
     /// Indicates that a value is sensitive and should not be displayed in logs or diagnostics.
     Sensitive,
+    /// Indicates that a value is ephemeral and cannot be persisted into long-lived state or files.
+    Ephemeral,
     /// A custom mark with an identifying string.
     Custom(String),
     /// An open-ended, type-erased custom mark.
@@ -180,6 +182,7 @@ impl std::fmt::Display for ValueMark {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Sensitive => write!(f, "sensitive"),
+            Self::Ephemeral => write!(f, "ephemeral"),
             Self::Custom(s) => write!(f, "{s}"),
             Self::Typed(t) => write!(f, "{t}"),
         }
@@ -407,6 +410,19 @@ impl Value {
     pub fn has_mark(&self, mark: &ValueMark) -> bool {
         self.marks.contains(mark)
     }
+
+    /// Checks if this value is marked as ephemeral.
+    #[must_use]
+    pub fn is_ephemeral(&self) -> bool {
+        self.has_mark(&ValueMark::Ephemeral)
+    }
+
+    /// Returns a new value with the `Ephemeral` mark attached.
+    #[must_use]
+    pub fn mark_ephemeral(&self) -> Self {
+        self.mark(ValueMark::Ephemeral)
+    }
+
     /// Attaches an arbitrary strongly-typed mark to this value.
     ///
     /// # Arguments
@@ -1366,13 +1382,18 @@ impl Value {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    #[test]
+    fn test_ephemeral_marks() {
+        let val = Value::new(Type::String, ValueData::String("temp".into()));
+        assert!(!val.is_ephemeral());
+        let ephemeral_val = val.mark_ephemeral();
+        assert!(ephemeral_val.is_ephemeral());
+        assert!(ephemeral_val.has_mark(&ValueMark::Ephemeral));
+        assert_eq!(ValueMark::Ephemeral.to_string(), "ephemeral");
+    }
+
     #[test]
     fn test_valued_data_clone_all_variants() {
         let v1 = ValueData::Null;
@@ -2641,23 +2662,24 @@ mod tests {
     #[test]
     fn test_value_coverage_exhaustive_gaps() {
         use std::collections::{BTreeMap, BTreeSet};
+        let eq_fn: crate::types::ty::CapsuleEqualsFn = std::sync::Arc::new(|_, _| true);
+        let hash_fn: crate::types::ty::CapsuleHashFn = std::sync::Arc::new(|_| 1);
+        let _ = eq_fn(&(), &());
+        let _ = hash_fn(&());
         let ops_with_ok_cmp = std::sync::Arc::new(
-            crate::types::ty::CapsuleOps::new(
-                "cap_test",
-                std::sync::Arc::new(|_, _| true),
-                std::sync::Arc::new(|_| 1),
-            )
-            .with_cmp(std::sync::Arc::new(|first, second| {
-                let x = match first.downcast_ref::<i32>() {
-                    Some(&v) => v,
-                    None => 0,
-                };
-                let y = match second.downcast_ref::<i32>() {
-                    Some(&v) => v,
-                    None => 0,
-                };
-                Ok(x.cmp(&y))
-            })),
+            crate::types::ty::CapsuleOps::new("cap_test", eq_fn.clone(), hash_fn.clone()).with_cmp(
+                std::sync::Arc::new(|first, second| {
+                    let x = match first.downcast_ref::<i32>() {
+                        Some(&v) => v,
+                        None => 0,
+                    };
+                    let y = match second.downcast_ref::<i32>() {
+                        Some(&v) => v,
+                        None => 0,
+                    };
+                    Ok(x.cmp(&y))
+                }),
+            ),
         );
         let cap_ok1 = Value::capsule_with_ops("cap_test", ops_with_ok_cmp.clone(), 10_i32);
         let cap_ok2 = Value::capsule_with_ops("cap_test", ops_with_ok_cmp.clone(), 20_i32);
@@ -2666,20 +2688,16 @@ mod tests {
         assert_eq!(cap_ok1.cmp(&cap_str), std::cmp::Ordering::Greater);
         assert_eq!(cap_str.cmp(&cap_ok1), std::cmp::Ordering::Less);
         let ops_with_err_cmp = std::sync::Arc::new(
-            crate::types::ty::CapsuleOps::new(
-                "cap_test",
-                std::sync::Arc::new(|_, _| true),
-                std::sync::Arc::new(|_| 1),
-            )
-            .with_cmp(std::sync::Arc::new(|_, _| Err("cmp error".to_string()))),
+            crate::types::ty::CapsuleOps::new("cap_test", eq_fn.clone(), hash_fn.clone())
+                .with_cmp(std::sync::Arc::new(|_, _| Err("cmp error".to_string()))),
         );
         let cap_err1 = Value::capsule_with_ops("cap_test", ops_with_err_cmp.clone(), 10_i32);
         let cap_err2 = Value::capsule_with_ops("cap_test", ops_with_err_cmp, 20_i32);
         assert_eq!(cap_err1.cmp(&cap_err2), std::cmp::Ordering::Equal);
         let ops_no_cmp = std::sync::Arc::new(crate::types::ty::CapsuleOps::new(
             "cap_test",
-            std::sync::Arc::new(|_, _| true),
-            std::sync::Arc::new(|_| 1),
+            eq_fn.clone(),
+            hash_fn.clone(),
         ));
         let cap_none1 = Value::capsule_with_ops("cap_test", ops_no_cmp.clone(), 10_i32);
         let cap_none2 = Value::capsule_with_ops("cap_test", ops_no_cmp.clone(), 20_i32);
@@ -2870,29 +2888,25 @@ mod tests {
         );
         assert!(directly_marked_arr.has_marked_children());
         let cap_conv_ops = std::sync::Arc::new(
-            crate::types::ty::CapsuleOps::new(
-                "test_conv_capsule",
-                std::sync::Arc::new(|_, _| true),
-                std::sync::Arc::new(|_| 1),
-            )
-            .with_conversion_to(std::sync::Arc::new(|_, target| {
-                if target == &Type::String {
-                    Some("converted_str".encode_value())
-                } else {
-                    None
-                }
-            }))
-            .with_conversion_from(std::sync::Arc::new(|val| {
-                if let ValueData::String(ref s) = *val.data {
-                    if s == "valid_token" {
-                        Some(std::sync::Arc::new(777_i32))
+            crate::types::ty::CapsuleOps::new("test_conv_capsule", eq_fn.clone(), hash_fn.clone())
+                .with_conversion_to(std::sync::Arc::new(|_, target| {
+                    if target == &Type::String {
+                        Some("converted_str".encode_value())
                     } else {
                         None
                     }
-                } else {
-                    None
-                }
-            })),
+                }))
+                .with_conversion_from(std::sync::Arc::new(|val| {
+                    if let ValueData::String(ref s) = *val.data {
+                        if s == "valid_token" {
+                            Some(std::sync::Arc::new(777_i32))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })),
         );
         let cap_val_conv = Value::capsule_with_ops("test_conv_capsule", cap_conv_ops, 123_i32);
         assert!(cap_val_conv.coerce(&Type::String).is_ok());

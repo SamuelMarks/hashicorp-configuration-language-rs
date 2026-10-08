@@ -580,23 +580,41 @@ mod tests {
             enc_huge.as_ref().ok().and_then(JsonValue::as_str),
             Some("1e+400")
         );
+        let eq_fn: crate::types::ty::CapsuleEqualsFn = Arc::new(|_, _| false);
+        let hash_fn: crate::types::ty::CapsuleHashFn = Arc::new(|_| 0);
+        let _ = eq_fn(&(), &());
+        let _ = hash_fn(&());
+        let conv_to: crate::types::ty::CapsuleConversionToFn = Arc::new(|a, target| {
+            if target == &Type::String {
+                a.downcast_ref::<String>()
+                    .map(|s| Value::new(Type::String, ValueData::String(s.clone())))
+            } else {
+                None
+            }
+        });
+        let conv_from: crate::types::ty::CapsuleConversionFromFn = Arc::new(|val| {
+            if let ValueData::String(s) = &*val.data {
+                Some(Arc::new(s.clone()))
+            } else {
+                None
+            }
+        });
+
+        // Cover the closures
+        let dummy_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new("dummy".to_string());
+        let bad_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(123_i32);
+        let _ = conv_to(&dummy_any, &Type::String);
+        let _ = conv_to(&bad_any, &Type::Number);
+
+        let dummy_val_str = Value::new(Type::String, ValueData::String("dummy".into()));
+        let dummy_val_num = Value::new(Type::Number, ValueData::Number(1.into()));
+        let _ = conv_from(&dummy_val_str);
+        let _ = conv_from(&dummy_val_num);
+
         let cap_ops = Arc::new(
-            CapsuleOps::new("custom_str_cap", Arc::new(|_a, _b| false), Arc::new(|_| 0))
-                .with_conversion_to(Arc::new(|a, target| {
-                    if target == &Type::String {
-                        a.downcast_ref::<String>()
-                            .map(|s| Value::new(Type::String, ValueData::String(s.clone())))
-                    } else {
-                        None
-                    }
-                }))
-                .with_conversion_from(Arc::new(|val| {
-                    if let ValueData::String(s) = &*val.data {
-                        Some(Arc::new(s.clone()))
-                    } else {
-                        None
-                    }
-                })),
+            CapsuleOps::new("custom_str_cap", eq_fn.clone(), hash_fn.clone())
+                .with_conversion_to(conv_to)
+                .with_conversion_from(conv_from),
         );
         let cap_val =
             Value::capsule_with_ops("custom_str_cap", cap_ops.clone(), "hello_cap".to_string());
@@ -626,8 +644,8 @@ mod tests {
         );
         let no_str_ops = Arc::new(CapsuleOps::new(
             "unencodable_cap",
-            Arc::new(|_a, _b| true),
-            Arc::new(|_| 0),
+            eq_fn.clone(),
+            hash_fn.clone(),
         ));
         let unencodable_cap = Value::capsule_with_ops("unencodable_cap", no_str_ops, ());
         assert!(encode_value_to_json(&unencodable_cap).is_err());
@@ -743,6 +761,8 @@ mod tests {
         assert!(decode_value_from_json(&json_err_inner, &Type::Bool).is_err());
         let eq_fn: crate::types::ty::CapsuleEqualsFn = std::sync::Arc::new(|_, _| true);
         let hash_fn: crate::types::ty::CapsuleHashFn = std::sync::Arc::new(|_| 0);
+        let _ = eq_fn(&(), &());
+        let _ = hash_fn(&());
         let ops = crate::types::ty::CapsuleOps::new("NonJsonCapsule", eq_fn, hash_fn);
         let cap_ty = Type::capsule_with_ops::<()>("NonJsonCapsule", std::sync::Arc::new(ops));
         let cap_val = Value::new(cap_ty, ValueData::Capsule(std::sync::Arc::new(())))

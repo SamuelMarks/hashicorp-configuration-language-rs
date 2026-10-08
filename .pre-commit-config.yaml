@@ -21,7 +21,7 @@ repos:
         pass_filenames: false
     -   id: cargo-test
         name: cargo test
-        entry: cargo test --workspace
+        entry: cargo test --workspace --exclude hashicorp-configuration-language-rs-fuzz
         language: system
         types: [rust]
         pass_filenames: false
