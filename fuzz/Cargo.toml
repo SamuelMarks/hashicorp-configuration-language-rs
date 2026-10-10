@@ -18,33 +18,41 @@ arbitrary = { version = "1.3", default-features = false, features = ["derive"] }
 path = ".."
 
 [[bin]]
+test = false
 name = "parse"
 path = "fuzz_targets/parse.rs"
 
 [[bin]]
+test = false
 name = "eval"
 path = "fuzz_targets/eval.rs"
 
 [[bin]]
+test = false
 name = "msgpack"
 path = "fuzz_targets/msgpack.rs"
 
 [[bin]]
+test = false
 name = "hcl1"
 path = "fuzz_targets/hcl1.rs"
 
 [[bin]]
+test = false
 name = "hcl-testdata"
 path = "fuzz_targets/hcl_testdata.rs"
 
 [[bin]]
+test = false
 name = "hclsimple"
 path = "fuzz_targets/hclsimple.rs"
 
 [[bin]]
+test = false
 name = "transform"
 path = "fuzz_targets/transform.rs"
 
 [[bin]]
+test = false
 name = "json_schema"
 path = "fuzz_targets/json_schema.rs"
