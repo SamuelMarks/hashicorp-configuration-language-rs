@@ -71,12 +71,11 @@ pub fn parse_var_value(val_str: &str) -> Value {
     {
         let ctx = Context::new();
         let mut parser = Parser::new(val_str);
-        if let Some(expr) = parser.parse_expression() {
-            if !parser.errors().has_errors() {
-                if let Ok((v, _)) = Evaluator::new(&ctx).evaluate(&expr) {
-                    return v;
-                }
-            }
+        if let Some(expr) = parser.parse_expression()
+            && !parser.errors().has_errors()
+            && let Ok((v, _)) = Evaluator::new(&ctx).evaluate(&expr)
+        {
+            return v;
         }
     }
     if let Ok(num) = BigDecimal::from_str(val_str) {

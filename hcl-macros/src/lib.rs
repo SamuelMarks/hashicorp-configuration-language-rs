@@ -2,10 +2,10 @@
 //!
 //! Provides `DecodeBody` derive macro for structural decoding of HCL configuration.
 
-#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(missing_docs)]
-#![deny(rustdoc::missing_crate_level_docs)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(clippy::all, clippy::pedantic, clippy::nursery)]
+#![forbid(missing_docs)]
+#![forbid(rustdoc::missing_crate_level_docs)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 extern crate proc_macro;
 
@@ -805,7 +805,7 @@ enum BlockTypeKind {
         /// True if map is `BTreeMap`, false if `HashMap`.
         is_btreemap: bool,
         /// Inner value structure (can be another `Map`, `Vec`, or `Single`).
-        inner: Box<BlockTypeKind>,
+        inner: Box<Self>,
     },
 }
 
@@ -823,20 +823,20 @@ fn inspect_block_type(ty: &Type) -> BlockTypeKind {
         if ident_str == "Option" {
             return BlockTypeKind::Option;
         }
-        if ident_str == "HashMap" || ident_str == "BTreeMap" {
-            if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
-                let is_btreemap = ident_str == "BTreeMap";
-                let mut type_args = args.args.iter().filter_map(|arg| match arg {
-                    syn::GenericArgument::Type(t) => Some(t),
-                    _ => None,
-                });
-                let _key_ty = type_args.next();
-                if let Some(val_ty) = type_args.next() {
-                    return BlockTypeKind::Map {
-                        is_btreemap,
-                        inner: Box::new(inspect_block_type(val_ty)),
-                    };
-                }
+        if (ident_str == "HashMap" || ident_str == "BTreeMap")
+            && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
+        {
+            let is_btreemap = ident_str == "BTreeMap";
+            let mut type_args = args.args.iter().filter_map(|arg| match arg {
+                syn::GenericArgument::Type(t) => Some(t),
+                _ => None,
+            });
+            let _key_ty = type_args.next();
+            if let Some(val_ty) = type_args.next() {
+                return BlockTypeKind::Map {
+                    is_btreemap,
+                    inner: Box::new(inspect_block_type(val_ty)),
+                };
             }
         }
     }

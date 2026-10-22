@@ -351,15 +351,17 @@ pub(crate) fn apply_template_strip_markers(raw_items: &mut [RawItem]) {
             RawItem::Literal(_, _) => (false, false),
             RawItem::Interpolation(_, _, sl, sr) | RawItem::Directive(_, _, sl, sr) => (*sl, *sr),
         };
-        if strip_left && idx > 0 {
-            if let RawItem::Literal(ref mut s, _) = raw_items[idx - 1] {
-                *s = s.trim_end().to_string();
-            }
+        if strip_left
+            && idx > 0
+            && let RawItem::Literal(ref mut s, _) = raw_items[idx - 1]
+        {
+            *s = s.trim_end().to_string();
         }
-        if strip_right && idx + 1 < raw_items.len() {
-            if let RawItem::Literal(ref mut s, _) = raw_items[idx + 1] {
-                *s = s.trim_start().to_string();
-            }
+        if strip_right
+            && idx + 1 < raw_items.len()
+            && let RawItem::Literal(ref mut s, _) = raw_items[idx + 1]
+        {
+            *s = s.trim_start().to_string();
         }
     }
 }
@@ -393,13 +395,14 @@ fn build_if_template_part(
             break;
         }
     }
-    let mut false_expr = None;
-    if *pos < items.len() {
-        if let RawItem::Directive(RawDirective::Else, ..) = &items[*pos] {
-            *pos += 1;
-            false_expr = Some(build_template_tree(items, pos, diags, &["endif"]));
-        }
-    }
+    let false_expr = if *pos < items.len()
+        && let RawItem::Directive(RawDirective::Else, ..) = &items[*pos]
+    {
+        *pos += 1;
+        Some(build_template_tree(items, pos, diags, &["endif"]))
+    } else {
+        None
+    };
     if is_end_if(items.get(*pos)) {
         *pos += 1;
     } else {

@@ -45,7 +45,7 @@ pub struct Refinement {
     /// Maximum number value, if known.
     pub number_max: Option<Number>,
     /// Known refinements for object attributes.
-    pub object_attrs: BTreeMap<String, Refinement>,
+    pub object_attrs: BTreeMap<String, Self>,
 }
 impl std::hash::Hash for Refinement {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -350,13 +350,13 @@ impl Refinement {
         };
         if let Some(ref s) = merged {
             let count = s.chars().count();
-            if let Some(max) = string_length_max {
-                if count > max {
-                    let kind = if is_prefix { "prefix" } else { "suffix" };
-                    return Err(crate::error::HclError::Validation(format!(
-                        "{kind} length ({count}) exceeds maximum string length ({max})"
-                    )));
-                }
+            if let Some(max) = string_length_max
+                && count > max
+            {
+                let kind = if is_prefix { "prefix" } else { "suffix" };
+                return Err(crate::error::HclError::Validation(format!(
+                    "{kind} length ({count}) exceeds maximum string length ({max})"
+                )));
             }
             *string_length_min = Some(string_length_min.map_or(count, |m| m.max(count)));
         }

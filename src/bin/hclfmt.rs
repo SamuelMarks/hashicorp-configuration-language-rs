@@ -2,10 +2,10 @@
 //!
 //! Provides formatting, checking, listing, and diffing of `.hcl` and `.tf` files
 //! according to canonical HCL style guidelines.
-#![deny(missing_docs)]
-#![deny(rustdoc::missing_crate_level_docs)]
-#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(missing_docs)]
+#![forbid(rustdoc::missing_crate_level_docs)]
+#![forbid(clippy::all, clippy::pedantic, clippy::nursery)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use hashicorp_configuration_language_rs::cst::format::format_str;
 use hashicorp_configuration_language_rs::diagnostic::Diagnostic;
@@ -123,12 +123,11 @@ fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), HclError> 
         let entry_path = entry.path();
         if entry_path.is_dir() {
             walk_directory(&entry_path, files)?;
-        } else if entry_path.is_file() {
-            if let Some(ext) = entry_path.extension().and_then(|s| s.to_str()) {
-                if ext == "hcl" || ext == "tf" {
-                    files.push(entry_path);
-                }
-            }
+        } else if entry_path.is_file()
+            && let Some(ext) = entry_path.extension().and_then(|s| s.to_str())
+            && (ext == "hcl" || ext == "tf")
+        {
+            files.push(entry_path);
         }
     }
     Ok(())

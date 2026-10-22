@@ -8,7 +8,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct Context<'a> {
     /// Parent context for fallback resolution.
-    pub parent: Option<&'a Context<'a>>,
+    pub parent: Option<&'a Self>,
     /// Variables defined in this scope.
     pub variables: HashMap<String, Value>,
     /// Functions defined in this scope.
@@ -234,11 +234,11 @@ impl<'a> Context<'a> {
         value: Value,
     ) {
         let name_str = name.into();
-        if let Some(ns_val) = self.variables.get_mut(namespace) {
-            if let crate::types::ValueData::Object(map) = &mut *ns_val.data {
-                map.insert(name_str, value);
-                return;
-            }
+        if let Some(ns_val) = self.variables.get_mut(namespace)
+            && let crate::types::ValueData::Object(map) = &mut *ns_val.data
+        {
+            map.insert(name_str, value);
+            return;
         }
         let mut map = std::collections::BTreeMap::new();
         map.insert(name_str, value);

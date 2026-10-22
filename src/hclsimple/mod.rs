@@ -255,23 +255,19 @@ mod tests {
         ) -> Result<Self, Diagnostics> {
             let mut conf = Self::default();
             for (k, attr) in &body.attributes {
-                if k == "foo" {
-                    if let Ok((crate::types::Value { data, .. }, _)) =
+                if k == "foo"
+                    && let Ok((crate::types::Value { data, .. }, _)) =
                         crate::eval::evaluator::Evaluator::new(&*ctx).evaluate(&attr.expr)
-                    {
-                        if let crate::types::ValueData::String(s) = *data {
-                            conf.foo = s;
-                        }
-                    }
+                    && let crate::types::ValueData::String(s) = *data
+                {
+                    conf.foo = s;
                 }
-                if k == "bar" {
-                    if let Ok((crate::types::Value { data, .. }, _)) =
+                if k == "bar"
+                    && let Ok((crate::types::Value { data, .. }, _)) =
                         crate::eval::evaluator::Evaluator::new(&*ctx).evaluate(&attr.expr)
-                    {
-                        if let crate::types::ValueData::Number(n) = *data {
-                            conf.bar = n.as_i64().unwrap_or(0);
-                        }
-                    }
+                    && let crate::types::ValueData::Number(n) = *data
+                {
+                    conf.bar = n.as_i64().unwrap_or(0);
                 }
             }
             Ok(conf)

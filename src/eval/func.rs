@@ -238,10 +238,10 @@ impl Function {
     /// Impure functions (like `uuid` or `timestamp`) cannot be folded during partial evaluation.
     #[must_use]
     pub fn is_deterministic(&self) -> bool {
-        if let Some(sig) = &self.signature {
-            if !sig.is_deterministic {
-                return false;
-            }
+        if let Some(sig) = &self.signature
+            && !sig.is_deterministic
+        {
+            return false;
         }
         !matches!(
             self.name.as_str(),

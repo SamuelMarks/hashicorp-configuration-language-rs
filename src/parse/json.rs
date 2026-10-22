@@ -16,9 +16,9 @@ use crate::span::Span;
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonNode {
     /// A JSON object containing key-span-value triples and the enclosing object span.
-    Object(Vec<(String, Span, JsonNode)>, Span),
+    Object(Vec<(String, Span, Self)>, Span),
     /// A JSON array containing ordered child elements and the enclosing array span.
-    Array(Vec<JsonNode>, Span),
+    Array(Vec<Self>, Span),
     /// A JSON string literal and its source span.
     String(String, Span),
     /// A JSON numeric literal and its source span.
@@ -443,7 +443,7 @@ fn process_object_members(members: Vec<(String, Span, JsonNode)>, body: &mut Bod
                 let mut block_body = Body::new(val_span.clone());
                 process_object_members(child_members, &mut block_body);
                 body.blocks.push(Block {
-                    block_type: key.clone(),
+                    block_type: key,
                     labels: vec![],
                     body: block_body,
                     span: key_span.merge(&val_span),
@@ -486,7 +486,7 @@ fn process_object_members(members: Vec<(String, Span, JsonNode)>, body: &mut Bod
                     body.attributes.insert(
                         key.clone(),
                         Attribute {
-                            name: key.clone(),
+                            name: key,
                             expr,
                             span: key_span.merge(&array_span),
                             name_span: key_span.clone(),
@@ -503,7 +503,7 @@ fn process_object_members(members: Vec<(String, Span, JsonNode)>, body: &mut Bod
                 body.attributes.insert(
                     key.clone(),
                     Attribute {
-                        name: key.clone(),
+                        name: key,
                         expr,
                         span: key_span.merge(&val_span),
                         name_span: key_span.clone(),
@@ -673,10 +673,10 @@ fn json_string_to_expression(s: &str, span: Span) -> Expression {
     let quoted = format!("\"{s}\"");
     let mut diags = Diagnostics::new();
     let parts = crate::parse::parser::Parser::parse_template(&mut diags, &quoted, &span);
-    if parts.len() == 1 {
-        if let TemplatePart::Interpolation(ref expr, _) = parts[0] {
-            return expr.clone();
-        }
+    if parts.len() == 1
+        && let TemplatePart::Interpolation(ref expr, _) = parts[0]
+    {
+        return expr.clone();
     }
     Expression::Template(parts, span)
 }

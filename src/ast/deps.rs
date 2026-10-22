@@ -340,10 +340,10 @@ impl DependencyGraph {
         let mut on_stack = HashSet::new();
         let mut path = Vec::new();
         for node in &self.nodes {
-            if !visited.contains(node) {
-                if let Some(cycle) = self.dfs_cycle(node, &mut visited, &mut on_stack, &mut path) {
-                    return Some(cycle);
-                }
+            if !visited.contains(node)
+                && let Some(cycle) = self.dfs_cycle(node, &mut visited, &mut on_stack, &mut path)
+            {
+                return Some(cycle);
             }
         }
         None
@@ -365,10 +365,10 @@ impl DependencyGraph {
                 cycle.push(dep.clone());
                 return Some(cycle);
             }
-            if !visited.contains(dep) {
-                if let Some(cycle) = self.dfs_cycle(dep, visited, on_stack, path) {
-                    return Some(cycle);
-                }
+            if !visited.contains(dep)
+                && let Some(cycle) = self.dfs_cycle(dep, visited, on_stack, path)
+            {
+                return Some(cycle);
             }
         }
         path.pop();

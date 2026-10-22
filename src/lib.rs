@@ -5,7 +5,7 @@
 #![deny(clippy::all, clippy::pedantic, clippy::nursery)]
 #![deny(missing_docs)]
 #![deny(rustdoc::missing_crate_level_docs)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 pub mod analysis;
 pub mod api;
 pub mod ast;

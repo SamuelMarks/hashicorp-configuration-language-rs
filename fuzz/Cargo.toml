@@ -3,6 +3,7 @@ name = "hashicorp-configuration-language-rs-fuzz"
 version = "0.0.1"
 publish = false
 edition = "2024"
+rust-version = "1.89.0"
 authors = ["Samuel Marks"]
 license = "CC0 OR MIT OR Apache-2.0"
 repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs"
@@ -56,3 +57,6 @@ path = "fuzz_targets/transform.rs"
 test = false
 name = "json_schema"
 path = "fuzz_targets/json_schema.rs"
+
+[lints]
+workspace = true

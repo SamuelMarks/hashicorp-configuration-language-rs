@@ -232,10 +232,10 @@ impl PartialEq for Value {
         if self.ty != other.ty || self.marks != other.marks {
             return false;
         }
-        if let (ValueData::Capsule(a), ValueData::Capsule(b)) = (&*self.data, &*other.data) {
-            if let Some(ops) = self.ty.capsule_ops() {
-                return (ops.equals)(&**a, &**b);
-            }
+        if let (ValueData::Capsule(a), ValueData::Capsule(b)) = (&*self.data, &*other.data)
+            && let Some(ops) = self.ty.capsule_ops()
+        {
+            return (ops.equals)(&**a, &**b);
         }
         self.data == other.data
     }
@@ -426,10 +426,10 @@ impl Value {
     #[must_use]
     pub fn get_mark<M: AnyValueMark + 'static>(&self) -> Option<&M> {
         for m in &self.marks {
-            if let ValueMark::Typed(tm) = m {
-                if let Some(concrete) = tm.0.as_any().downcast_ref::<M>() {
-                    return Some(concrete);
-                }
+            if let ValueMark::Typed(tm) = m
+                && let Some(concrete) = tm.0.as_any().downcast_ref::<M>()
+            {
+                return Some(concrete);
             }
         }
         None
@@ -1245,20 +1245,20 @@ impl Value {
     fn coerce_unknown(&self, target: &Type) -> Result<Self, HclError> {
         if let Some(r) = self.refinement() {
             crate::types::unify::validate_unknown_refinement(target, r)?;
-            if self.ty == Type::String && target == &Type::Number {
-                if let Some(ref p) = r.string_prefix {
-                    if !p.is_empty() {
-                        let first_char = p.chars().next().unwrap_or(' ');
-                        if !first_char.is_ascii_digit()
-                            && first_char != '-'
-                            && first_char != '+'
-                            && first_char != '.'
-                        {
-                            return Err(HclError::Type(format!(
-                                "cannot coerce string with prefix {p:?} to number"
-                            )));
-                        }
-                    }
+            if self.ty == Type::String
+                && target == &Type::Number
+                && let Some(ref p) = r.string_prefix
+                && !p.is_empty()
+            {
+                let first_char = p.chars().next().unwrap_or(' ');
+                if !first_char.is_ascii_digit()
+                    && first_char != '-'
+                    && first_char != '+'
+                    && first_char != '.'
+                {
+                    return Err(HclError::Type(format!(
+                        "cannot coerce string with prefix {p:?} to number"
+                    )));
                 }
             }
             let mut new_r = r.clone();
@@ -1286,22 +1286,20 @@ impl Value {
         if &self.ty == target || self.ty.is_dynamic() || target.is_dynamic() {
             return Ok(self.clone());
         }
-        if let Some(ops) = self.ty.capsule_ops() {
-            if let ValueData::Capsule(a) = &*self.data {
-                if let Some(ref conv) = ops.conversion_to {
-                    if let Some(val) = (conv)(&**a, target) {
-                        return Ok(val.with_marks(self.marks.clone()));
-                    }
-                }
-            }
+        if let Some(ops) = self.ty.capsule_ops()
+            && let ValueData::Capsule(a) = &*self.data
+            && let Some(ref conv) = ops.conversion_to
+            && let Some(val) = (conv)(&**a, target)
+        {
+            return Ok(val.with_marks(self.marks.clone()));
         }
-        if let Some(ops) = target.capsule_ops() {
-            if let Some(ref conv) = ops.conversion_from {
-                if let Some(arc) = (conv)(self) {
-                    return Ok(Self::new(target.clone(), ValueData::Capsule(arc))
-                        .with_marks(self.marks.clone()));
-                }
-            }
+        if let Some(ops) = target.capsule_ops()
+            && let Some(ref conv) = ops.conversion_from
+            && let Some(arc) = (conv)(self)
+        {
+            return Ok(
+                Self::new(target.clone(), ValueData::Capsule(arc)).with_marks(self.marks.clone())
+            );
         }
         if self.ty.is_capsule() || target.is_capsule() {
             return Err(HclError::Type(format!(

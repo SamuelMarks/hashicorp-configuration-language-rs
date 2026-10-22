@@ -170,10 +170,10 @@ impl DagResolver {
         }
         for (var_name, decl) in &var_decls {
             let from_node = format!("var.{var_name}");
-            if !self.var_overrides.contains_key(var_name) {
-                if let Some(ref expr) = decl.default_expr {
-                    Self::add_expr_edges(&mut dag, &from_node, expr);
-                }
+            if !self.var_overrides.contains_key(var_name)
+                && let Some(ref expr) = decl.default_expr
+            {
+                Self::add_expr_edges(&mut dag, &from_node, expr);
             }
         }
         for (local_name, decl) in &local_decls {

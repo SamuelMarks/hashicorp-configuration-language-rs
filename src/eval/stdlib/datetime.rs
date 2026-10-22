@@ -150,13 +150,13 @@ fn timeadd_func() -> Function {
                     let val: f64 = current_num
                         .parse()
                         .map_err(|_| HclError::Eval("invalid duration".to_string()))?;
-                    total_secs += val * 3600.0;
+                    total_secs = val.mul_add(3600.0, total_secs);
                     current_num.clear();
                 } else if c == 'm' {
                     let val: f64 = current_num
                         .parse()
                         .map_err(|_| HclError::Eval("invalid duration".to_string()))?;
-                    total_secs += val * 60.0;
+                    total_secs = val.mul_add(60.0, total_secs);
                     current_num.clear();
                 } else if c == 's' {
                     let val: f64 = current_num

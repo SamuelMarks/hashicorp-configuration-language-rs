@@ -19,12 +19,12 @@ fn resolve_schema_at_offset<'a>(
     root_schema: &'a BodySchema,
 ) -> &'a BodySchema {
     for block in &body.blocks {
-        if block.span.start_byte <= offset && offset <= block.span.end_byte {
-            if let Some(block_schema) = root_schema.blocks.get(&block.block_type) {
-                if let Some(ref inner_schema) = block_schema.body_schema {
-                    return resolve_schema_at_offset(&block.body, offset, inner_schema);
-                }
-            }
+        if block.span.start_byte <= offset
+            && offset <= block.span.end_byte
+            && let Some(block_schema) = root_schema.blocks.get(&block.block_type)
+            && let Some(ref inner_schema) = block_schema.body_schema
+        {
+            return resolve_schema_at_offset(&block.body, offset, inner_schema);
         }
     }
     root_schema
@@ -142,16 +142,16 @@ pub fn completions_at_position(
                         insert_text: Some(format!("local.{name}")),
                     });
                 }
-            } else if block.block_type == "variable" {
-                if let Some(var_name) = block.labels.first() {
-                    items.push(CompletionItem {
-                        label: format!("var.{var_name}"),
-                        kind: Some(CompletionItemKind::VARIABLE),
-                        detail: Some("Input variable".to_string()),
-                        documentation: None,
-                        insert_text: Some(format!("var.{var_name}")),
-                    });
-                }
+            } else if block.block_type == "variable"
+                && let Some(var_name) = block.labels.first()
+            {
+                items.push(CompletionItem {
+                    label: format!("var.{var_name}"),
+                    kind: Some(CompletionItemKind::VARIABLE),
+                    detail: Some("Input variable".to_string()),
+                    documentation: None,
+                    insert_text: Some(format!("var.{var_name}")),
+                });
             }
         }
     }
@@ -206,7 +206,7 @@ mod tests {
         };
         let doc = VirtualDocument::new(item, None);
         let list = completions_at_position(&doc, Position::new(0, 0), Some(&schema));
-        assert!(!list.items.is_empty());
+        assert_ne!(list.items, Vec::new());
         assert!(list.items.iter().any(|i| i.label == "instance_type"));
         assert!(list.items.iter().any(|i| i.label == "disk_size"));
         assert!(list.items.iter().any(|i| i.label == "resource"));

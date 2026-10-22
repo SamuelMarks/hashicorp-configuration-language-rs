@@ -73,15 +73,14 @@ pub fn find_references(
             .into_iter()
             .flatten()
         {
-            if r.root == root_type {
-                if let Some(TraversalOperator::GetAttr(name, span)) = r.operators.first() {
-                    if name == &symbol_name {
-                        locations.push(Location {
-                            uri: uri.clone(),
-                            range: span_to_range(span),
-                        });
-                    }
-                }
+            if r.root == root_type
+                && let Some(TraversalOperator::GetAttr(name, span)) = r.operators.first()
+                && name == &symbol_name
+            {
+                locations.push(Location {
+                    uri: uri.clone(),
+                    range: span_to_range(span),
+                });
             }
         }
     }
@@ -95,13 +94,13 @@ fn find_local_declaration(local_name: &str, cache: &DocumentCache) -> Option<Loc
             continue;
         };
         for block in &body.blocks {
-            if block.block_type == "locals" {
-                if let Some(attr) = block.body.attributes.get(local_name) {
-                    return Some(Location {
-                        uri: uri.clone(),
-                        range: span_to_range(&attr.name_span),
-                    });
-                }
+            if block.block_type == "locals"
+                && let Some(attr) = block.body.attributes.get(local_name)
+            {
+                return Some(Location {
+                    uri: uri.clone(),
+                    range: span_to_range(&attr.name_span),
+                });
             }
         }
     }
@@ -115,16 +114,15 @@ fn find_variable_declaration(var_name: &str, cache: &DocumentCache) -> Option<Lo
             continue;
         };
         for block in &body.blocks {
-            if block.block_type == "variable" {
-                if let Some(name) = block.labels.first() {
-                    if name == var_name {
-                        let span = block.label_spans.first().unwrap_or(&block.type_span);
-                        return Some(Location {
-                            uri: uri.clone(),
-                            range: span_to_range(span),
-                        });
-                    }
-                }
+            if block.block_type == "variable"
+                && let Some(name) = block.labels.first()
+                && name == var_name
+            {
+                let span = block.label_spans.first().unwrap_or(&block.type_span);
+                return Some(Location {
+                    uri: uri.clone(),
+                    range: span_to_range(span),
+                });
             }
         }
     }
@@ -239,20 +237,20 @@ fn find_symbol_target_at_offset(
                     return Some(("local".to_string(), name.clone()));
                 }
             }
-        } else if block.block_type == "variable" {
-            if let Some(var_name) = block.labels.first() {
-                let label_span = block.label_spans.first().unwrap_or(&block.type_span);
-                if label_span.start_byte <= offset && offset <= label_span.end_byte {
-                    return Some(("var".to_string(), var_name.clone()));
-                }
+        } else if block.block_type == "variable"
+            && let Some(var_name) = block.labels.first()
+        {
+            let label_span = block.label_spans.first().unwrap_or(&block.type_span);
+            if label_span.start_byte <= offset && offset <= label_span.end_byte {
+                return Some(("var".to_string(), var_name.clone()));
             }
         }
     }
     let trav = find_traversal_at_offset(doc, body, offset)?;
-    if trav.root_name == "local" || trav.root_name == "var" {
-        if let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first() {
-            return Some((trav.root_name, name.clone()));
-        }
+    if (trav.root_name == "local" || trav.root_name == "var")
+        && let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first()
+    {
+        return Some((trav.root_name, name.clone()));
     }
     None
 }

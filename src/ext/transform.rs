@@ -208,9 +208,9 @@ where
     B: Fn(&Block) -> bool,
     D: Fn(&DynamicBlock) -> bool,
 {
-    attr_filter: A,
-    block_filter: B,
-    dyn_block_filter: D,
+    attr: A,
+    block: B,
+    dyn_block: D,
 }
 
 impl<A, B, D> FilterTransformer<A, B, D>
@@ -222,14 +222,14 @@ where
     /// Creates a new `FilterTransformer`.
     ///
     /// # Arguments
-    /// * `attr_filter` - Closure returning true if the attribute should be kept.
-    /// * `block_filter` - Closure returning true if the block should be kept.
-    /// * `dyn_block_filter` - Closure returning true if the dynamic block should be kept.
-    pub const fn new(attr_filter: A, block_filter: B, dyn_block_filter: D) -> Self {
+    /// * `attr` - Closure returning true if the attribute should be kept.
+    /// * `block` - Closure returning true if the block should be kept.
+    /// * `dyn_block` - Closure returning true if the dynamic block should be kept.
+    pub const fn new(attr: A, block: B, dyn_block: D) -> Self {
         Self {
-            attr_filter,
-            block_filter,
-            dyn_block_filter,
+            attr,
+            block,
+            dyn_block,
         }
     }
 }
@@ -252,11 +252,11 @@ impl TransformedBody {
         D: Fn(&DynamicBlock) -> bool,
     {
         body.attributes
-            .retain(|_, attr| (filter_transformer.attr_filter)(attr));
+            .retain(|_, attr| (filter_transformer.attr)(attr));
         body.blocks
-            .retain(|block| (filter_transformer.block_filter)(block));
+            .retain(|block| (filter_transformer.block)(block));
         body.dynamic_blocks
-            .retain(|dyn_block| (filter_transformer.dyn_block_filter)(dyn_block));
+            .retain(|dyn_block| (filter_transformer.dyn_block)(dyn_block));
 
         let mut transformed_blocks = Vec::with_capacity(body.blocks.len());
         for mut block in body.blocks {

@@ -60,11 +60,11 @@ pub enum TypeExpr {
     /// A primitive type (string, number, bool) or dynamic.
     Primitive(Type, Span),
     /// A collection type wrapping another type expression.
-    Collection(CollectionType, Box<TypeExpr>, Span),
+    Collection(CollectionType, Box<Self>, Span),
     /// An object type with strongly typed attributes.
     Object(HashMap<String, ObjectAttrType>, Span),
     /// A tuple type with an ordered sequence of type expressions.
-    Tuple(Vec<TypeExpr>, Span),
+    Tuple(Vec<Self>, Span),
 }
 impl TypeExpr {
     /// Returns the source span for this type expression.

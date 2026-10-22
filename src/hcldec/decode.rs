@@ -76,15 +76,15 @@ fn decode_block_attrs(
         let (val, _) = Evaluator::new(ctx)
             .evaluate(&attr.expr)
             .map_err(|diags| HclError::Eval(format!("{diags:?}")))?;
-        if let Some(expected_ty) = &attrs_spec.expected_type {
-            if val.ty() != expected_ty {
-                return Err(HclError::Type(format!(
-                    "Attribute '{}' expected type {}, got {}",
-                    name,
-                    expected_ty,
-                    val.ty()
-                )));
-            }
+        if let Some(expected_ty) = &attrs_spec.expected_type
+            && val.ty() != expected_ty
+        {
+            return Err(HclError::Type(format!(
+                "Attribute '{}' expected type {}, got {}",
+                name,
+                expected_ty,
+                val.ty()
+            )));
         }
         type_map.insert(name.clone(), val.ty().clone());
         result.insert(name.clone(), val);
@@ -105,23 +105,23 @@ fn decode_block_list(
         .iter()
         .filter(|b| b.block_type == list_spec.type_name)
         .collect();
-    if let Some(min) = list_spec.min_items {
-        if matching_blocks.len() < min {
-            return Err(HclError::Decode(format!(
-                "Expected at least {min} blocks of type '{}', found {}",
-                list_spec.type_name,
-                matching_blocks.len()
-            )));
-        }
+    if let Some(min) = list_spec.min_items
+        && matching_blocks.len() < min
+    {
+        return Err(HclError::Decode(format!(
+            "Expected at least {min} blocks of type '{}', found {}",
+            list_spec.type_name,
+            matching_blocks.len()
+        )));
     }
-    if let Some(max) = list_spec.max_items {
-        if matching_blocks.len() > max {
-            return Err(HclError::Decode(format!(
-                "Expected at most {max} blocks of type '{}', found {}",
-                list_spec.type_name,
-                matching_blocks.len()
-            )));
-        }
+    if let Some(max) = list_spec.max_items
+        && matching_blocks.len() > max
+    {
+        return Err(HclError::Decode(format!(
+            "Expected at most {max} blocks of type '{}', found {}",
+            list_spec.type_name,
+            matching_blocks.len()
+        )));
     }
     let mut vals = Vec::new();
     let mut types = Vec::new();
@@ -465,23 +465,23 @@ fn decode_partial_block_list(
         }
     }
     residual.blocks = non_matching;
-    if let Some(min) = list_spec.min_items {
-        if matching.len() < min {
-            return Err(HclError::Decode(format!(
-                "Expected at least {min} blocks of type '{}', found {}",
-                list_spec.type_name,
-                matching.len()
-            )));
-        }
+    if let Some(min) = list_spec.min_items
+        && matching.len() < min
+    {
+        return Err(HclError::Decode(format!(
+            "Expected at least {min} blocks of type '{}', found {}",
+            list_spec.type_name,
+            matching.len()
+        )));
     }
-    if let Some(max) = list_spec.max_items {
-        if matching.len() > max {
-            return Err(HclError::Decode(format!(
-                "Expected at most {max} blocks of type '{}', found {}",
-                list_spec.type_name,
-                matching.len()
-            )));
-        }
+    if let Some(max) = list_spec.max_items
+        && matching.len() > max
+    {
+        return Err(HclError::Decode(format!(
+            "Expected at most {max} blocks of type '{}', found {}",
+            list_spec.type_name,
+            matching.len()
+        )));
     }
     let mut vals = Vec::new();
     let mut types = Vec::new();
@@ -524,15 +524,15 @@ fn decode_partial_block_attrs(
         let (val, _) = Evaluator::new(ctx)
             .evaluate(&attr.expr)
             .map_err(|diags| HclError::Eval(format!("{diags:?}")))?;
-        if let Some(expected_ty) = &attrs_spec.expected_type {
-            if val.ty() != expected_ty {
-                return Err(HclError::Type(format!(
-                    "Attribute '{}' expected type {}, got {}",
-                    name,
-                    expected_ty,
-                    val.ty()
-                )));
-            }
+        if let Some(expected_ty) = &attrs_spec.expected_type
+            && val.ty() != expected_ty
+        {
+            return Err(HclError::Type(format!(
+                "Attribute '{}' expected type {}, got {}",
+                name,
+                expected_ty,
+                val.ty()
+            )));
         }
         type_map.insert(name.clone(), val.ty().clone());
         result.insert(name.clone(), val);

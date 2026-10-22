@@ -2,6 +2,7 @@
 name = "hcl-ffi"
 version = "0.0.1"
 edition = "2024"
+rust-version = "1.89.0"
 authors = ["Samuel Marks"]
 license = "CC0 OR MIT OR Apache-2.0"
 repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs"
@@ -19,5 +20,5 @@ cbindgen = { version = "0.29", default-features = false }
 [build-dependencies]
 cbindgen = { version = "0.29", default-features = false }
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)', 'cfg(tarpaulin_include)'] }
+[lints]
+workspace = true

@@ -285,7 +285,7 @@ mod tests {
             .ok_or_else(|| HclError::Eval("missing srv children".to_string()))?;
         assert_eq!(srv_children[0].name, "node1");
         let all_ws = workspace_symbols("file:///func.hcl", &doc_func, "");
-        assert!(!all_ws.is_empty());
+        assert_ne!(all_ws, Vec::new());
         Ok(())
     }
 }

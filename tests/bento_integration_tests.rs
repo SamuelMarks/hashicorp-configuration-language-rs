@@ -1,7 +1,9 @@
 //! Integration tests validating multi-file template merging and variable evaluation
 //! against Bento and downstream Packer infrastructure-as-code definitions.
-#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(clippy::all, clippy::pedantic, clippy::nursery)]
+#![forbid(missing_docs)]
+#![forbid(rustdoc::missing_crate_level_docs)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use hashicorp_configuration_language_rs::eval::context::Context;
 use hashicorp_configuration_language_rs::eval::dag::DagResolver;
@@ -32,7 +34,10 @@ fn test_bento_templates_directory_merge() -> Result<(), Box<dyn std::error::Erro
             let merged =
                 merge_directory(&templates_dir, &["pkr.hcl"]).map_err(|e| e.to_string())?;
 
-            assert!(!merged.blocks.is_empty());
+            assert_ne!(
+                merged.blocks,
+                [] as [hashicorp_configuration_language_rs::api::Block; 0]
+            );
 
             // Check presence of variables, sources, and build blocks
             let has_vars = merged.blocks.iter().any(|b| b.block_type == "variable");

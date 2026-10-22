@@ -189,15 +189,15 @@ impl Iterator for Lexer<'_> {
     type Item = Result<Token, LexError>;
     fn next(&mut self) -> Option<Self::Item> {
         let remainder = self.inner.remainder();
-        if remainder.starts_with("<<") {
-            if let Some(heredoc_token) = self.parse_heredoc() {
-                return Some(Ok(heredoc_token));
-            }
+        if remainder.starts_with("<<")
+            && let Some(heredoc_token) = self.parse_heredoc()
+        {
+            return Some(Ok(heredoc_token));
         }
-        if remainder.starts_with('"') {
-            if let Some(str_token) = self.parse_quoted_string() {
-                return Some(Ok(str_token));
-            }
+        if remainder.starts_with('"')
+            && let Some(str_token) = self.parse_quoted_string()
+        {
+            return Some(Ok(str_token));
         }
         let res = self.inner.next()?;
         let span_logos = self.inner.span();

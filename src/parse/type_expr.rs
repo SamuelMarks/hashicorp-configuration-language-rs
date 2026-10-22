@@ -149,24 +149,25 @@ impl<'a> TypeExprParser<'a> {
         Ok(TypeExpr::Object(attrs, span))
     }
     fn parse_object_attr_type(&mut self) -> Result<ObjectAttrType, HclError> {
-        if let Some(tok) = &self.current {
-            if tok.kind == TokenKind::Ident && tok.text == "optional" {
-                self.advance();
-                self.expect(&TokenKind::OParen)?;
-                let inner_ty = self.parse_type_expr()?;
-                let default_val = if let Some(t) = &self.current {
-                    if t.kind == TokenKind::Comma {
-                        self.advance();
-                        Some(self.parse_default_expr()?)
-                    } else {
-                        None
-                    }
+        if let Some(tok) = &self.current
+            && tok.kind == TokenKind::Ident
+            && tok.text == "optional"
+        {
+            self.advance();
+            self.expect(&TokenKind::OParen)?;
+            let inner_ty = self.parse_type_expr()?;
+            let default_val = if let Some(t) = &self.current {
+                if t.kind == TokenKind::Comma {
+                    self.advance();
+                    Some(self.parse_default_expr()?)
                 } else {
                     None
-                };
-                self.expect(&TokenKind::CParen)?;
-                return Ok(ObjectAttrType::optional(inner_ty, default_val));
-            }
+                }
+            } else {
+                None
+            };
+            self.expect(&TokenKind::CParen)?;
+            return Ok(ObjectAttrType::optional(inner_ty, default_val));
         }
         let ty = self.parse_type_expr()?;
         Ok(ObjectAttrType::required(ty))

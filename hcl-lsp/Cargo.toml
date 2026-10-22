@@ -2,6 +2,7 @@
 name = "hcl-lsp"
 version = "0.0.1"
 edition = "2024"
+rust-version = "1.89.0"
 authors = ["Samuel Marks"]
 license = "CC0 OR MIT OR Apache-2.0"
 repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs"
@@ -11,5 +12,5 @@ hashicorp-configuration-language-rs = { path = ".." }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)', 'cfg(tarpaulin_include)', 'cfg(coverage)', 'cfg(coverage_nightly)'] }
+[lints]
+workspace = true

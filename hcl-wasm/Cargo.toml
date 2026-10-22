@@ -2,6 +2,7 @@
 name = "hcl-wasm"
 version = "0.0.1"
 edition = "2024"
+rust-version = "1.89.0"
 authors = ["Samuel Marks"]
 license = "CC0 OR MIT OR Apache-2.0"
 repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs"
@@ -17,5 +18,5 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 wasm-bindgen = { version = "0.2", default-features = false }
 serde-wasm-bindgen = { version = "0.6", default-features = false }
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)', 'cfg(tarpaulin_include)'] }
+[lints]
+workspace = true

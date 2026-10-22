@@ -13,20 +13,20 @@ pub enum Type {
     /// Boolean type.
     Bool,
     /// A list of elements of a specific type.
-    List(Box<Type>),
+    List(Box<Self>),
     /// A set of unique elements of a specific type.
-    Set(Box<Type>),
+    Set(Box<Self>),
     /// A map with string keys and values of a specific type.
-    Map(Box<Type>),
+    Map(Box<Self>),
     /// An object with a specific schema of string keys to typed values, and optional attribute names.
     Object {
         /// The types of the object attributes.
-        attrs: BTreeMap<String, Type>,
+        attrs: BTreeMap<String, Self>,
         /// The set of attribute names that are optional.
         optional_attrs: BTreeSet<String>,
     },
     /// A tuple of elements, each potentially a different type.
-    Tuple(Vec<Type>),
+    Tuple(Vec<Self>),
     /// An encapsulated Rust type (`cty.Capsule`).
     Capsule {
         /// The symbolic name of the encapsulated type.

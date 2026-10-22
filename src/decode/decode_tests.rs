@@ -760,45 +760,40 @@ count = 100"#;
         Ok(())
     }
     /// Struct colliding with child attribute.
-    #[allow(dead_code)]
     #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
     struct DupAttrParent {
         #[hcl(attr)]
-        engine: String,
+        pub engine: String,
         #[hcl(flatten)]
-        child: FlatDatabaseConfig,
+        pub child: FlatDatabaseConfig,
     }
     /// Struct colliding with child block.
-    #[allow(dead_code)]
     #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
     struct DupBlockParent {
         #[hcl(block)]
-        servers: Vec<FlatServerNode>,
+        pub servers: Vec<FlatServerNode>,
         #[hcl(flatten)]
-        child: FlatCoreConfig,
+        pub child: FlatCoreConfig,
     }
     /// Sibling child struct A.
-    #[allow(dead_code)]
-    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
+    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug, PartialEq, Eq)]
     struct SiblingChildA {
         #[hcl(attr)]
-        port: u16,
+        pub port: u16,
     }
     /// Sibling child struct B colliding with child A on attribute port.
-    #[allow(dead_code)]
-    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
+    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug, PartialEq, Eq)]
     struct SiblingChildB {
         #[hcl(attr)]
-        port: u16,
+        pub port: u16,
     }
     /// Parent containing two sibling flattened structs with conflicting attributes.
-    #[allow(dead_code)]
-    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
+    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug, PartialEq, Eq)]
     struct SiblingConflictParent {
         #[hcl(flatten)]
-        a: SiblingChildA,
+        pub a: SiblingChildA,
         #[hcl(flatten)]
-        b: SiblingChildB,
+        pub b: SiblingChildB,
     }
     /// Tests runtime collision detection between parent and child attributes.
     #[test]
@@ -811,6 +806,7 @@ count = 100"#;
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = DupAttrParent::decode_body(&body, &[], &mut ctx)
+            .map(|v| (v.engine, v.child))
             .err()
             .ok_or("expected duplicate attribute error")?;
         assert!(err.errors().iter().any(|e| {
@@ -832,6 +828,7 @@ count = 100"#;
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = DupBlockParent::decode_body(&body, &[], &mut ctx)
+            .map(|v| (v.servers, v.child))
             .err()
             .ok_or("expected duplicate block error")?;
         assert!(err.errors().iter().any(|e| {
@@ -849,6 +846,7 @@ count = 100"#;
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = SiblingConflictParent::decode_body(&body, &[], &mut ctx)
+            .map(|v| (v.a.port, v.b.port))
             .err()
             .ok_or("expected duplicate attribute error")?;
         assert!(err.errors().iter().any(|e| {
@@ -859,27 +857,24 @@ count = 100"#;
         Ok(())
     }
     /// Child with required attribute x.
-    #[allow(dead_code)]
-    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
+    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug, PartialEq, Eq)]
     struct ChildRequiredA {
         #[hcl(attr)]
-        attr_a: String,
+        pub attr_a: String,
     }
     /// Child with required attribute y.
-    #[allow(dead_code)]
-    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
+    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug, PartialEq, Eq)]
     struct ChildRequiredB {
         #[hcl(attr)]
-        attr_b: i64,
+        pub attr_b: i64,
     }
     /// Parent containing both `ChildRequiredA` and `ChildRequiredB` for partial failure testing.
-    #[allow(dead_code)]
-    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
+    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug, PartialEq, Eq)]
     struct MultiFailureParent {
         #[hcl(flatten)]
-        child_a: ChildRequiredA,
+        pub child_a: ChildRequiredA,
         #[hcl(flatten)]
-        child_b: ChildRequiredB,
+        pub child_b: ChildRequiredB,
     }
     /// Tests partial failure recovery: both child structs report missing attributes in a single pass.
     #[test]
@@ -889,6 +884,7 @@ count = 100"#;
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = MultiFailureParent::decode_body(&body, &[], &mut ctx)
+            .map(|v| (v.child_a.attr_a, v.child_b.attr_b))
             .err()
             .ok_or("expected missing attributes error")?;
         let diags = err.errors();
@@ -1056,11 +1052,10 @@ count = 100"#;
         Ok(())
     }
     /// Struct testing fallback `default_expr` evaluation failure.
-    #[allow(dead_code)]
-    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug)]
+    #[derive(DecodeBody, hcl_macros::ImpliedBodySchema, Debug, PartialEq, Eq)]
     struct FallbackFailureConfig {
         #[hcl(attr, default_expr = "undefined_var + 1")]
-        num: i64,
+        pub num: i64,
     }
     /// Tests that failure during fallback `default_expr` evaluation emits proper diagnostics.
     #[test]
@@ -1070,6 +1065,7 @@ count = 100"#;
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = FallbackFailureConfig::decode_body(&body, &[], &mut ctx)
+            .map(|v| v.num)
             .err()
             .ok_or("expected fallback evaluation error")?;
         assert!(err.has_errors());

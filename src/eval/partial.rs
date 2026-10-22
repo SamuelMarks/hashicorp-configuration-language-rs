@@ -129,10 +129,10 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
             }
         }
         Expression::Variable(name, span) => {
-            if let Some(val) = ctx.get_variable(name) {
-                if !val.is_unknown() {
-                    return Ok(value_to_expression(val, span.clone()));
-                }
+            if let Some(val) = ctx.get_variable(name)
+                && !val.is_unknown()
+            {
+                return Ok(value_to_expression(val, span.clone()));
             }
             Ok(Expression::Variable(name.clone(), span.clone()))
         }
@@ -229,10 +229,10 @@ fn partial_eval_for_expr(
         span.clone(),
     );
     let eval_res = Evaluator::new(ctx).evaluate(&synthetic_for);
-    if let Ok((val, _)) = eval_res {
-        if !val.is_unknown() {
-            return Ok(value_to_expression(&val, span.clone()));
-        }
+    if let Ok((val, _)) = eval_res
+        && !val.is_unknown()
+    {
+        return Ok(value_to_expression(&val, span.clone()));
     }
     Ok(Expression::ForExpr(
         Box::new(ForExpr {
@@ -276,10 +276,10 @@ fn partial_eval_binary_op(
         if let Expression::Bool(true, _) = folded_right {
             return Ok(folded_left);
         }
-    } else if op == BinaryOp::Or {
-        if let Expression::Bool(false, _) = folded_right {
-            return Ok(folded_left);
-        }
+    } else if op == BinaryOp::Or
+        && let Expression::Bool(false, _) = folded_right
+    {
+        return Ok(folded_left);
     }
     if let (Expression::Number(n1, _), Expression::Number(n2, _)) = (&folded_left, &folded_right) {
         match op {
@@ -390,14 +390,14 @@ fn partial_eval_traversal(
     span: &Span,
     ctx: &Context,
 ) -> Result<Expression, Diagnostics> {
-    if let Expression::Variable(ref root_name, _) = *trav.expr {
-        if ctx.get_variable(root_name).is_some() {
-            let eval_res = Evaluator::new(ctx).evaluate(expr);
-            if let Ok((val, _)) = eval_res {
-                if !val.is_unknown() {
-                    return Ok(value_to_expression(&val, span.clone()));
-                }
-            }
+    if let Expression::Variable(ref root_name, _) = *trav.expr
+        && ctx.get_variable(root_name).is_some()
+    {
+        let eval_res = Evaluator::new(ctx).evaluate(expr);
+        if let Ok((val, _)) = eval_res
+            && !val.is_unknown()
+        {
+            return Ok(value_to_expression(&val, span.clone()));
         }
     }
     let folded_base = partial_eval(&trav.expr, ctx)?;
@@ -434,22 +434,24 @@ fn partial_eval_func_call(
         }
         folded_args.push(folded_arg);
     }
-    if let Some(func) = ctx.get_namespaced_func(&fc.name) {
-        if func.is_deterministic() && all_args_literal && !fc.expand_final {
-            let synthetic_call = Expression::FuncCall(
-                Box::new(FuncCall {
-                    name: fc.name.clone(),
-                    args: folded_args.clone(),
-                    expand_final: false,
-                }),
-                span.clone(),
-            );
-            let eval_res = Evaluator::new(ctx).evaluate(&synthetic_call);
-            if let Ok((val, _)) = eval_res {
-                if !val.is_unknown() {
-                    return Ok(value_to_expression(&val, span.clone()));
-                }
-            }
+    if let Some(func) = ctx.get_namespaced_func(&fc.name)
+        && func.is_deterministic()
+        && all_args_literal
+        && !fc.expand_final
+    {
+        let synthetic_call = Expression::FuncCall(
+            Box::new(FuncCall {
+                name: fc.name.clone(),
+                args: folded_args.clone(),
+                expand_final: false,
+            }),
+            span.clone(),
+        );
+        let eval_res = Evaluator::new(ctx).evaluate(&synthetic_call);
+        if let Ok((val, _)) = eval_res
+            && !val.is_unknown()
+        {
+            return Ok(value_to_expression(&val, span.clone()));
         }
     }
     Ok(Expression::FuncCall(

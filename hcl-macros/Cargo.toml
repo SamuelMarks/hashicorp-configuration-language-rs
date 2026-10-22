@@ -2,6 +2,7 @@
 name = "hcl-macros"
 version = "0.0.1"
 edition = "2024"
+rust-version = "1.89.0"
 authors = ["Samuel Marks"]
 license = "CC0 OR MIT OR Apache-2.0"
 repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs"
@@ -14,5 +15,5 @@ syn = { version = "3.0", default-features = false, features = ["derive", "parsin
 quote = { version = "1.0", default-features = false }
 proc-macro2 = { version = "1.0", default-features = false, features = ["proc-macro"] }
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)', 'cfg(tarpaulin_include)'] }
+[lints]
+workspace = true

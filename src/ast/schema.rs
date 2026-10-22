@@ -281,10 +281,10 @@ impl Body {
                         block.type_span.clone(),
                     ));
                 }
-                if let Some(inner_schema) = &block_schema.body_schema {
-                    if let Err(inner_diags) = block.body.content(inner_schema) {
-                        diags.extend(inner_diags);
-                    }
+                if let Some(inner_schema) = &block_schema.body_schema
+                    && let Err(inner_diags) = block.body.content(inner_schema)
+                {
+                    diags.extend(inner_diags);
                 }
             } else {
                 let mut diag = Diagnostic::new(
@@ -362,10 +362,10 @@ impl Body {
                         block.type_span.clone(),
                     ));
                 }
-                if let Some(inner_schema) = &block_schema.body_schema {
-                    if let Err(inner_diags) = block.body.content(inner_schema) {
-                        diags.extend(inner_diags);
-                    }
+                if let Some(inner_schema) = &block_schema.body_schema
+                    && let Err(inner_diags) = block.body.content(inner_schema)
+                {
+                    diags.extend(inner_diags);
                 }
                 matched_blocks.push(block.clone());
             } else {
@@ -907,7 +907,7 @@ mod extra_tests {
         assert!(content.get_attribute("foo").is_some());
         assert!(content.get_attribute("bar").is_none());
 
-        assert!(Dummy::implied_label_names().is_empty());
+        assert_eq!(Dummy::implied_label_names(), Vec::<String>::new());
         let _ = Dummy::implied_body_schema();
     }
 }

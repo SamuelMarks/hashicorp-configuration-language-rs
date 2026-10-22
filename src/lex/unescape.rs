@@ -25,22 +25,22 @@ pub fn unescape_string(input: &str, span: &Span) -> Result<String, HclError> {
                         let mut read = 0;
                         let mut hex_str = String::with_capacity(expected_len);
                         while read < expected_len {
-                            if let Some((_, hc)) = chars.peek() {
-                                if let Some(digit) = hc.to_digit(16) {
-                                    hex_str.push(*hc);
-                                    val = (val << 4) | digit;
-                                    chars.next();
-                                    read += 1;
-                                    continue;
-                                }
+                            if let Some((_, hc)) = chars.peek()
+                                && let Some(digit) = hc.to_digit(16)
+                            {
+                                hex_str.push(*hc);
+                                val = (val << 4) | digit;
+                                chars.next();
+                                read += 1;
+                                continue;
                             }
                             break;
                         }
-                        if read == expected_len {
-                            if let Some(uc) = char::from_u32(val) {
-                                out.push(uc);
-                                continue;
-                            }
+                        if read == expected_len
+                            && let Some(uc) = char::from_u32(val)
+                        {
+                            out.push(uc);
+                            continue;
                         }
                         return Err(HclError::Lex(format!(
                             "Invalid unicode escape: \\{next_c}{hex_str} at {span}"

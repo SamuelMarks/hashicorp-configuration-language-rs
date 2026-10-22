@@ -339,45 +339,42 @@ impl AttrSpec {
     /// # Errors
     /// Returns [`HclError::Validation`] if regex, min/max, or custom validator fails.
     pub fn validate_value(&self, val: &Value, _span: crate::span::Span) -> Result<(), HclError> {
-        if let Some(ref regex) = self.regex_pattern {
-            if let crate::types::val::ValueData::String(ref s) = *val.data {
-                if !regex.is_match(s) {
-                    return Err(HclError::Validation(format!(
-                        "Attribute '{}' with value {:?} does not match required regex pattern '{}'",
-                        self.name,
-                        s,
-                        regex.as_str()
-                    )));
-                }
-            }
+        if let Some(ref regex) = self.regex_pattern
+            && let crate::types::val::ValueData::String(ref s) = *val.data
+            && !regex.is_match(s)
+        {
+            return Err(HclError::Validation(format!(
+                "Attribute '{}' with value {:?} does not match required regex pattern '{}'",
+                self.name,
+                s,
+                regex.as_str()
+            )));
         }
-        if let Some(ref min) = self.min_value {
-            if let crate::types::val::ValueData::Number(ref num) = *val.data {
-                if num < min {
-                    return Err(HclError::Validation(format!(
-                        "Attribute '{}' with value {} is less than minimum allowed value {}",
-                        self.name, num, min
-                    )));
-                }
-            }
+        if let Some(ref min) = self.min_value
+            && let crate::types::val::ValueData::Number(ref num) = *val.data
+            && num < min
+        {
+            return Err(HclError::Validation(format!(
+                "Attribute '{}' with value {} is less than minimum allowed value {}",
+                self.name, num, min
+            )));
         }
-        if let Some(ref max) = self.max_value {
-            if let crate::types::val::ValueData::Number(ref num) = *val.data {
-                if num > max {
-                    return Err(HclError::Validation(format!(
-                        "Attribute '{}' with value {} is greater than maximum allowed value {}",
-                        self.name, num, max
-                    )));
-                }
-            }
+        if let Some(ref max) = self.max_value
+            && let crate::types::val::ValueData::Number(ref num) = *val.data
+            && num > max
+        {
+            return Err(HclError::Validation(format!(
+                "Attribute '{}' with value {} is greater than maximum allowed value {}",
+                self.name, num, max
+            )));
         }
-        if let Some(ref validator) = self.custom_validator {
-            if let Err(msg) = validator(val) {
-                return Err(HclError::Validation(format!(
-                    "Validation failed for attribute '{}': {}",
-                    self.name, msg
-                )));
-            }
+        if let Some(ref validator) = self.custom_validator
+            && let Err(msg) = validator(val)
+        {
+            return Err(HclError::Validation(format!(
+                "Validation failed for attribute '{}': {}",
+                self.name, msg
+            )));
         }
         Ok(())
     }
@@ -400,10 +397,10 @@ pub enum Spec {
     /// Describes an object where the keys are strings and the values
     /// conform to the inner specifications. Corresponds to an HCL object value
     /// or a collection of mapped attributes.
-    Object(HashMap<String, Spec>),
+    Object(HashMap<String, Self>),
     /// Describes an array of elements that conform to the inner specification.
     /// Corresponds to an HCL tuple or list value, or repeated blocks.
-    Array(Box<Spec>),
+    Array(Box<Self>),
     /// Describes a nested block with the given type name, requiring its body
     /// to match the inner specification. Corresponds to an HCL nested block.
     Block(BlockSpec),
@@ -429,10 +426,10 @@ pub enum Spec {
     Default(DefaultSpec),
     /// Asserts that the inner specification must be present in the configuration.
     /// Used to mark required attributes or blocks.
-    Required(Box<Spec>),
+    Required(Box<Self>),
     /// States that the inner specification is optional, and can be omitted.
     /// If omitted, the resulting value will typically be null.
-    Optional(Box<Spec>),
+    Optional(Box<Self>),
     /// Evaluates an arbitrary HCL expression directly in the evaluation context.
     Expr(ExprSpec),
 }

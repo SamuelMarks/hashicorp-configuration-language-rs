@@ -248,7 +248,7 @@ impl TypeChecker {
     ///
     /// # Returns
     /// A mutable reference to the scope schema.
-    pub fn scope_mut(&mut self) -> &mut ScopeSchema {
+    pub const fn scope_mut(&mut self) -> &mut ScopeSchema {
         &mut self.scope
     }
     /// Validates an entire AST [`Body`] against an expected [`BodySchema`].
@@ -375,20 +375,20 @@ impl TypeChecker {
         for (name, attr) in &body.attributes {
             if let Some(attr_schema) = schema.attributes.get(name) {
                 let actual_ty = self.infer_expression_type_inner(&attr.expr, scope, diags);
-                if let Some(expected_ty) = &attr_schema.expected_type {
-                    if !is_type_compatible(&actual_ty, expected_ty) {
-                        let mut diag = Diagnostic::new(
-                            HclError::Type(format!(
-                                "Invalid value for attribute {name:?}: expected {expected_ty}, got {actual_ty}"
-                            )),
-                            attr.expr.span(),
-                        );
-                        diag.summary = Some(format!("Attribute {name:?} type mismatch"));
-                        diag.detail = Some(format!(
-                            "Expected type {expected_ty}, but received type {actual_ty}"
-                        ));
-                        diags.push(diag);
-                    }
+                if let Some(expected_ty) = &attr_schema.expected_type
+                    && !is_type_compatible(&actual_ty, expected_ty)
+                {
+                    let mut diag = Diagnostic::new(
+                        HclError::Type(format!(
+                            "Invalid value for attribute {name:?}: expected {expected_ty}, got {actual_ty}"
+                        )),
+                        attr.expr.span(),
+                    );
+                    diag.summary = Some(format!("Attribute {name:?} type mismatch"));
+                    diag.detail = Some(format!(
+                        "Expected type {expected_ty}, but received type {actual_ty}"
+                    ));
+                    diags.push(diag);
                 }
             } else {
                 let mut diag = Diagnostic::new(

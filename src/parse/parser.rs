@@ -354,16 +354,16 @@ impl<'a> Parser<'a> {
         Option<FunctionParam>,
     ) {
         let mut params = Vec::new();
-        if let Some(p_attr) = body.attributes.get("params") {
-            if let Expression::Tuple(elements, _) = &p_attr.expr {
-                for el in elements {
-                    if let Expression::Variable(name, span) | Expression::String(name, span) = el {
-                        params.push(FunctionParam {
-                            name: name.clone(),
-                            type_expr: None,
-                            span: span.clone(),
-                        });
-                    }
+        if let Some(p_attr) = body.attributes.get("params")
+            && let Expression::Tuple(elements, _) = &p_attr.expr
+        {
+            for el in elements {
+                if let Expression::Variable(name, span) | Expression::String(name, span) = el {
+                    params.push(FunctionParam {
+                        name: name.clone(),
+                        type_expr: None,
+                        span: span.clone(),
+                    });
                 }
             }
         }
@@ -1134,12 +1134,11 @@ impl<'a> Parser<'a> {
             }
             TokenKind::String | TokenKind::Heredoc => {
                 let template_parts = Self::parse_template(&mut self.diags, &tok.text, &tok.span);
-                if template_parts.len() == 1 {
-                    if let crate::ast::expr::TemplatePart::Literal(ref s, _) = template_parts[0] {
-                        if tok.kind == TokenKind::String {
-                            return Some(Expression::String(s.clone(), tok.span));
-                        }
-                    }
+                if template_parts.len() == 1
+                    && let crate::ast::expr::TemplatePart::Literal(ref s, _) = template_parts[0]
+                    && tok.kind == TokenKind::String
+                {
+                    return Some(Expression::String(s.clone(), tok.span));
                 }
                 Some(Expression::Template(template_parts, tok.span))
             }

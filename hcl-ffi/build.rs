@@ -1,8 +1,8 @@
 //! Build script for `hcl-ffi` to generate C header files.
-#![deny(missing_docs)]
-#![deny(rustdoc::missing_crate_level_docs)]
-#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(missing_docs)]
+#![forbid(rustdoc::missing_crate_level_docs)]
+#![forbid(clippy::all, clippy::pedantic, clippy::nursery)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::env;
 use std::io;
@@ -29,6 +29,22 @@ pub fn generate_bindings(manifest_dir: Option<&str>, out_dir: Option<&str>) -> i
         language: cbindgen::Language::C,
         include_guard: Some("HCL_RS_H".to_string()),
         no_includes: false,
+        export: cbindgen::ExportConfig {
+            item_types: vec![
+                cbindgen::ItemType::OpaqueItems,
+                cbindgen::ItemType::Functions,
+            ],
+            rename: std::collections::HashMap::from([
+                ("HclBodyT".to_string(), "hcl_body_t".to_string()),
+                ("HclContextT".to_string(), "hcl_context_t".to_string()),
+                ("HclValueT".to_string(), "hcl_value_t".to_string()),
+                (
+                    "HclDiagnosticsT".to_string(),
+                    "hcl_diagnostics_t".to_string(),
+                ),
+            ]),
+            ..Default::default()
+        },
         ..Default::default()
     };
 

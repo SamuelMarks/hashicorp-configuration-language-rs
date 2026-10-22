@@ -231,7 +231,7 @@ impl CstBlock {
     }
     /// Returns a mutable reference to the inner body.
     #[must_use]
-    pub fn body_mut(&mut self) -> &mut CstBody {
+    pub const fn body_mut(&mut self) -> &mut CstBody {
         &mut self.body
     }
     /// Programmatically attaches a leading comment before this block.
@@ -361,11 +361,11 @@ impl CstBody {
     /// * `tokens` - The raw expression tokens.
     pub fn set_attribute_raw(&mut self, name: &str, tokens: Vec<Token>) {
         for item in &mut self.items {
-            if let CstItem::Attribute(a) = item {
-                if a.name == name {
-                    a.expr_tokens = tokens;
-                    return;
-                }
+            if let CstItem::Attribute(a) = item
+                && a.name == name
+            {
+                a.expr_tokens = tokens;
+                return;
             }
         }
         let mut attr = CstAttribute::new(name, tokens);
@@ -396,11 +396,11 @@ impl CstBody {
         new_expr: &Expression,
     ) -> Result<(), crate::error::HclError> {
         for item in &mut self.items {
-            if let CstItem::Attribute(a) = item {
-                if a.name == name {
-                    a.expr_tokens = tokens_for_expression(new_expr);
-                    return Ok(());
-                }
+            if let CstItem::Attribute(a) = item
+                && a.name == name
+            {
+                a.expr_tokens = tokens_for_expression(new_expr);
+                return Ok(());
             }
         }
         Err(crate::error::HclError::MissingField(name.to_string()))
@@ -495,28 +495,26 @@ impl CstBody {
             return;
         }
         while let Some(first) = self.items.first() {
-            if let CstItem::Trivia(stream) = first {
-                if stream
+            if let CstItem::Trivia(stream) = first
+                && stream
                     .tokens
                     .iter()
                     .all(|t| t.kind == TokenKind::Whitespace || t.kind == TokenKind::Newline)
-                {
-                    self.items.remove(0);
-                    continue;
-                }
+            {
+                self.items.remove(0);
+                continue;
             }
             break;
         }
         while let Some(last) = self.items.last() {
-            if let CstItem::Trivia(stream) = last {
-                if stream
+            if let CstItem::Trivia(stream) = last
+                && stream
                     .tokens
                     .iter()
                     .all(|t| t.kind == TokenKind::Whitespace || t.kind == TokenKind::Newline)
-                {
-                    self.items.pop();
-                    continue;
-                }
+            {
+                self.items.pop();
+                continue;
             }
             break;
         }
@@ -580,13 +578,12 @@ impl CstBody {
     pub fn remove_attribute(&mut self, name: &str) -> Option<CstAttribute> {
         let mut removed_item = None;
         self.items.retain_mut(|item| {
-            if removed_item.is_none() {
-                if let CstItem::Attribute(a) = item {
-                    if a.name == name {
-                        removed_item = Some(a.clone());
-                        return false;
-                    }
-                }
+            if removed_item.is_none()
+                && let CstItem::Attribute(a) = item
+                && a.name == name
+            {
+                removed_item = Some(a.clone());
+                return false;
             }
             true
         });
@@ -636,13 +633,12 @@ impl CstBody {
         };
         let mut removed_item = None;
         self.items.retain_mut(|item| {
-            if removed_item.is_none() {
-                if let CstItem::Block(b) = item {
-                    if matches_block(b) {
-                        removed_item = Some(b.clone());
-                        return false;
-                    }
-                }
+            if removed_item.is_none()
+                && let CstItem::Block(b) = item
+                && matches_block(b)
+            {
+                removed_item = Some(b.clone());
+                return false;
             }
             true
         });
@@ -750,7 +746,7 @@ impl CstFile {
     }
     /// Returns a mutable reference to the root body.
     #[must_use]
-    pub fn body_mut(&mut self) -> &mut CstBody {
+    pub const fn body_mut(&mut self) -> &mut CstBody {
         &mut self.body
     }
     /// Removes an attribute by name from the root body.

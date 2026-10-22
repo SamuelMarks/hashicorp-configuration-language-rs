@@ -3,10 +3,10 @@
 //! Provides JavaScript- and WebAssembly-compatible functions for parsing,
 //! formatting, and evaluating HCL configurations.
 
-#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(missing_docs)]
-#![deny(rustdoc::missing_crate_level_docs)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(clippy::all, clippy::pedantic, clippy::nursery)]
+#![forbid(missing_docs)]
+#![forbid(rustdoc::missing_crate_level_docs)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use hashicorp_configuration_language_rs::ast::structure::Body;
 use hashicorp_configuration_language_rs::cst::format::format_str;

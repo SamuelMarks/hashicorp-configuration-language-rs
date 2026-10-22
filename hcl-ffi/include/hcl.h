@@ -38,17 +38,17 @@ struct hcl_context_t *hcl_context_new(void);
  * Binds a named variable into an evaluation context.
  *
  * # Arguments
- * * `ctx` - Mutable pointer to an [`hcl_context_t`].
+ * * `ctx` - Mutable pointer to an [`HclContextT`].
  * * `name` - Null-terminated UTF-8 variable name.
- * * `val` - Pointer to an [`hcl_value_t`] to bind.
+ * * `val` - Pointer to an [`HclValueT`] to bind.
  *
  * # Returns
  * `0` on success, or `-1` if any pointer is null or `name` is invalid UTF-8.
  *
  * # Safety
- * * `ctx` must be a valid, non-null pointer to an [`hcl_context_t`].
+ * * `ctx` must be a valid, non-null pointer to an [`HclContextT`].
  * * `name` must be a valid null-terminated C string.
- * * `val` must be a valid pointer to an [`hcl_value_t`]. Its contents will be cloned.
+ * * `val` must be a valid pointer to an [`HclValueT`]. Its contents will be cloned.
  */
 int32_t hcl_context_set_variable(struct hcl_context_t *ctx,
                                  const char *name,
@@ -70,7 +70,7 @@ void hcl_free_context(struct hcl_context_t *ctx);
  *
  * # Arguments
  * * `input` - Null-terminated UTF-8 input string.
- * * `out_body` - Output pointer receiving the allocated [`hcl_body_t`].
+ * * `out_body` - Output pointer receiving the allocated [`HclBodyT`].
  * * `out_diags` - Output pointer receiving any syntax/parse diagnostics.
  *
  * # Returns
@@ -93,7 +93,7 @@ int32_t hcl_parse_string(const char *input,
  * * `out_diags` - Output pointer receiving evaluation diagnostics.
  *
  * # Returns
- * An allocated [`hcl_value_t`] containing the evaluated result object, or null on fatal failure.
+ * An allocated [`HclValueT`] containing the evaluated result object, or null on fatal failure.
  *
  * # Safety
  * * `body` and `ctx` must be valid, non-null pointers.
@@ -171,7 +171,7 @@ void hcl_free_string(char *str_ptr);
  * * `diags` - Pointer to the diagnostics handle.
  *
  * # Safety
- * `diags` must be a valid, non-null pointer to an [`hcl_diagnostics_t`].
+ * `diags` must be a valid, non-null pointer to an [`HclDiagnosticsT`].
  */
 uintptr_t hcl_diagnostics_count(const struct hcl_diagnostics_t *diags);
 
@@ -182,7 +182,7 @@ uintptr_t hcl_diagnostics_count(const struct hcl_diagnostics_t *diags);
  * * `diags` - Pointer to the diagnostics handle.
  *
  * # Safety
- * `diags` must be a valid, non-null pointer to an [`hcl_diagnostics_t`].
+ * `diags` must be a valid, non-null pointer to an [`HclDiagnosticsT`].
  */
 bool hcl_diagnostics_has_errors(const struct hcl_diagnostics_t *diags);
 

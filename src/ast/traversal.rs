@@ -68,7 +68,7 @@ impl AbsTraversal {
     }
     /// Returns `true` if this absolute traversal has no operators and consists solely of the root variable.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.operators.is_empty()
     }
     /// Converts this `AbsTraversal` back into an AST [`Expression`].
@@ -132,9 +132,7 @@ impl AbsTraversal {
         let prefix_span = if prefix_ops.is_empty() {
             self.root_span.clone()
         } else {
-            let last_op_span = prefix_ops
-                .last()
-                .map_or(self.root_span.clone(), super::expr::TraversalOperator::span);
+            let last_op_span = prefix_ops[prefix_ops.len() - 1].span();
             Span::new(
                 self.root_span.start_byte,
                 last_op_span.end_byte,

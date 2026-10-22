@@ -1,9 +1,9 @@
 //! Interactive Read-Eval-Print Loop (REPL) console for HCL (`hcl-repl`).
 #![cfg_attr(all(coverage_nightly, test), feature(coverage_attribute))]
-#![deny(missing_docs)]
-#![deny(rustdoc::missing_crate_level_docs)]
-#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(missing_docs)]
+#![forbid(rustdoc::missing_crate_level_docs)]
+#![forbid(clippy::all, clippy::pedantic, clippy::nursery)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use hashicorp_configuration_language_rs::error::HclError;
 use hashicorp_configuration_language_rs::eval::context::Context;
@@ -636,7 +636,7 @@ mod tests {
         let dbg = format!("{session:?}");
         assert!(dbg.contains("ReplSession"));
         assert!(session.variables.is_empty());
-        assert!(session.history.is_empty());
-        assert!(session.buffer.is_empty());
+        assert_eq!(session.history, [] as [std::string::String; 0]);
+        assert_eq!(session.buffer, "");
     }
 }

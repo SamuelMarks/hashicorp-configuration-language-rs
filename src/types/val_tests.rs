@@ -740,17 +740,17 @@ fn test_capsule_ops_custom_hooks() {
         Some("gamma")
     );
     let bad_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(123_i32);
-    assert!(!(ops.equals)(&bad_any, &bad_any));
-    assert_eq!((ops.hash)(&bad_any), 0);
+    assert!(!(ops.equals)(&*bad_any, &*bad_any));
+    assert_eq!((ops.hash)(&*bad_any), 0);
     assert!(
         ops.conversion_to
             .as_ref()
-            .is_some_and(|conv| (conv)(&bad_any, &Type::Number).is_none())
+            .is_some_and(|conv| (conv)(&*bad_any, &Type::Number).is_none())
     );
     assert!(
         ops.conversion_to
             .as_ref()
-            .is_some_and(|conv| (conv)(&bad_any, &Type::String).is_none())
+            .is_some_and(|conv| (conv)(&*bad_any, &Type::String).is_none())
     );
     for invalid in [
         123_i64.encode_value(),
@@ -1094,7 +1094,10 @@ fn test_granular_path_based_marks() -> Result<(), HclError> {
     );
     let root_val = Value::new(Type::Dynamic, ValueData::Object(root_map));
     assert!(!root_val.has_marked_children());
-    assert!(root_val.paths_with_mark(&ValueMark::Sensitive).is_empty());
+    assert_eq!(
+        root_val.paths_with_mark(&ValueMark::Sensitive),
+        Vec::<Path>::new()
+    );
     let path_pass = Path::new(vec![
         PathStep::GetAttr("database".to_string()),
         PathStep::GetAttr("password".to_string()),
@@ -1476,7 +1479,7 @@ fn test_value_coverage_exhaustive_gaps_part_2() {
     v_clone.clone_from(&val_b);
     assert_eq!(v_clone, val_b);
     let null_dbg = format!("{:?}", ValueData::Null);
-    assert!(!null_dbg.is_empty());
+    assert_ne!(null_dbg, "");
     assert_eq!(format!("{}", ValueMark::Sensitive), "sensitive");
     assert_eq!(
         format!("{}", 42_i64.encode_value().mark(ValueMark::Sensitive)),

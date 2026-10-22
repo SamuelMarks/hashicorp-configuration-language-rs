@@ -385,29 +385,27 @@ impl<'a> Evaluator<'a> {
             arg_marks.extend(evaluated_arg.marks.clone());
             args.push(evaluated_arg);
         }
-        if f.expand_final {
-            if let Err(unk) = self.expand_final_arg(&mut args, &span) {
-                return unk.with_marks(arg_marks);
-            }
+        if f.expand_final
+            && let Err(unk) = self.expand_final_arg(&mut args, &span)
+        {
+            return unk.with_marks(arg_marks);
         }
         if let Some(func) = self.ctx.get_namespaced_func(&f.name) {
-            if let Some(sig) = &func.signature {
-                if !self.validate_and_coerce_func_args(f, sig, &mut args, &span) {
-                    return Value::unknown(Type::Dynamic).with_marks(arg_marks);
-                }
+            if let Some(sig) = &func.signature
+                && !self.validate_and_coerce_func_args(f, sig, &mut args, &span)
+            {
+                return Value::unknown(Type::Dynamic).with_marks(arg_marks);
             }
             match (func.func)(&args) {
                 Ok(mut v) => {
-                    if let Some(sig) = &func.signature {
-                        if let Some(val_calc) = &sig.value_return_type {
-                            if let Ok(expected_ty) = (val_calc)(&args) {
-                                if v.ty() != &expected_ty && expected_ty != Type::Dynamic {
-                                    if let Ok(coerced) = v.coerce(&expected_ty) {
-                                        v = coerced;
-                                    }
-                                }
-                            }
-                        }
+                    if let Some(sig) = &func.signature
+                        && let Some(val_calc) = &sig.value_return_type
+                        && let Ok(expected_ty) = (val_calc)(&args)
+                        && v.ty() != &expected_ty
+                        && expected_ty != Type::Dynamic
+                        && let Ok(coerced) = v.coerce(&expected_ty)
+                    {
+                        v = coerced;
                     }
                     if f.name == "nonsensitive" {
                         for m in arg_marks {

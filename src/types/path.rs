@@ -78,12 +78,12 @@ impl Path {
     }
     /// Returns `true` if this path is empty (points to root).
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.steps.is_empty()
     }
     /// Returns the number of steps in this path.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.steps.len()
     }
 }

@@ -3,7 +3,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::missing_crate_level_docs)]
 #![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use hashicorp_configuration_language_rs::analysis::Linter;
 use hashicorp_configuration_language_rs::analysis::type_check::TypeChecker;
@@ -196,12 +196,11 @@ fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), HclError> 
         let p = entry.path();
         if p.is_dir() {
             walk_directory(&p, files)?;
-        } else if p.is_file() {
-            if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
-                if ext == "hcl" || ext == "tf" {
-                    files.push(p);
-                }
-            }
+        } else if p.is_file()
+            && let Some(ext) = p.extension().and_then(|s| s.to_str())
+            && (ext == "hcl" || ext == "tf")
+        {
+            files.push(p);
         }
     }
     Ok(())
@@ -254,10 +253,10 @@ pub fn run_validate<O: Write, E: Write>(
         let mut parser = Parser::new(&content);
         let body = parser.parse_body();
         file_diags.extend(parser.errors().clone());
-        if let Some(ref s) = schema {
-            if let Err(schema_diags) = checker.check_body(&body, s) {
-                file_diags.extend(schema_diags);
-            }
+        if let Some(ref s) = schema
+            && let Err(schema_diags) = checker.check_body(&body, s)
+        {
+            file_diags.extend(schema_diags);
         }
         let lint_diags = linter.lint_body(&body);
         file_diags.extend(lint_diags);
@@ -434,7 +433,7 @@ mod tests {
         assert_eq!(srv.description.as_deref(), Some("Server block"));
         assert!(srv.body_schema.is_some());
         let cluster = &body_schema.blocks["cluster"];
-        assert!(cluster.label_names.is_empty());
+        assert_eq!(cluster.label_names, [] as [std::string::String; 0]);
         assert_eq!(cluster.description, None);
         assert!(cluster.body_schema.is_none());
         Ok(())
@@ -530,7 +529,7 @@ mod tests {
         let mut stderr_cj = Vec::new();
         let code_cj = run_validate(&opts_clean_json, &mut stdout_cj, &mut stderr_cj)?;
         assert_eq!(code_cj, 0);
-        assert!(stdout_cj.is_empty());
+        assert_eq!(stdout_cj, [] as [u8; 0]);
         let bad_file = dir.join("bad.hcl");
         fs::write(&bad_file, "= invalid syntax")?;
         let opts_err = ValidateOptions {
@@ -543,7 +542,7 @@ mod tests {
         let mut stderr_err = Vec::new();
         let code_err = run_validate(&opts_err, &mut stdout_err, &mut stderr_err)?;
         assert_eq!(code_err, 1);
-        assert!(!stderr_err.is_empty());
+        assert_ne!(stderr_err, [] as [u8; 0]);
         let mut stdout_err_txt = Vec::new();
         let mut stderr_err_txt = Vec::new();
         let opts_err_txt = ValidateOptions {

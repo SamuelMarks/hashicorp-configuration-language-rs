@@ -192,10 +192,10 @@ fn coalesce_func() -> Function {
                 if arg.is_null() {
                     continue;
                 }
-                if let ValueData::String(s) = &*arg.data {
-                    if s.is_empty() {
-                        continue;
-                    }
+                if let ValueData::String(s) = &*arg.data
+                    && s.is_empty()
+                {
+                    continue;
                 }
                 if arg.is_unknown() {
                     return Ok(Value::unknown(arg.ty().clone()));
@@ -222,10 +222,10 @@ fn coalescelist_func() -> Function {
                 if arg.is_unknown() {
                     return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
                 }
-                if let ValueData::Array(arr) = &*arg.data {
-                    if !arr.is_empty() {
-                        return Ok(arg.clone());
-                    }
+                if let ValueData::Array(arr) = &*arg.data
+                    && !arr.is_empty()
+                {
+                    return Ok(arg.clone());
                 }
             }
             Err(HclError::Eval("no non-empty list arguments".to_string()))
@@ -743,7 +743,7 @@ fn map_func() -> Function {
     Function {
         name: "map".to_string(),
         func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
-            if !args.len() % 2 == 0 {
+            if (!args.len()).is_multiple_of(2) {
                 return Err(HclError::FunctionArgMismatch(
                     "map expects an even number of arguments".to_string(),
                 ));

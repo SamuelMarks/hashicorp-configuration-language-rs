@@ -104,11 +104,11 @@ impl Document {
         let mut tokens = vec![Token::new(TokenKind::Whitespace, " ", span.clone())];
         tokens.extend(crate::cst::builder::tokens_for_expression(expr));
         for item in &mut self.items {
-            if let DocumentItem::Attribute(a) = item {
-                if a.name.text == name {
-                    a.expr_tokens = tokens;
-                    return;
-                }
+            if let DocumentItem::Attribute(a) = item
+                && a.name.text == name
+            {
+                a.expr_tokens = tokens;
+                return;
             }
         }
         let mut leading = TokenStream::new();
@@ -134,13 +134,12 @@ impl Document {
     pub fn remove_attribute(&mut self, name: &str) -> Option<Attribute> {
         let mut removed = None;
         self.items.retain_mut(|item| {
-            if removed.is_none() {
-                if let DocumentItem::Attribute(a) = item {
-                    if a.name.text == name {
-                        removed = Some(a.clone());
-                        return false;
-                    }
-                }
+            if removed.is_none()
+                && let DocumentItem::Attribute(a) = item
+                && a.name.text == name
+            {
+                removed = Some(a.clone());
+                return false;
             }
             true
         });
@@ -154,17 +153,14 @@ impl Document {
     pub fn remove_block(&mut self, block_type: &str, labels: &[&str]) -> Option<Block> {
         let mut removed = None;
         self.items.retain_mut(|item| {
-            if removed.is_none() {
-                if let DocumentItem::Block(b) = item {
-                    if b.type_ident.text == block_type
-                        && (labels.is_empty()
-                            || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
-                                == labels)
-                    {
-                        removed = Some(b.clone());
-                        return false;
-                    }
-                }
+            if removed.is_none()
+                && let DocumentItem::Block(b) = item
+                && b.type_ident.text == block_type
+                && (labels.is_empty()
+                    || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>() == labels)
+            {
+                removed = Some(b.clone());
+                return false;
             }
             true
         });
@@ -184,14 +180,14 @@ impl Document {
         new_expr: &Expression,
     ) -> Result<(), crate::error::HclError> {
         for item in &mut self.items {
-            if let DocumentItem::Attribute(a) = item {
-                if a.name.text == name {
-                    let span = Span::new(0, 0, 1, 1, 1, 1);
-                    let mut tokens = vec![Token::new(TokenKind::Whitespace, " ", span)];
-                    tokens.extend(crate::cst::builder::tokens_for_expression(new_expr));
-                    a.expr_tokens = tokens;
-                    return Ok(());
-                }
+            if let DocumentItem::Attribute(a) = item
+                && a.name.text == name
+            {
+                let span = Span::new(0, 0, 1, 1, 1, 1);
+                let mut tokens = vec![Token::new(TokenKind::Whitespace, " ", span)];
+                tokens.extend(crate::cst::builder::tokens_for_expression(new_expr));
+                a.expr_tokens = tokens;
+                return Ok(());
             }
         }
         Err(crate::error::HclError::MissingField(name.to_string()))

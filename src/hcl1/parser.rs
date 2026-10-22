@@ -17,9 +17,9 @@ pub enum Hcl1Expression {
     /// A null literal.
     Null(Span),
     /// A list of expressions.
-    List(Vec<Hcl1Expression>, Span),
+    List(Vec<Self>, Span),
     /// A map or object constructor.
-    Map(Vec<(String, Hcl1Expression)>, Span),
+    Map(Vec<(String, Self)>, Span),
     /// A bare identifier reference.
     Variable(String, Span),
 }
@@ -138,7 +138,7 @@ impl Hcl1Parser {
         let end_span = self
             .tokens
             .get(self.cursor.saturating_sub(1))
-            .map_or(start_span.clone(), |t| t.span.clone());
+            .map_or_else(|| start_span.clone(), |t| t.span.clone());
         Ok(Hcl1Body {
             items,
             span: start_span.merge(&end_span),
@@ -279,10 +279,10 @@ impl Hcl1Parser {
                         .ok_or_else(|| HclError::Parse("unclosed map, expected '}'".to_string()))?;
                     let key = k_tok.text;
                     self.skip_newlines();
-                    if let Some(eq) = self.peek() {
-                        if eq.kind == Hcl1TokenKind::Assign || eq.kind == Hcl1TokenKind::Colon {
-                            self.advance();
-                        }
+                    if let Some(eq) = self.peek()
+                        && (eq.kind == Hcl1TokenKind::Assign || eq.kind == Hcl1TokenKind::Colon)
+                    {
+                        self.advance();
                     }
                     let val = self.parse_expression()?;
                     pairs.push((key, val));

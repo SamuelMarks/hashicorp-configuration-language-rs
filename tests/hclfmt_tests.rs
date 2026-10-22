@@ -1,6 +1,8 @@
 //! Integration tests for the `hclfmt` command-line binary.
-#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![forbid(clippy::all, clippy::pedantic, clippy::nursery)]
+#![forbid(missing_docs)]
+#![forbid(rustdoc::missing_crate_level_docs)]
+#![forbid(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::fs;
 use std::io::Write;

@@ -607,8 +607,8 @@ mod tests {
 
         let dummy_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new("dummy".to_string());
         let bad_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(123_i32);
-        let _ = conv_to(&dummy_any, &Type::String);
-        let _ = conv_to(&bad_any, &Type::Number);
+        let _ = conv_to(&*dummy_any, &Type::String);
+        let _ = conv_to(&*bad_any, &Type::Number);
 
         let dummy_val_str = Value::new(Type::String, ValueData::String("dummy".into()));
         let dummy_val_num = Value::new(Type::Number, ValueData::Number(1.into()));
@@ -628,13 +628,13 @@ mod tests {
             cap_ops
                 .conversion_to
                 .as_ref()
-                .is_some_and(|conv| (conv)(&bad_any, &Type::Number).is_none())
+                .is_some_and(|conv| (conv)(&*bad_any, &Type::Number).is_none())
         );
         assert!(
             cap_ops
                 .conversion_to
                 .as_ref()
-                .is_some_and(|conv| (conv)(&bad_any, &Type::String).is_none())
+                .is_some_and(|conv| (conv)(&*bad_any, &Type::String).is_none())
         );
         assert!(cap_ops.conversion_from.as_ref().is_some_and(|conv| {
             (conv)(&Value::new(Type::Number, ValueData::Number(123_i64.into()))).is_none()

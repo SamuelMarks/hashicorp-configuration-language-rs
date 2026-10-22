@@ -152,26 +152,25 @@ fn process_schema_field(
 /// * `ty` - The syn syntax tree type to inspect.
 pub fn extract_generic_inner_type(ty: &Type) -> &Type {
     if let Some(segment) = last_path_segment(ty) {
-        if segment.ident == "Vec" || segment.ident == "Option" {
-            if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
-                if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                    return extract_generic_inner_type(inner);
-                }
-            }
+        if (segment.ident == "Vec" || segment.ident == "Option")
+            && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
+            && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+        {
+            return extract_generic_inner_type(inner);
         }
-        if segment.ident == "HashMap" || segment.ident == "BTreeMap" {
-            if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
-                let mut type_args = args.args.iter().filter_map(|arg| {
-                    if let syn::GenericArgument::Type(t) = arg {
-                        Some(t)
-                    } else {
-                        None
-                    }
-                });
-                let _key = type_args.next();
-                if let Some(val) = type_args.next() {
-                    return extract_generic_inner_type(val);
+        if (segment.ident == "HashMap" || segment.ident == "BTreeMap")
+            && let syn::PathArguments::AngleBracketed(ref args) = segment.arguments
+        {
+            let mut type_args = args.args.iter().filter_map(|arg| {
+                if let syn::GenericArgument::Type(t) = arg {
+                    Some(t)
+                } else {
+                    None
                 }
+            });
+            let _key = type_args.next();
+            if let Some(val) = type_args.next() {
+                return extract_generic_inner_type(val);
             }
         }
     }

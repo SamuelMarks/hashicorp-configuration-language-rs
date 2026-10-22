@@ -97,10 +97,10 @@ impl Linter {
                 if let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first() {
                     referenced_locals.insert(name.clone());
                 }
-            } else if trav.root == "var" {
-                if let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first() {
-                    referenced_vars.insert(name.clone());
-                }
+            } else if trav.root == "var"
+                && let Some(TraversalOperator::GetAttr(name, _)) = trav.operators.first()
+            {
+                referenced_vars.insert(name.clone());
             }
         }
         for block in &body.blocks {
@@ -122,29 +122,28 @@ impl Linter {
                         diags.push(diag);
                     }
                 }
-            } else if block.block_type == "variable" {
-                if let Some(var_name) = block.labels.first() {
-                    if !referenced_vars.contains(var_name) {
-                        let span = block
-                            .label_spans
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| block.type_span.clone());
-                        let mut diag = Diagnostic::new(
-                            HclError::Lint(format!("Unused input variable: {var_name:?}")),
-                            span,
-                        );
-                        diag.severity = Severity::Warning;
-                        diag.summary = Some(format!(
-                            "Variable {var_name:?} is declared but never referenced"
-                        ));
-                        diag.detail = Some(
-                            "Consider removing this variable or referencing it as `var.<name>`."
-                                .to_string(),
-                        );
-                        diags.push(diag);
-                    }
-                }
+            } else if block.block_type == "variable"
+                && let Some(var_name) = block.labels.first()
+                && !referenced_vars.contains(var_name)
+            {
+                let span = block
+                    .label_spans
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| block.type_span.clone());
+                let mut diag = Diagnostic::new(
+                    HclError::Lint(format!("Unused input variable: {var_name:?}")),
+                    span,
+                );
+                diag.severity = Severity::Warning;
+                diag.summary = Some(format!(
+                    "Variable {var_name:?} is declared but never referenced"
+                ));
+                diag.detail = Some(
+                    "Consider removing this variable or referencing it as `var.<name>`."
+                        .to_string(),
+                );
+                diags.push(diag);
             }
         }
     }
@@ -258,20 +257,20 @@ impl Linter {
                                     .to_string(),
                             );
                         diags.push(diag);
-                    } else if let Expression::Bool(true, _) = cond {
-                        if !else_ifs.is_empty() || false_expr.is_some() {
-                            let mut diag = Diagnostic::new(
+                    } else if let Expression::Bool(true, _) = cond
+                        && (!else_ifs.is_empty() || false_expr.is_some())
+                    {
+                        let mut diag = Diagnostic::new(
                                     HclError::Lint(
                                         "Unreachable else/elif template branches: initial if is constant true"
                                             .to_string(),
                                     ),
                                     span.clone(),
                                 );
-                            diag.severity = Severity::Warning;
-                            diag.summary =
-                                Some("Else / elif template branches are unreachable".to_string());
-                            diags.push(diag);
-                        }
+                        diag.severity = Severity::Warning;
+                        diag.summary =
+                            Some("Else / elif template branches are unreachable".to_string());
+                        diags.push(diag);
                     }
                     for (elif_cond, elif_body) in else_ifs {
                         if let Expression::Bool(false, _) = elif_cond {

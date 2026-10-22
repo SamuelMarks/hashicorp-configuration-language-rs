@@ -574,16 +574,15 @@ impl DiagnosticWriter {
         if let Some(ref p) = diag.path {
             let _ = writeln!(out, "  at path: {p}");
         }
-        if let Some(ref ctx) = diag.context {
-            if let Some(ref ctx_file) = ctx.file {
-                if Some(ctx_file) != diag.subject.file.as_ref() {
-                    let _ = writeln!(
-                        out,
-                        "  (context in {ctx_file} line {}, col {}):",
-                        ctx.start_line, ctx.start_col
-                    );
-                }
-            }
+        if let Some(ref ctx) = diag.context
+            && let Some(ref ctx_file) = ctx.file
+            && Some(ctx_file) != diag.subject.file.as_ref()
+        {
+            let _ = writeln!(
+                out,
+                "  (context in {ctx_file} line {}, col {}):",
+                ctx.start_line, ctx.start_col
+            );
         }
         let lines: Vec<&str> = source.lines().collect();
         if !lines.is_empty() && start_line > 0 && start_line <= lines.len() {
@@ -932,9 +931,10 @@ mod tests {
     }
     #[test]
     fn test_diagnostic_writer_max_lines_truncation() {
+        use std::fmt::Write as _;
         let mut source = String::new();
         for i in 1..=20 {
-            source.push_str(&format!("line_{i} = {i}\n"));
+            let _ = writeln!(source, "line_{i} = {i}");
         }
         let span = Span::new(0, 100, 1, 1, 15, 5);
         let diag = Diagnostic::error("Long block", "", span);
@@ -969,9 +969,10 @@ mod tests {
     }
     #[test]
     fn test_diagnostic_writer_colored_gap_and_truncation() {
+        use std::fmt::Write as _;
         let mut source = String::new();
         for i in 1..=10 {
-            source.push_str(&format!("item_{i} = {i}\n"));
+            let _ = writeln!(source, "item_{i} = {i}");
         }
         let ctx_span = Span::new(0, 10, 1, 1, 1, 10);
         let subj_span = Span::new(50, 60, 8, 1, 10, 5);

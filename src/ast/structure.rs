@@ -140,10 +140,10 @@ impl Body {
             }
         }
         for block in &self.blocks {
-            if block.span.contains_position(pos) {
-                if let Some(attr) = block.body.attribute_at(pos) {
-                    return Some(attr);
-                }
+            if block.span.contains_position(pos)
+                && let Some(attr) = block.body.attribute_at(pos)
+            {
+                return Some(attr);
             }
         }
         None

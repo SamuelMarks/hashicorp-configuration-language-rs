@@ -73,7 +73,7 @@ impl StaticExpressionInspector {
     fn walk_expr(expr: &Expression, vars: &mut Vec<String>) {
         match expr {
             Expression::Variable(ident, _) => {
-                vars.push(ident.to_string());
+                vars.push(ident.clone());
             }
             Expression::Traversal(traversal, _) => {
                 // The root of a traversal is usually a Variable, we walk it

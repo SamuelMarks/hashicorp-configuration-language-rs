@@ -159,9 +159,9 @@ pub enum Expression {
     /// A string literal.
     String(String, Span),
     /// A tuple constructor: `[expr1, expr2, ...]`.
-    Tuple(Vec<Expression>, Span),
+    Tuple(Vec<Self>, Span),
     /// An object constructor: `{key1 = val1, key2 = val2}`.
-    Object(Vec<(Expression, Expression)>, Span),
+    Object(Vec<(Self, Self)>, Span),
     /// A string template (including interpolation and directives).
     Template(Vec<TemplatePart>, Span),
     /// A variable reference (e.g., `foo`).
@@ -173,13 +173,13 @@ pub enum Expression {
     /// A conditional expression (`cond ? true_expr : false_expr`).
     Conditional(Box<Conditional>, Span),
     /// A binary operation (`expr + expr`).
-    BinaryOp(BinaryOp, Box<Expression>, Box<Expression>, Span),
+    BinaryOp(BinaryOp, Box<Self>, Box<Self>, Span),
     /// A unary operation (`-expr` or `!expr`).
-    UnaryOp(UnaryOp, Box<Expression>, Span),
+    UnaryOp(UnaryOp, Box<Self>, Span),
     /// A `for` expression (tuple `[for k, v in obj: v]` or object `{for k, v in obj: k => v}`).
     ForExpr(Box<ForExpr>, Span),
     /// A Parenthesized expression (to preserve exact spans and precedence).
-    Parentheses(Box<Expression>, Span),
+    Parentheses(Box<Self>, Span),
 }
 /// An identifier with optional namespace qualification (e.g. `provider::aws::arn_parse`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -273,7 +273,7 @@ impl NamespacedIdent {
     }
     /// Returns `true` if this identifier has no namespace segments.
     #[must_use]
-    pub fn is_simple(&self) -> bool {
+    pub const fn is_simple(&self) -> bool {
         self.namespace.is_empty()
     }
 }
@@ -489,10 +489,10 @@ impl Expression {
             }
             Self::Traversal(t, _) => {
                 for op in &t.operators {
-                    if let TraversalOperator::Index(idx_expr, _) = op {
-                        if let Some(inner) = idx_expr.expr_at_position(pos) {
-                            return Some(inner);
-                        }
+                    if let TraversalOperator::Index(idx_expr, _) = op
+                        && let Some(inner) = idx_expr.expr_at_position(pos)
+                    {
+                        return Some(inner);
                     }
                 }
                 if let Some(inner) = t.expr.expr_at_position(pos) {
@@ -572,10 +572,10 @@ fn template_expr_at<'a>(
                 }
             }
             TemplatePart::Directive(directive, span) => {
-                if span.contains_position(pos) {
-                    if let Some(inner) = directive_expr_at(directive, pos) {
-                        return Some(inner);
-                    }
+                if span.contains_position(pos)
+                    && let Some(inner) = directive_expr_at(directive, pos)
+                {
+                    return Some(inner);
                 }
             }
             TemplatePart::Literal(_, _) => {}
@@ -595,18 +595,18 @@ fn for_expr_at<'a>(f: &'a ForExpr, pos: &crate::span::Position) -> Option<&'a Ex
     if let Some(inner) = f.collection.expr_at_position(pos) {
         return Some(inner);
     }
-    if let Some(ref key_expr) = f.key_expr {
-        if let Some(inner) = key_expr.expr_at_position(pos) {
-            return Some(inner);
-        }
+    if let Some(ref key_expr) = f.key_expr
+        && let Some(inner) = key_expr.expr_at_position(pos)
+    {
+        return Some(inner);
     }
     if let Some(inner) = f.val_expr.expr_at_position(pos) {
         return Some(inner);
     }
-    if let Some(ref cond_expr) = f.cond_expr {
-        if let Some(inner) = cond_expr.expr_at_position(pos) {
-            return Some(inner);
-        }
+    if let Some(ref cond_expr) = f.cond_expr
+        && let Some(inner) = cond_expr.expr_at_position(pos)
+    {
+        return Some(inner);
     }
     None
 }
@@ -633,10 +633,10 @@ fn directive_expr_at<'a>(
                 return Some(inner);
             }
             for part in true_expr {
-                if let TemplatePart::Interpolation(expr, span) = part {
-                    if span.contains_position(pos) {
-                        return expr.expr_at_position(pos).or(Some(expr));
-                    }
+                if let TemplatePart::Interpolation(expr, span) = part
+                    && span.contains_position(pos)
+                {
+                    return expr.expr_at_position(pos).or(Some(expr));
                 }
             }
             for (elif_cond, elif_parts) in else_ifs {
@@ -644,19 +644,19 @@ fn directive_expr_at<'a>(
                     return Some(inner);
                 }
                 for part in elif_parts {
-                    if let TemplatePart::Interpolation(expr, span) = part {
-                        if span.contains_position(pos) {
-                            return expr.expr_at_position(pos).or(Some(expr));
-                        }
+                    if let TemplatePart::Interpolation(expr, span) = part
+                        && span.contains_position(pos)
+                    {
+                        return expr.expr_at_position(pos).or(Some(expr));
                     }
                 }
             }
             if let Some(false_parts) = false_expr {
                 for part in false_parts {
-                    if let TemplatePart::Interpolation(expr, span) = part {
-                        if span.contains_position(pos) {
-                            return expr.expr_at_position(pos).or(Some(expr));
-                        }
+                    if let TemplatePart::Interpolation(expr, span) = part
+                        && span.contains_position(pos)
+                    {
+                        return expr.expr_at_position(pos).or(Some(expr));
                     }
                 }
             }
@@ -669,10 +669,10 @@ fn directive_expr_at<'a>(
                 return Some(inner);
             }
             for part in body {
-                if let TemplatePart::Interpolation(expr, span) = part {
-                    if span.contains_position(pos) {
-                        return expr.expr_at_position(pos).or(Some(expr));
-                    }
+                if let TemplatePart::Interpolation(expr, span) = part
+                    && span.contains_position(pos)
+                {
+                    return expr.expr_at_position(pos).or(Some(expr));
                 }
             }
             None
@@ -953,14 +953,14 @@ mod tests {
         assert_eq!(id_simple.to_string(), "my_func");
         assert_eq!(id_simple, "my_func");
         assert_eq!("my_func", id_simple);
-        assert!(id_simple == *"my_func");
-        assert!(*"my_func" == id_simple);
+        assert_eq!(id_simple, *"my_func");
+        assert_eq!(*"my_func", id_simple);
         assert_eq!(id_simple, String::from("my_func"));
         assert_eq!(String::from("my_func"), id_simple);
         assert_ne!(id_simple, "other");
         assert_ne!("other", id_simple);
-        assert!(id_simple != *"other");
-        assert!(*"other" != id_simple);
+        assert_ne!(id_simple, *"other");
+        assert_ne!(*"other", id_simple);
         assert_ne!(id_simple, String::from("other"));
         assert_ne!(String::from("other"), id_simple);
         let fc_simple = FuncCall {
@@ -981,14 +981,14 @@ mod tests {
         assert_eq!(id_namespaced.to_string(), "provider::aws::arn_parse");
         assert_eq!(id_namespaced, "provider::aws::arn_parse");
         assert_eq!("provider::aws::arn_parse", id_namespaced);
-        assert!(id_namespaced == *"provider::aws::arn_parse");
-        assert!(*"provider::aws::arn_parse" == id_namespaced);
+        assert_eq!(id_namespaced, *"provider::aws::arn_parse");
+        assert_eq!(*"provider::aws::arn_parse", id_namespaced);
         assert_eq!(id_namespaced, String::from("provider::aws::arn_parse"));
         assert_eq!(String::from("provider::aws::arn_parse"), id_namespaced);
         assert_ne!(id_namespaced, "provider::aws::other");
         assert_ne!("provider::aws::other", id_namespaced);
-        assert!(id_namespaced != *"provider::aws::other");
-        assert!(*"provider::aws::other" != id_namespaced);
+        assert_ne!(id_namespaced, *"provider::aws::other");
+        assert_ne!(*"provider::aws::other", id_namespaced);
         assert_ne!(id_namespaced, String::from("provider::aws::other"));
         assert_ne!(String::from("provider::aws::other"), id_namespaced);
         let from_string = NamespacedIdent::from(String::from("ns::func"));
