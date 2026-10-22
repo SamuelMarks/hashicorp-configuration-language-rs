@@ -53,11 +53,25 @@ impl_decode_value_int!(
 );
 macro_rules! impl_decode_value_float {
     ($($t:ty => $method:ident),*) => {
-        $(impl DecodeValue for $t { fn decode_value(value : & Value, span : Span) ->
-        Result < Self, Diagnostics > { if let ValueData::Number(n) = &* value.data {
-        return Ok(n.0. $method ().unwrap_or_default()); }
-        Err(Diagnostics::from(Diagnostic::error("Type Mismatch",
-        format!("Expected number, got {}", value.ty()), span,))) } })*
+        $(impl DecodeValue for $t {
+            fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
+                if let ValueData::Number(n) = &*value.data {
+                    if let Some(v) = n.0.$method().filter(|v| v.is_finite()) {
+                        return Ok(v);
+                    }
+                    return Err(Diagnostics::from(Diagnostic::error(
+                        "Number Out of Range",
+                        format!("Number {} is out of range for {}", n.0, stringify!($t)),
+                        span,
+                    )));
+                }
+                Err(Diagnostics::from(Diagnostic::error(
+                    "Type Mismatch",
+                    format!("Expected number, got {}", value.ty()),
+                    span,
+                )))
+            }
+        })*
     };
 }
 impl_decode_value_float!(f32 => to_f32, f64 => to_f64);
@@ -91,7 +105,7 @@ impl<T: DecodeValue> DecodeValue for Vec<T> {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         match &*value.data {
             ValueData::Array(items) => {
-                let mut vec = Vec::with_capacity(items.len());
+                let mut vec = Self::with_capacity(items.len());
                 let mut diags = Diagnostics::new();
                 for item in items {
                     match T::decode_value(item, span.clone()) {
@@ -106,7 +120,7 @@ impl<T: DecodeValue> DecodeValue for Vec<T> {
                 }
             }
             ValueData::Set(items) => {
-                let mut vec = Vec::with_capacity(items.len());
+                let mut vec = Self::with_capacity(items.len());
                 let mut diags = Diagnostics::new();
                 for item in items {
                     match T::decode_value(item, span.clone()) {
@@ -132,7 +146,7 @@ impl<T: DecodeValue, S: std::hash::BuildHasher + Default> DecodeValue for HashMa
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         match &*value.data {
             ValueData::Object(map) => {
-                let mut hash_map = HashMap::with_capacity_and_hasher(map.len(), Default::default());
+                let mut hash_map = Self::with_capacity_and_hasher(map.len(), Default::default());
                 let mut diags = Diagnostics::new();
                 for (k, v) in map {
                     match T::decode_value(v, span.clone()) {
@@ -165,7 +179,7 @@ impl<T: DecodeValue> DecodeValue for std::collections::BTreeMap<String, T> {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
         match &*value.data {
             ValueData::Object(map) => {
-                let mut btree_map = std::collections::BTreeMap::new();
+                let mut btree_map = Self::new();
                 let mut diags = Diagnostics::new();
                 for (k, v) in map {
                     match T::decode_value(v, span.clone()) {
@@ -191,7 +205,7 @@ impl<T: DecodeValue> DecodeValue for std::collections::BTreeMap<String, T> {
 }
 impl<T: DecodeValue> DecodeValue for Option<T> {
     fn decode_value(value: &Value, span: Span) -> Result<Self, Diagnostics> {
-        if let ValueData::Null = &*value.data {
+        if matches!(&*value.data, ValueData::Null) {
             Ok(None)
         } else if let ValueData::Unknown(_) = &*value.data {
             T::decode_value(value, span).map(Some)

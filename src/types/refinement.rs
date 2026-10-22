@@ -6,6 +6,23 @@
 use crate::number::Number;
 use crate::types::val::{Value, ValueData};
 use std::collections::BTreeMap;
+
+const fn merge_min_bound(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(if x >= y { x } else { y }),
+        (Some(x), None) | (None, Some(x)) => Some(x),
+        (None, None) => None,
+    }
+}
+
+const fn merge_max_bound(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(if x <= y { x } else { y }),
+        (Some(x), None) | (None, Some(x)) => Some(x),
+        (None, None) => None,
+    }
+}
+
 /// Constraints and refinements known about an unknown value.
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct Refinement {
@@ -73,7 +90,7 @@ impl Refinement {
     /// # Arguments
     /// * `not_null` - `true` if the value is non-null.
     #[must_use]
-    pub fn with_not_null(mut self, not_null: bool) -> Self {
+    pub const fn with_not_null(mut self, not_null: bool) -> Self {
         self.not_null = not_null;
         self
     }
@@ -84,18 +101,18 @@ impl Refinement {
     /// * `max` - The optional maximum length in characters.
     ///
     /// # Errors
-    /// Returns an error message if `min` exceeds `max`.
+    /// Returns [`crate::error::HclError::Validation`] if `min` exceeds `max`.
     pub fn with_string_length(
         mut self,
         min: impl Into<Option<usize>>,
         max: impl Into<Option<usize>>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, crate::error::HclError> {
         let min = min.into();
         let max = max.into();
         if let Some((mi, ma)) = min.zip(max).filter(|(mi, ma)| mi > ma) {
-            return Err(format!(
+            return Err(crate::error::HclError::Validation(format!(
                 "minimum string length ({mi}) cannot exceed maximum ({ma})"
-            ));
+            )));
         }
         self.string_length_min = min;
         self.string_length_max = max;
@@ -108,18 +125,18 @@ impl Refinement {
     /// * `max` - The optional maximum collection length.
     ///
     /// # Errors
-    /// Returns an error message if `min` exceeds `max`.
+    /// Returns [`crate::error::HclError::Validation`] if `min` exceeds `max`.
     pub fn with_collection_length(
         mut self,
         min: impl Into<Option<usize>>,
         max: impl Into<Option<usize>>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, crate::error::HclError> {
         let min = min.into();
         let max = max.into();
         if let Some((mi, ma)) = min.zip(max).filter(|(mi, ma)| mi > ma) {
-            return Err(format!(
+            return Err(crate::error::HclError::Validation(format!(
                 "minimum collection length ({mi}) cannot exceed maximum ({ma})"
-            ));
+            )));
         }
         self.collection_length_min = min;
         self.collection_length_max = max;
@@ -132,18 +149,18 @@ impl Refinement {
     /// * `max` - The optional maximum number value.
     ///
     /// # Errors
-    /// Returns an error message if `min` exceeds `max`.
+    /// Returns [`crate::error::HclError::Validation`] if `min` exceeds `max`.
     pub fn with_number_range(
         mut self,
         min: impl Into<Option<Number>>,
         max: impl Into<Option<Number>>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, crate::error::HclError> {
         let min = min.into();
         let max = max.into();
         if let Some((mi, ma)) = min.as_ref().zip(max.as_ref()).filter(|(mi, ma)| mi > ma) {
-            return Err(format!(
+            return Err(crate::error::HclError::Validation(format!(
                 "minimum number ({mi:?}) cannot exceed maximum ({ma:?})"
-            ));
+            )));
         }
         self.number_min = min;
         self.number_max = max;
@@ -211,96 +228,45 @@ impl Refinement {
     /// * `other` - The other refinement to combine with.
     ///
     /// # Errors
-    /// Returns an error message if the combined constraints are contradictory.
-    pub fn intersect(&self, other: &Self) -> Result<Self, String> {
+    /// Returns [`crate::error::HclError::Validation`] if the combined constraints are contradictory.
+    pub fn intersect(&self, other: &Self) -> Result<Self, crate::error::HclError> {
         let not_null = self.not_null || other.not_null;
-        let mut string_length_min = match (self.string_length_min, other.string_length_min) {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (Some(a), None) | (None, Some(a)) => Some(a),
-            (None, None) => None,
-        };
-        let string_length_max = match (self.string_length_max, other.string_length_max) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (Some(a), None) | (None, Some(a)) => Some(a),
-            (None, None) => None,
-        };
+        let mut string_length_min =
+            merge_min_bound(self.string_length_min, other.string_length_min);
+        let string_length_max = merge_max_bound(self.string_length_max, other.string_length_max);
         if let Some((min, max)) = string_length_min
             .zip(string_length_max)
             .filter(|(mi, ma)| mi > ma)
         {
-            return Err(format!(
+            return Err(crate::error::HclError::Validation(format!(
                 "conflicting string length constraints: min ({min}) > max ({max})"
-            ));
+            )));
         }
-        let string_prefix = match (&self.string_prefix, &other.string_prefix) {
-            (Some(p1), Some(p2)) => {
-                if p1.starts_with(p2) {
-                    Some(p1.clone())
-                } else if p2.starts_with(p1) {
-                    Some(p2.clone())
-                } else {
-                    return Err(format!("conflicting string prefixes: {p1:?} and {p2:?}"));
-                }
-            }
-            (Some(p), None) | (None, Some(p)) => Some(p.clone()),
-            (None, None) => None,
-        };
-        if let (Some(p), Some(max)) = (&string_prefix, string_length_max) {
-            let count = p.chars().count();
-            if count > max {
-                return Err(format!(
-                    "prefix length ({count}) exceeds maximum string length ({max})"
-                ));
-            }
-        }
-        if let Some(p) = &string_prefix {
-            let count = p.chars().count();
-            string_length_min = Some(string_length_min.map_or(count, |m| m.max(count)));
-        }
-        let string_suffix = match (&self.string_suffix, &other.string_suffix) {
-            (Some(s1), Some(s2)) => {
-                if s1.ends_with(s2) {
-                    Some(s1.clone())
-                } else if s2.ends_with(s1) {
-                    Some(s2.clone())
-                } else {
-                    return Err(format!("conflicting string suffixes: {s1:?} and {s2:?}"));
-                }
-            }
-            (Some(s), None) | (None, Some(s)) => Some(s.clone()),
-            (None, None) => None,
-        };
-        if let (Some(s), Some(max)) = (&string_suffix, string_length_max) {
-            let count = s.chars().count();
-            if count > max {
-                return Err(format!(
-                    "suffix length ({count}) exceeds maximum string length ({max})"
-                ));
-            }
-        }
-        if let Some(s) = &string_suffix {
-            let count = s.chars().count();
-            string_length_min = Some(string_length_min.map_or(count, |m| m.max(count)));
-        }
-        let collection_length_min = match (self.collection_length_min, other.collection_length_min)
-        {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (Some(a), None) | (None, Some(a)) => Some(a),
-            (None, None) => None,
-        };
-        let collection_length_max = match (self.collection_length_max, other.collection_length_max)
-        {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (Some(a), None) | (None, Some(a)) => Some(a),
-            (None, None) => None,
-        };
+        let string_prefix = Self::intersect_affix(
+            self.string_prefix.as_deref(),
+            other.string_prefix.as_deref(),
+            true,
+            string_length_max,
+            &mut string_length_min,
+        )?;
+        let string_suffix = Self::intersect_affix(
+            self.string_suffix.as_deref(),
+            other.string_suffix.as_deref(),
+            false,
+            string_length_max,
+            &mut string_length_min,
+        )?;
+        let collection_length_min =
+            merge_min_bound(self.collection_length_min, other.collection_length_min);
+        let collection_length_max =
+            merge_max_bound(self.collection_length_max, other.collection_length_max);
         if let Some((min, max)) = collection_length_min
             .zip(collection_length_max)
             .filter(|(mi, ma)| mi > ma)
         {
-            return Err(format!(
+            return Err(crate::error::HclError::Validation(format!(
                 "conflicting collection length constraints: min ({min}) > max ({max})"
-            ));
+            )));
         }
         let number_min = match (&self.number_min, &other.number_min) {
             (Some(a), Some(b)) => Some(if a >= b { a.clone() } else { b.clone() }),
@@ -317,9 +283,9 @@ impl Refinement {
             .zip(number_max.as_ref())
             .filter(|(mi, ma)| mi > ma)
         {
-            return Err(format!(
+            return Err(crate::error::HclError::Validation(format!(
                 "conflicting number bounds: min ({min:?}) > max ({max:?})"
-            ));
+            )));
         }
         let mut object_attrs = BTreeMap::new();
         for (k, v) in &self.object_attrs {
@@ -348,87 +314,149 @@ impl Refinement {
             object_attrs,
         })
     }
+
+    fn intersect_affix(
+        a: Option<&str>,
+        b: Option<&str>,
+        is_prefix: bool,
+        string_length_max: Option<usize>,
+        string_length_min: &mut Option<usize>,
+    ) -> Result<Option<String>, crate::error::HclError> {
+        let merged = match (a, b) {
+            (Some(s1), Some(s2)) => {
+                let matches = if is_prefix {
+                    s1.starts_with(s2)
+                } else {
+                    s1.ends_with(s2)
+                };
+                let rev_matches = if is_prefix {
+                    s2.starts_with(s1)
+                } else {
+                    s2.ends_with(s1)
+                };
+                if matches {
+                    Some(s1.to_string())
+                } else if rev_matches {
+                    Some(s2.to_string())
+                } else {
+                    let kind = if is_prefix { "prefixes" } else { "suffixes" };
+                    return Err(crate::error::HclError::Validation(format!(
+                        "conflicting string {kind}: {s1:?} and {s2:?}"
+                    )));
+                }
+            }
+            (Some(s), None) | (None, Some(s)) => Some(s.to_string()),
+            (None, None) => None,
+        };
+        if let Some(ref s) = merged {
+            let count = s.chars().count();
+            if let Some(max) = string_length_max {
+                if count > max {
+                    let kind = if is_prefix { "prefix" } else { "suffix" };
+                    return Err(crate::error::HclError::Validation(format!(
+                        "{kind} length ({count}) exceeds maximum string length ({max})"
+                    )));
+                }
+            }
+            *string_length_min = Some(string_length_min.map_or(count, |m| m.max(count)));
+        }
+        Ok(merged)
+    }
     /// Verifies if a concrete [`Value`] satisfies all constraints of this refinement.
     ///
     /// # Arguments
     /// * `val` - The value to check against constraints.
     ///
     /// # Errors
-    /// Returns an error message describing the violation if the value fails to satisfy any constraint.
-    pub fn satisfies(&self, val: &Value) -> Result<(), String> {
+    /// Returns [`crate::error::HclError::Validation`] describing the violation if the value fails to satisfy any constraint.
+    pub fn satisfies(&self, val: &Value) -> Result<(), crate::error::HclError> {
         if self.not_null && val.is_null() {
-            return Err("expected non-null value, got null".to_string());
+            return Err(crate::error::HclError::Validation(
+                "expected non-null value, got null".to_string(),
+            ));
         }
         match &*val.data {
             ValueData::String(s) => {
                 let char_count = s.chars().count();
                 if let Some(min) = self.string_length_min.filter(|&m| char_count < m) {
-                    return Err(format!(
+                    return Err(crate::error::HclError::Validation(format!(
                         "string length {char_count} is less than minimum {min}"
-                    ));
+                    )));
                 }
                 if let Some(max) = self.string_length_max.filter(|&m| char_count > m) {
-                    return Err(format!("string length {char_count} exceeds maximum {max}"));
+                    return Err(crate::error::HclError::Validation(format!(
+                        "string length {char_count} exceeds maximum {max}"
+                    )));
                 }
                 if let Some(prefix) = self.string_prefix.as_ref().filter(|p| !s.starts_with(*p)) {
-                    return Err(format!(
+                    return Err(crate::error::HclError::Validation(format!(
                         "string does not start with expected prefix {prefix:?}"
-                    ));
+                    )));
                 }
                 if let Some(suffix) = self.string_suffix.as_ref().filter(|suf| !s.ends_with(*suf)) {
-                    return Err(format!(
+                    return Err(crate::error::HclError::Validation(format!(
                         "string does not end with expected suffix {suffix:?}"
-                    ));
+                    )));
                 }
             }
             ValueData::Array(arr) => {
                 let len = arr.len();
                 if let Some(min) = self.collection_length_min.filter(|&m| len < m) {
-                    return Err(format!(
+                    return Err(crate::error::HclError::Validation(format!(
                         "collection length {len} is less than minimum {min}"
-                    ));
+                    )));
                 }
                 if let Some(max) = self.collection_length_max.filter(|&m| len > m) {
-                    return Err(format!("collection length {len} exceeds maximum {max}"));
+                    return Err(crate::error::HclError::Validation(format!(
+                        "collection length {len} exceeds maximum {max}"
+                    )));
                 }
             }
             ValueData::Set(set) => {
                 let len = set.len();
                 if let Some(min) = self.collection_length_min.filter(|&m| len < m) {
-                    return Err(format!(
+                    return Err(crate::error::HclError::Validation(format!(
                         "collection length {len} is less than minimum {min}"
-                    ));
+                    )));
                 }
                 if let Some(max) = self.collection_length_max.filter(|&m| len > m) {
-                    return Err(format!("collection length {len} exceeds maximum {max}"));
+                    return Err(crate::error::HclError::Validation(format!(
+                        "collection length {len} exceeds maximum {max}"
+                    )));
                 }
             }
             ValueData::Object(obj) => {
                 let len = obj.len();
                 if let Some(min) = self.collection_length_min.filter(|&m| len < m) {
-                    return Err(format!(
+                    return Err(crate::error::HclError::Validation(format!(
                         "object attribute count {len} is less than minimum {min}"
-                    ));
+                    )));
                 }
                 if let Some(max) = self.collection_length_max.filter(|&m| len > m) {
-                    return Err(format!(
+                    return Err(crate::error::HclError::Validation(format!(
                         "object attribute count {len} exceeds maximum {max}"
-                    ));
+                    )));
                 }
                 for (k, ref_attr) in &self.object_attrs {
                     if let Some(val_attr) = obj.get(k) {
                         ref_attr.satisfies(val_attr)?;
                     } else if ref_attr.not_null {
-                        return Err(format!("missing required object attribute {k:?}"));
+                        return Err(crate::error::HclError::Validation(format!(
+                            "missing required object attribute {k:?}"
+                        )));
                     }
                 }
             }
             ValueData::Number(n) => {
                 if let Some(min) = self.number_min.as_ref().filter(|m| n < *m) {
-                    return Err(format!("number {n:?} is less than minimum {min:?}"));
+                    return Err(crate::error::HclError::Validation(format!(
+                        "number {n:?} is less than minimum {min:?}"
+                    )));
                 }
                 if let Some(max) = self.number_max.as_ref().filter(|m| n > *m) {
-                    return Err(format!("number {n:?} exceeds maximum {max:?}"));
+                    return Err(crate::error::HclError::Validation(format!(
+                        "number {n:?} exceeds maximum {max:?}"
+                    )));
                 }
             }
             _ => {}
@@ -438,18 +466,12 @@ impl Refinement {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::error::HclError;
     use crate::types::Type;
     use std::collections::{BTreeMap, BTreeSet};
     #[test]
-    fn test_refinement_builders_and_empty() {
+    fn test_refinement_builders_and_empty() -> Result<(), HclError> {
         let empty = Refinement::new();
         assert!(empty.is_empty());
         let non_null = Refinement::not_null();
@@ -457,19 +479,17 @@ mod tests {
         assert!(non_null.not_null);
         let toggle = non_null.with_not_null(false);
         assert!(toggle.is_empty());
-        let str_len = Refinement::new().with_string_length(2, 10).unwrap();
+        let str_len = Refinement::new().with_string_length(2, 10)?;
         assert_eq!(str_len.string_length_min, Some(2));
         assert_eq!(str_len.string_length_max, Some(10));
         let str_err = Refinement::new().with_string_length(10, 2);
         assert!(str_err.is_err());
-        let col_len = Refinement::new().with_collection_length(1, 5).unwrap();
+        let col_len = Refinement::new().with_collection_length(1, 5)?;
         assert_eq!(col_len.collection_length_min, Some(1));
         assert_eq!(col_len.collection_length_max, Some(5));
         let col_err = Refinement::new().with_collection_length(5, 1);
         assert!(col_err.is_err());
-        let num_range = Refinement::new()
-            .with_number_range(Number::from(1), Number::from(10))
-            .unwrap();
+        let num_range = Refinement::new().with_number_range(Number::from(1), Number::from(10))?;
         assert_eq!(num_range.number_min, Some(Number::from(1)));
         assert_eq!(num_range.number_max, Some(Number::from(10)));
         let num_err = Refinement::new().with_number_range(Number::from(10), Number::from(1));
@@ -482,28 +502,23 @@ mod tests {
         assert_eq!(with_s.string_length_min, Some(4));
         let with_obj = Refinement::new().with_object_attr("nested", Refinement::not_null());
         assert!(with_obj.object_attrs.contains_key("nested"));
+        Ok(())
     }
     #[test]
-    fn test_refinement_intersection_success() {
+    fn test_refinement_intersection_success() -> Result<(), HclError> {
         let r1 = Refinement::not_null()
-            .with_string_length(2, 10)
-            .unwrap()
+            .with_string_length(2, 10)?
             .with_prefix("ab")
             .with_suffix("yz")
-            .with_collection_length(1, 10)
-            .unwrap()
-            .with_number_range(Number::from(2), Number::from(10))
-            .unwrap();
+            .with_collection_length(1, 10)?
+            .with_number_range(Number::from(2), Number::from(10))?;
         let r2 = Refinement::new()
-            .with_string_length(4, 8)
-            .unwrap()
+            .with_string_length(4, 8)?
             .with_prefix("abcd")
             .with_suffix("xyz")
-            .with_collection_length(3, 8)
-            .unwrap()
-            .with_number_range(Number::from(4), Number::from(8))
-            .unwrap();
-        let inter = r1.intersect(&r2).unwrap();
+            .with_collection_length(3, 8)?
+            .with_number_range(Number::from(4), Number::from(8))?;
+        let inter = r1.intersect(&r2)?;
         assert!(inter.not_null);
         assert_eq!(inter.string_length_min, Some(4));
         assert_eq!(inter.string_length_max, Some(8));
@@ -515,21 +530,18 @@ mod tests {
         assert_eq!(inter.number_max, Some(Number::from(8)));
         let r_a = Refinement::new().with_prefix("xyz");
         let r_b = Refinement::new().with_prefix("xy");
-        let inter_ab = r_a.intersect(&r_b).unwrap();
+        let inter_ab = r_a.intersect(&r_b)?;
         assert_eq!(inter_ab.string_prefix.as_deref(), Some("xyz"));
         let suf_a = Refinement::new().with_suffix("123");
         let suf_b = Refinement::new().with_suffix("23");
-        let inter_suf = suf_a.intersect(&suf_b).unwrap();
+        let inter_suf = suf_a.intersect(&suf_b)?;
         assert_eq!(inter_suf.string_suffix.as_deref(), Some("123"));
         let r_o1 = Refinement::new()
-            .with_object_attr("attr1", Refinement::new().with_string_length(1, 5).unwrap());
+            .with_object_attr("attr1", Refinement::new().with_string_length(1, 5)?);
         let r_o2 = Refinement::new()
-            .with_object_attr(
-                "attr1",
-                Refinement::new().with_string_length(3, 10).unwrap(),
-            )
+            .with_object_attr("attr1", Refinement::new().with_string_length(3, 10)?)
             .with_object_attr("attr2", Refinement::not_null());
-        let inter_o = r_o1.intersect(&r_o2).unwrap();
+        let inter_o = r_o1.intersect(&r_o2)?;
         assert_eq!(
             inter_o
                 .object_attrs
@@ -545,43 +557,40 @@ mod tests {
             Some(5)
         );
         assert!(inter_o.object_attrs.contains_key("attr2"));
+        Ok(())
     }
     #[test]
-    fn test_refinement_intersection_contradictions() {
-        let r1 = Refinement::new().with_string_length(5, None).unwrap();
-        let r2 = Refinement::new().with_string_length(None, 3).unwrap();
+    fn test_refinement_intersection_contradictions() -> Result<(), HclError> {
+        let r1 = Refinement::new().with_string_length(5, None)?;
+        let r2 = Refinement::new().with_string_length(None, 3)?;
         assert!(r1.intersect(&r2).is_err());
         let r3 = Refinement::new().with_prefix("foo");
         let r4 = Refinement::new().with_prefix("bar");
         assert!(r3.intersect(&r4).is_err());
         let r5 = Refinement::new().with_prefix("long_prefix");
-        let r6 = Refinement::new().with_string_length(None, 4).unwrap();
+        let r6 = Refinement::new().with_string_length(None, 4)?;
         assert!(r5.intersect(&r6).is_err());
         let r7 = Refinement::new().with_suffix("foo");
         let r8 = Refinement::new().with_suffix("bar");
         assert!(r7.intersect(&r8).is_err());
         let r9 = Refinement::new().with_suffix("long_suffix");
-        let r10 = Refinement::new().with_string_length(None, 4).unwrap();
+        let r10 = Refinement::new().with_string_length(None, 4)?;
         assert!(r9.intersect(&r10).is_err());
-        let r11 = Refinement::new().with_collection_length(5, None).unwrap();
-        let r12 = Refinement::new().with_collection_length(None, 3).unwrap();
+        let r11 = Refinement::new().with_collection_length(5, None)?;
+        let r12 = Refinement::new().with_collection_length(None, 3)?;
         assert!(r11.intersect(&r12).is_err());
-        let r13 = Refinement::new()
-            .with_number_range(Number::from(10), None)
-            .unwrap();
-        let r14 = Refinement::new()
-            .with_number_range(None, Number::from(5))
-            .unwrap();
+        let r13 = Refinement::new().with_number_range(Number::from(10), None)?;
+        let r14 = Refinement::new().with_number_range(None, Number::from(5))?;
         assert!(r13.intersect(&r14).is_err());
         let r15 = Refinement::new().with_object_attr("k", r3);
         let r16 = Refinement::new().with_object_attr("k", r4);
         assert!(r15.intersect(&r16).is_err());
+        Ok(())
     }
     #[test]
-    fn test_refinement_satisfies() {
+    fn test_refinement_satisfies() -> Result<(), HclError> {
         let str_ref = Refinement::not_null()
-            .with_string_length(3, 10)
-            .unwrap()
+            .with_string_length(3, 10)?
             .with_prefix("go-")
             .with_suffix(".rs");
         let ok_str = Value::new(Type::String, ValueData::String("go-test.rs".to_string()));
@@ -599,7 +608,7 @@ mod tests {
         assert!(str_ref.satisfies(&bad_pre).is_err());
         let bad_suf = Value::new(Type::String, ValueData::String("go-test.go".to_string()));
         assert!(str_ref.satisfies(&bad_suf).is_err());
-        let col_ref = Refinement::new().with_collection_length(2, 4).unwrap();
+        let col_ref = Refinement::new().with_collection_length(2, 4)?;
         let ok_arr = Value::new(
             Type::List(Box::new(Type::Number)),
             ValueData::Array(vec![
@@ -639,16 +648,13 @@ mod tests {
             ValueData::Object(obj_attrs),
         );
         let obj_ref = Refinement::new()
-            .with_collection_length(1, 2)
-            .unwrap()
+            .with_collection_length(1, 2)?
             .with_object_attr("name", Refinement::not_null().with_prefix("sam"));
         assert!(obj_ref.satisfies(&obj_val).is_ok());
         let missing_attr_ref =
             Refinement::new().with_object_attr("missing", Refinement::not_null());
         assert!(missing_attr_ref.satisfies(&obj_val).is_err());
-        let num_ref = Refinement::new()
-            .with_number_range(Number::from(5), Number::from(10))
-            .unwrap();
+        let num_ref = Refinement::new().with_number_range(Number::from(5), Number::from(10))?;
         let ok_num = Value::new(Type::Number, ValueData::Number(Number::from(7)));
         assert!(num_ref.satisfies(&ok_num).is_ok());
         let low_num = Value::new(Type::Number, ValueData::Number(Number::from(2)));
@@ -657,17 +663,20 @@ mod tests {
         assert!(num_ref.satisfies(&high_num).is_err());
         let bool_val = Value::new(Type::Bool, ValueData::Bool(true));
         assert!(Refinement::new().satisfies(&bool_val).is_ok());
+        Ok(())
     }
     #[test]
-    fn test_refinement_traits_and_hashing() {
+    fn test_refinement_traits_and_hashing() -> Result<(), HclError> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let r1 = Refinement::not_null()
             .with_prefix("pre")
             .with_suffix("suf")
-            .with_number_range(Number::from(1), Number::from(10))
-            .unwrap();
-        let r2 = r1.clone();
+            .with_number_range(Number::from(1), Number::from(10))?;
+        let r2 = Refinement::not_null()
+            .with_prefix("pre")
+            .with_suffix("suf")
+            .with_number_range(Number::from(1), Number::from(10))?;
         assert_eq!(r1, r2);
         let mut h1 = DefaultHasher::new();
         let mut h2 = DefaultHasher::new();
@@ -676,6 +685,7 @@ mod tests {
         assert_eq!(h1.finish(), h2.finish());
         let debug_s = format!("{r1:?}");
         assert!(debug_s.contains("Refinement"));
+        Ok(())
     }
     #[test]
     fn test_value_refinement_integration() {
@@ -692,7 +702,7 @@ mod tests {
         assert!(unrefined.refinement_arc().is_none());
     }
     #[test]
-    fn test_refinement_complete_coverage() {
+    fn test_refinement_complete_coverage_intersect() {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::Hash;
         let r_empty = Refinement::new();
@@ -754,6 +764,9 @@ mod tests {
             .with_string_length(None, Some(4))
             .unwrap_or_default();
         assert!(r_pre5.intersect(&r_max4).is_err());
+    }
+    #[test]
+    fn test_refinement_complete_coverage_satisfies() {
         let r_obj_a = Refinement::new().with_object_attr("a", Refinement::not_null());
         let r_obj_b = Refinement::new().with_object_attr("b", Refinement::not_null());
         let r_obj_both = r_obj_a.intersect(&r_obj_b).unwrap_or_default();
@@ -796,9 +809,9 @@ mod tests {
         let r_obj_opt = Refinement::new().with_object_attr("optional_k", Refinement::new());
         assert!(r_obj_opt.satisfies(&empty_obj).is_ok());
     }
-    /// Tests edge cases and all combinations of `is_empty`, `with_prefix`, and range validations.
+    /// Tests all combinations of `is_empty` on `Refinement`.
     #[test]
-    fn test_refinement_branch_coverage_gaps() {
+    fn test_refinement_branch_coverage_is_empty() {
         assert!(
             !Refinement {
                 string_length_min: Some(1),
@@ -857,19 +870,21 @@ mod tests {
         );
         assert!(
             !Refinement {
-                object_attrs: [("k".to_string(), Refinement::new())].into_iter().collect(),
+                object_attrs: std::iter::once(("k".to_string(), Refinement::new())).collect(),
                 ..Default::default()
             }
             .is_empty()
         );
+    }
+    /// Tests `with_prefix`, `with_suffix`, and invalid range validations on `Refinement`.
+    #[test]
+    fn test_refinement_branch_coverage_ranges() -> Result<(), HclError> {
         let r_pre = Refinement::new()
-            .with_string_length(Some(2), None)
-            .unwrap()
+            .with_string_length(Some(2), None)?
             .with_prefix("a");
         assert_eq!(r_pre.string_length_min, Some(2));
         let r_suf = Refinement::new()
-            .with_string_length(Some(3), None)
-            .unwrap()
+            .with_string_length(Some(3), None)?
             .with_suffix("b");
         assert_eq!(r_suf.string_length_min, Some(3));
         assert!(
@@ -909,5 +924,6 @@ mod tests {
                 .with_number_range(Number::from(10), Some(Number::from(2)))
                 .is_err()
         );
+        Ok(())
     }
 }

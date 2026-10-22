@@ -54,8 +54,7 @@ impl EncodeBody for crate::ast::structure::Body {
                 cst_attr.with_trailing_inline_comment(trailing);
             }
             body.items
-                .push(crate::cst::builder::CstItem::Attribute(cst_attr.clone()));
-            body.attributes.push(cst_attr);
+                .push(crate::cst::builder::CstItem::Attribute(cst_attr));
         }
         for block in &self.blocks {
             let mut cst_block = CstBlock::new(&block.block_type, block.labels.clone());
@@ -65,7 +64,7 @@ impl EncodeBody for crate::ast::structure::Body {
             if let Some(ref trailing) = block.trailing_comment {
                 cst_block.with_trailing_inline_comment(trailing);
             }
-            let _ = block.body.encode_into_body(&mut cst_block.body);
+            block.body.encode_into_body(&mut cst_block.body)?;
             body.append_block(cst_block);
         }
         Ok(())
@@ -170,10 +169,8 @@ impl<T: EncodeValue> EncodeValue for Vec<T> {
 }
 impl<T: EncodeValue> EncodeValue for Option<T> {
     fn encode_value(&self) -> Value {
-        match self {
-            Some(val) => val.encode_value(),
-            None => Value::null(Type::Dynamic),
-        }
+        self.as_ref()
+            .map_or_else(|| Value::null(Type::Dynamic), EncodeValue::encode_value)
     }
 }
 impl<T: EncodeValue, S: std::hash::BuildHasher + Default> EncodeValue for HashMap<String, T, S> {

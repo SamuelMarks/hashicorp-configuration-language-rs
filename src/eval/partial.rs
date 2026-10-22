@@ -73,7 +73,7 @@ pub fn value_to_expression(val: &Value, span: Span) -> Expression {
 }
 /// Checks whether an expression represents a known static literal value.
 #[must_use]
-fn is_literal(expr: &Expression) -> bool {
+const fn is_literal(expr: &Expression) -> bool {
     matches!(
         expr,
         Expression::Null(_)
@@ -151,118 +151,7 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
             }
         }
         Expression::BinaryOp(op, left, right, span) => {
-            let folded_left = partial_eval(left, ctx)?;
-            if *op == BinaryOp::And {
-                if let Expression::Bool(false, _) = folded_left {
-                    return Ok(Expression::Bool(false, span.clone()));
-                }
-                if let Expression::Bool(true, _) = folded_left {
-                    return partial_eval(right, ctx);
-                }
-            } else if *op == BinaryOp::Or {
-                if let Expression::Bool(true, _) = folded_left {
-                    return Ok(Expression::Bool(true, span.clone()));
-                }
-                if let Expression::Bool(false, _) = folded_left {
-                    return partial_eval(right, ctx);
-                }
-            }
-            let folded_right = partial_eval(right, ctx)?;
-            if *op == BinaryOp::And {
-                if let Expression::Bool(true, _) = folded_right {
-                    return Ok(folded_left);
-                }
-            } else if *op == BinaryOp::Or {
-                if let Expression::Bool(false, _) = folded_right {
-                    return Ok(folded_left);
-                }
-            }
-            if let (Expression::Number(n1, _), Expression::Number(n2, _)) =
-                (&folded_left, &folded_right)
-            {
-                match op {
-                    BinaryOp::Add => {
-                        return Ok(Expression::Number(n1.clone() + n2.clone(), span.clone()));
-                    }
-                    BinaryOp::Sub => {
-                        return Ok(Expression::Number(n1.clone() - n2.clone(), span.clone()));
-                    }
-                    BinaryOp::Mul => {
-                        return Ok(Expression::Number(n1.clone() * n2.clone(), span.clone()));
-                    }
-                    BinaryOp::Div => {
-                        if let Some(res) = n1.checked_div(n2) {
-                            return Ok(Expression::Number(res, span.clone()));
-                        }
-                        let mut diags = Diagnostics::new();
-                        diags.push(Diagnostic::error(
-                            "Division by zero".to_string(),
-                            "Cannot divide by zero in constant expression.".to_string(),
-                            span.clone(),
-                        ));
-                        return Err(diags);
-                    }
-                    BinaryOp::Mod => {
-                        if let Some(res) = n1.checked_rem(n2) {
-                            return Ok(Expression::Number(res, span.clone()));
-                        }
-                        let mut diags = Diagnostics::new();
-                        diags.push(Diagnostic::error(
-                            "Modulo by zero".to_string(),
-                            "Cannot calculate modulo with divisor of zero.".to_string(),
-                            span.clone(),
-                        ));
-                        return Err(diags);
-                    }
-                    BinaryOp::Eq => {
-                        return Ok(Expression::Bool(n1 == n2, span.clone()));
-                    }
-                    BinaryOp::NotEq => {
-                        return Ok(Expression::Bool(n1 != n2, span.clone()));
-                    }
-                    BinaryOp::Less => {
-                        return Ok(Expression::Bool(n1 < n2, span.clone()));
-                    }
-                    BinaryOp::LessEq => {
-                        return Ok(Expression::Bool(n1 <= n2, span.clone()));
-                    }
-                    BinaryOp::Greater => {
-                        return Ok(Expression::Bool(n1 > n2, span.clone()));
-                    }
-                    BinaryOp::GreaterEq => {
-                        return Ok(Expression::Bool(n1 >= n2, span.clone()));
-                    }
-                    _ => {}
-                }
-            }
-            if let (Expression::Bool(b1, _), Expression::Bool(b2, _)) =
-                (&folded_left, &folded_right)
-            {
-                match op {
-                    BinaryOp::Eq => return Ok(Expression::Bool(b1 == b2, span.clone())),
-                    BinaryOp::NotEq => {
-                        return Ok(Expression::Bool(b1 != b2, span.clone()));
-                    }
-                    _ => {}
-                }
-            }
-            if let (Expression::String(s1, _), Expression::String(s2, _)) =
-                (&folded_left, &folded_right)
-            {
-                match op {
-                    BinaryOp::Eq => return Ok(Expression::Bool(s1 == s2, span.clone())),
-                    BinaryOp::NotEq => {
-                        return Ok(Expression::Bool(s1 != s2, span.clone()));
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Expression::BinaryOp(
-                *op,
-                Box::new(folded_left),
-                Box::new(folded_right),
-                span.clone(),
-            ))
+            partial_eval_binary_op(*op, left, right, span, ctx)
         }
         Expression::Conditional(cond, span) => {
             let folded_cond = partial_eval(&cond.cond_expr, ctx)?;
@@ -303,151 +192,274 @@ pub fn partial_eval(expr: &Expression, ctx: &Context) -> Result<Expression, Diag
             }
             Ok(Expression::Object(folded_elements, span.clone()))
         }
-        Expression::Template(parts, span) => {
-            let mut folded_parts = Vec::with_capacity(parts.len());
-            let mut combined = String::new();
-            let mut all_literals = true;
-            for part in parts {
-                match part {
-                    TemplatePart::Literal(s, part_span) => {
-                        combined.push_str(s);
-                        folded_parts.push(TemplatePart::Literal(s.clone(), part_span.clone()));
-                    }
-                    TemplatePart::Interpolation(inner, part_span) => {
-                        let folded_inner = partial_eval(inner, ctx)?;
-                        if let Expression::String(s, _) = &folded_inner {
-                            combined.push_str(s);
-                            folded_parts.push(TemplatePart::Literal(s.clone(), part_span.clone()));
-                        } else {
-                            all_literals = false;
-                            folded_parts
-                                .push(TemplatePart::Interpolation(folded_inner, part_span.clone()));
-                        }
-                    }
-                    TemplatePart::Directive(dir, part_span) => {
-                        all_literals = false;
-                        folded_parts.push(TemplatePart::Directive(dir.clone(), part_span.clone()));
-                    }
+        Expression::Template(parts, span) => partial_eval_template(parts, span, ctx),
+        Expression::Traversal(trav, span) => partial_eval_traversal(expr, trav, span, ctx),
+        Expression::FuncCall(fc, span) => partial_eval_func_call(fc, span, ctx),
+        Expression::ForExpr(for_expr, span) => partial_eval_for_expr(for_expr, span, ctx),
+    }
+}
+
+fn partial_eval_for_expr(
+    for_expr: &ForExpr,
+    span: &Span,
+    ctx: &Context,
+) -> Result<Expression, Diagnostics> {
+    let folded_coll = partial_eval(&for_expr.collection, ctx)?;
+    let folded_val = partial_eval(&for_expr.val_expr, ctx)?;
+    let folded_key = if let Some(ref k) = for_expr.key_expr {
+        Some(Box::new(partial_eval(k, ctx)?))
+    } else {
+        None
+    };
+    let folded_cond = if let Some(ref c) = for_expr.cond_expr {
+        Some(Box::new(partial_eval(c, ctx)?))
+    } else {
+        None
+    };
+    let synthetic_for = Expression::ForExpr(
+        Box::new(ForExpr {
+            key_var: for_expr.key_var.clone(),
+            val_var: for_expr.val_var.clone(),
+            collection: Box::new(folded_coll.clone()),
+            key_expr: folded_key.clone(),
+            val_expr: Box::new(folded_val.clone()),
+            cond_expr: folded_cond.clone(),
+            grouping: for_expr.grouping,
+        }),
+        span.clone(),
+    );
+    let eval_res = Evaluator::new(ctx).evaluate(&synthetic_for);
+    if let Ok((val, _)) = eval_res {
+        if !val.is_unknown() {
+            return Ok(value_to_expression(&val, span.clone()));
+        }
+    }
+    Ok(Expression::ForExpr(
+        Box::new(ForExpr {
+            key_var: for_expr.key_var.clone(),
+            val_var: for_expr.val_var.clone(),
+            collection: Box::new(folded_coll),
+            key_expr: folded_key,
+            val_expr: Box::new(folded_val),
+            cond_expr: folded_cond,
+            grouping: for_expr.grouping,
+        }),
+        span.clone(),
+    ))
+}
+
+fn partial_eval_binary_op(
+    op: BinaryOp,
+    left: &Expression,
+    right: &Expression,
+    span: &Span,
+    ctx: &Context,
+) -> Result<Expression, Diagnostics> {
+    let folded_left = partial_eval(left, ctx)?;
+    if op == BinaryOp::And {
+        if let Expression::Bool(false, _) = folded_left {
+            return Ok(Expression::Bool(false, span.clone()));
+        }
+        if let Expression::Bool(true, _) = folded_left {
+            return partial_eval(right, ctx);
+        }
+    } else if op == BinaryOp::Or {
+        if let Expression::Bool(true, _) = folded_left {
+            return Ok(Expression::Bool(true, span.clone()));
+        }
+        if let Expression::Bool(false, _) = folded_left {
+            return partial_eval(right, ctx);
+        }
+    }
+    let folded_right = partial_eval(right, ctx)?;
+    if op == BinaryOp::And {
+        if let Expression::Bool(true, _) = folded_right {
+            return Ok(folded_left);
+        }
+    } else if op == BinaryOp::Or {
+        if let Expression::Bool(false, _) = folded_right {
+            return Ok(folded_left);
+        }
+    }
+    if let (Expression::Number(n1, _), Expression::Number(n2, _)) = (&folded_left, &folded_right) {
+        match op {
+            BinaryOp::Add => {
+                return Ok(Expression::Number(n1.clone() + n2.clone(), span.clone()));
+            }
+            BinaryOp::Sub => {
+                return Ok(Expression::Number(n1.clone() - n2.clone(), span.clone()));
+            }
+            BinaryOp::Mul => {
+                return Ok(Expression::Number(n1.clone() * n2.clone(), span.clone()));
+            }
+            BinaryOp::Div => {
+                if let Some(res) = n1.checked_div(n2) {
+                    return Ok(Expression::Number(res, span.clone()));
+                }
+                let mut diags = Diagnostics::new();
+                diags.push(Diagnostic::error(
+                    "Division by zero".to_string(),
+                    "Cannot divide by zero in constant expression.".to_string(),
+                    span.clone(),
+                ));
+                return Err(diags);
+            }
+            BinaryOp::Mod => {
+                if let Some(res) = n1.checked_rem(n2) {
+                    return Ok(Expression::Number(res, span.clone()));
+                }
+                let mut diags = Diagnostics::new();
+                diags.push(Diagnostic::error(
+                    "Modulo by zero".to_string(),
+                    "Cannot calculate modulo with divisor of zero.".to_string(),
+                    span.clone(),
+                ));
+                return Err(diags);
+            }
+            BinaryOp::Eq => return Ok(Expression::Bool(n1 == n2, span.clone())),
+            BinaryOp::NotEq => return Ok(Expression::Bool(n1 != n2, span.clone())),
+            BinaryOp::Less => return Ok(Expression::Bool(n1 < n2, span.clone())),
+            BinaryOp::LessEq => return Ok(Expression::Bool(n1 <= n2, span.clone())),
+            BinaryOp::Greater => return Ok(Expression::Bool(n1 > n2, span.clone())),
+            BinaryOp::GreaterEq => return Ok(Expression::Bool(n1 >= n2, span.clone())),
+            BinaryOp::And | BinaryOp::Or => {}
+        }
+    }
+    if let (Expression::Bool(b1, _), Expression::Bool(b2, _)) = (&folded_left, &folded_right) {
+        match op {
+            BinaryOp::Eq => return Ok(Expression::Bool(b1 == b2, span.clone())),
+            BinaryOp::NotEq => return Ok(Expression::Bool(b1 != b2, span.clone())),
+            _ => {}
+        }
+    }
+    if let (Expression::String(s1, _), Expression::String(s2, _)) = (&folded_left, &folded_right) {
+        match op {
+            BinaryOp::Eq => return Ok(Expression::Bool(s1 == s2, span.clone())),
+            BinaryOp::NotEq => return Ok(Expression::Bool(s1 != s2, span.clone())),
+            _ => {}
+        }
+    }
+    Ok(Expression::BinaryOp(
+        op,
+        Box::new(folded_left),
+        Box::new(folded_right),
+        span.clone(),
+    ))
+}
+
+fn partial_eval_template(
+    parts: &[TemplatePart],
+    span: &Span,
+    ctx: &Context,
+) -> Result<Expression, Diagnostics> {
+    let mut folded_parts = Vec::with_capacity(parts.len());
+    let mut combined = String::new();
+    let mut all_literals = true;
+    for part in parts {
+        match part {
+            TemplatePart::Literal(s, part_span) => {
+                combined.push_str(s);
+                folded_parts.push(TemplatePart::Literal(s.clone(), part_span.clone()));
+            }
+            TemplatePart::Interpolation(inner, part_span) => {
+                let folded_inner = partial_eval(inner, ctx)?;
+                if let Expression::String(s, _) = &folded_inner {
+                    combined.push_str(s);
+                    folded_parts.push(TemplatePart::Literal(s.clone(), part_span.clone()));
+                } else {
+                    all_literals = false;
+                    folded_parts.push(TemplatePart::Interpolation(folded_inner, part_span.clone()));
                 }
             }
-            if all_literals {
-                Ok(Expression::String(combined, span.clone()))
-            } else {
-                Ok(Expression::Template(folded_parts, span.clone()))
+            TemplatePart::Directive(dir, part_span) => {
+                all_literals = false;
+                folded_parts.push(TemplatePart::Directive(dir.clone(), part_span.clone()));
             }
         }
-        Expression::Traversal(trav, span) => {
-            if let Expression::Variable(ref root_name, _) = *trav.expr {
-                if ctx.get_variable(root_name).is_some() {
-                    let eval_res = Evaluator::new(ctx).evaluate(expr);
-                    if let Ok((val, _)) = eval_res {
-                        if !val.is_unknown() {
-                            return Ok(value_to_expression(&val, span.clone()));
-                        }
-                    }
-                }
-            }
-            let folded_base = partial_eval(&trav.expr, ctx)?;
-            let mut folded_ops = Vec::with_capacity(trav.operators.len());
-            for op in &trav.operators {
-                match op {
-                    TraversalOperator::Index(idx_expr, op_span) => {
-                        let folded_idx = partial_eval(idx_expr, ctx)?;
-                        folded_ops.push(TraversalOperator::Index(folded_idx, op_span.clone()));
-                    }
-                    _ => folded_ops.push(op.clone()),
-                }
-            }
-            Ok(Expression::Traversal(
-                Box::new(Traversal {
-                    expr: Box::new(folded_base),
-                    operators: folded_ops,
-                }),
-                span.clone(),
-            ))
-        }
-        Expression::FuncCall(fc, span) => {
-            let mut folded_args = Vec::with_capacity(fc.args.len());
-            let mut all_args_literal = true;
-            for arg in &fc.args {
-                let folded_arg = partial_eval(arg, ctx)?;
-                if !is_literal(&folded_arg) {
-                    all_args_literal = false;
-                }
-                folded_args.push(folded_arg);
-            }
-            if let Some(func) = ctx.get_namespaced_func(&fc.name) {
-                if func.is_deterministic() && all_args_literal && !fc.expand_final {
-                    let synthetic_call = Expression::FuncCall(
-                        Box::new(FuncCall {
-                            name: fc.name.clone(),
-                            args: folded_args.clone(),
-                            expand_final: false,
-                        }),
-                        span.clone(),
-                    );
-                    let eval_res = Evaluator::new(ctx).evaluate(&synthetic_call);
-                    if let Ok((val, _)) = eval_res {
-                        if !val.is_unknown() {
-                            return Ok(value_to_expression(&val, span.clone()));
-                        }
-                    }
-                }
-            }
-            Ok(Expression::FuncCall(
-                Box::new(FuncCall {
-                    name: fc.name.clone(),
-                    args: folded_args,
-                    expand_final: fc.expand_final,
-                }),
-                span.clone(),
-            ))
-        }
-        Expression::ForExpr(for_expr, span) => {
-            let folded_coll = partial_eval(&for_expr.collection, ctx)?;
-            let folded_val = partial_eval(&for_expr.val_expr, ctx)?;
-            let folded_key = if let Some(ref k) = for_expr.key_expr {
-                Some(Box::new(partial_eval(k, ctx)?))
-            } else {
-                None
-            };
-            let folded_cond = if let Some(ref c) = for_expr.cond_expr {
-                Some(Box::new(partial_eval(c, ctx)?))
-            } else {
-                None
-            };
-            let synthetic_for = Expression::ForExpr(
-                Box::new(ForExpr {
-                    key_var: for_expr.key_var.clone(),
-                    val_var: for_expr.val_var.clone(),
-                    collection: Box::new(folded_coll.clone()),
-                    key_expr: folded_key.clone(),
-                    val_expr: Box::new(folded_val.clone()),
-                    cond_expr: folded_cond.clone(),
-                    grouping: for_expr.grouping,
-                }),
-                span.clone(),
-            );
-            let eval_res = Evaluator::new(ctx).evaluate(&synthetic_for);
+    }
+    if all_literals {
+        Ok(Expression::String(combined, span.clone()))
+    } else {
+        Ok(Expression::Template(folded_parts, span.clone()))
+    }
+}
+
+fn partial_eval_traversal(
+    expr: &Expression,
+    trav: &Traversal,
+    span: &Span,
+    ctx: &Context,
+) -> Result<Expression, Diagnostics> {
+    if let Expression::Variable(ref root_name, _) = *trav.expr {
+        if ctx.get_variable(root_name).is_some() {
+            let eval_res = Evaluator::new(ctx).evaluate(expr);
             if let Ok((val, _)) = eval_res {
                 if !val.is_unknown() {
                     return Ok(value_to_expression(&val, span.clone()));
                 }
             }
-            Ok(Expression::ForExpr(
-                Box::new(ForExpr {
-                    key_var: for_expr.key_var.clone(),
-                    val_var: for_expr.val_var.clone(),
-                    collection: Box::new(folded_coll),
-                    key_expr: folded_key,
-                    val_expr: Box::new(folded_val),
-                    cond_expr: folded_cond,
-                    grouping: for_expr.grouping,
-                }),
-                span.clone(),
-            ))
         }
     }
+    let folded_base = partial_eval(&trav.expr, ctx)?;
+    let mut folded_ops = Vec::with_capacity(trav.operators.len());
+    for op in &trav.operators {
+        match op {
+            TraversalOperator::Index(idx_expr, op_span) => {
+                let folded_idx = partial_eval(idx_expr, ctx)?;
+                folded_ops.push(TraversalOperator::Index(folded_idx, op_span.clone()));
+            }
+            _ => folded_ops.push(op.clone()),
+        }
+    }
+    Ok(Expression::Traversal(
+        Box::new(Traversal {
+            expr: Box::new(folded_base),
+            operators: folded_ops,
+        }),
+        span.clone(),
+    ))
+}
+
+fn partial_eval_func_call(
+    fc: &FuncCall,
+    span: &Span,
+    ctx: &Context,
+) -> Result<Expression, Diagnostics> {
+    let mut folded_args = Vec::with_capacity(fc.args.len());
+    let mut all_args_literal = true;
+    for arg in &fc.args {
+        let folded_arg = partial_eval(arg, ctx)?;
+        if !is_literal(&folded_arg) {
+            all_args_literal = false;
+        }
+        folded_args.push(folded_arg);
+    }
+    if let Some(func) = ctx.get_namespaced_func(&fc.name) {
+        if func.is_deterministic() && all_args_literal && !fc.expand_final {
+            let synthetic_call = Expression::FuncCall(
+                Box::new(FuncCall {
+                    name: fc.name.clone(),
+                    args: folded_args.clone(),
+                    expand_final: false,
+                }),
+                span.clone(),
+            );
+            let eval_res = Evaluator::new(ctx).evaluate(&synthetic_call);
+            if let Ok((val, _)) = eval_res {
+                if !val.is_unknown() {
+                    return Ok(value_to_expression(&val, span.clone()));
+                }
+            }
+        }
+    }
+    Ok(Expression::FuncCall(
+        Box::new(FuncCall {
+            name: fc.name.clone(),
+            args: folded_args,
+            expand_final: fc.expand_final,
+        }),
+        span.clone(),
+    ))
 }
 /// Partially evaluates an entire AST [`Body`], simplifying all attribute expressions and inner blocks.
 ///

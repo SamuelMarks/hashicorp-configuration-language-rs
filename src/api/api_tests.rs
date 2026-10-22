@@ -1,18 +1,14 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
+//! Unit tests for the high-level HCL API.
 #[cfg(test)]
 mod tests {
     use crate::api::{from_str, from_str_with_context, parse};
+    use crate::error::HclError;
     use crate::eval::context::Context;
     use crate::eval::func::Function;
     use crate::types::ty::Type;
     use crate::types::val::{Value, ValueData};
     use hcl_macros::DecodeBody;
+
     #[derive(Debug, DecodeBody)]
     struct MockConfig {
         name: String,
@@ -20,31 +16,34 @@ mod tests {
         features: Vec<String>,
         enabled: bool,
     }
+
     #[test]
-    fn test_parse() {
+    fn test_parse() -> Result<(), HclError> {
         let input = r#"
             name = "my_app"
         "#;
-        let body = parse(input).unwrap();
+        let body = parse(input)?;
         assert_eq!(body.attributes.len(), 1);
         assert!(body.attributes.contains_key("name"));
+        Ok(())
     }
     #[test]
-    fn test_from_str() {
+    fn test_from_str() -> Result<(), HclError> {
         let input = r#"
             name = "my_app"
             count = 10
             features = ["auth"]
             enabled = true
         "#;
-        let config: MockConfig = from_str(input).unwrap();
+        let config: MockConfig = from_str(input)?;
         assert!(config.name.contains("my_app"));
         assert_eq!(config.count, 10);
         assert_eq!(config.features, vec!["auth".to_string()]);
         assert!(config.enabled);
+        Ok(())
     }
     #[test]
-    fn test_e2e_pipeline() {
+    fn test_e2e_pipeline() -> Result<(), HclError> {
         let input = r#"
             name = "my_app"
             count = 10
@@ -52,7 +51,7 @@ mod tests {
             enabled = true
         "#;
         let mut ctx = Context::new();
-        let config: MockConfig = from_str_with_context(input, &mut ctx).unwrap();
+        let config: MockConfig = from_str_with_context(input, &mut ctx)?;
         assert!(config.name.contains("my_app"));
         assert_eq!(config.count, 10);
         assert_eq!(
@@ -60,9 +59,10 @@ mod tests {
             vec!["auth".to_string(), "logging".to_string()]
         );
         assert!(config.enabled);
+        Ok(())
     }
     #[test]
-    fn test_custom_functions() {
+    fn test_custom_functions() -> Result<(), HclError> {
         let input = r#"
             name = get_app_name("test")
             count = 1
@@ -79,17 +79,20 @@ mod tests {
                         ValueData::String(format!("{s}-app")),
                     ))
                 } else {
-                    panic!("Expected string argument")
+                    Err(HclError::FunctionArgMismatch(
+                        "Expected string argument".to_string(),
+                    ))
                 }
             }),
             signature: None,
         };
         ctx.set_function("get_app_name", get_app_name);
-        let config: MockConfig = from_str_with_context(input, &mut ctx).unwrap();
+        let config: MockConfig = from_str_with_context(input, &mut ctx)?;
         assert!(config.name.contains("test-app"));
+        Ok(())
     }
     #[test]
-    fn test_unknown_values_plan_phase() {
+    fn test_unknown_values_plan_phase() -> Result<(), HclError> {
         let input = r"
             name = unknown_var
             count = 100
@@ -99,26 +102,30 @@ mod tests {
         let mut ctx = Context::new();
         ctx.set_variable("unknown_var", Value::unknown(Type::String));
         let config_res: Result<MockConfig, _> = from_str_with_context(input, &mut ctx);
-        let errs = config_res.err().unwrap();
+        let errs = config_res
+            .err()
+            .ok_or_else(|| HclError::Eval("expected error".to_string()))?;
         assert!(errs.has_errors());
         assert!(errs.errors()[0].error.to_string().contains("Type Mismatch"));
+        Ok(())
     }
     #[test]
-    fn test_from_str_stdlib_out_of_the_box() {
+    fn test_from_str_stdlib_out_of_the_box() -> Result<(), HclError> {
         let input = r#"
             name = upper("production")
             count = abs(-50)
             features = [lower("FEATURE_A"), lower("FEATURE_B")]
             enabled = true
         "#;
-        let config: MockConfig = from_str(input).unwrap();
+        let config: MockConfig = from_str(input)?;
         assert_eq!(config.name, "PRODUCTION");
         assert_eq!(config.count, 50);
         assert_eq!(config.features, vec!["feature_a", "feature_b"]);
         assert!(config.enabled);
+        Ok(())
     }
     #[test]
-    fn test_from_str_without_stdlib() {
+    fn test_from_str_without_stdlib() -> Result<(), HclError> {
         let input_with_func = r#"
             name = upper("production")
             count = 10
@@ -133,29 +140,31 @@ mod tests {
             features = []
             enabled = true
         "#;
-        let config: MockConfig = crate::api::from_str_without_stdlib(input_plain).unwrap();
+        let config: MockConfig = crate::api::from_str_without_stdlib(input_plain)?;
         assert_eq!(config.name, "production");
+        Ok(())
     }
     #[test]
-    fn test_evaluate_expr() {
-        let val = crate::api::evaluate_expr("upper(\"hello\")", None).unwrap();
+    fn test_evaluate_expr() -> Result<(), HclError> {
+        let val = crate::api::evaluate_expr("upper(\"hello\")", None)?;
         assert_eq!(*val.data, ValueData::String("HELLO".to_string()));
-        let val_num = crate::api::evaluate_expr("abs(-99)", None).unwrap();
+        let val_num = crate::api::evaluate_expr("abs(-99)", None)?;
         assert_eq!(*val_num.data, ValueData::Number(99.into()));
         let mut ctx = Context::new();
         ctx.set_variable(
             "my_var",
             Value::new(Type::String, ValueData::String("world".into())),
         );
-        let val_custom = crate::api::evaluate_expr("my_var", Some(&ctx)).unwrap();
+        let val_custom = crate::api::evaluate_expr("my_var", Some(&ctx))?;
         assert_eq!(*val_custom.data, ValueData::String("world".into()));
         let err_empty = crate::api::evaluate_expr("", None);
         assert!(err_empty.is_err());
         let err_syntax = crate::api::evaluate_expr("+++", None);
         assert!(err_syntax.is_err());
+        Ok(())
     }
     #[test]
-    fn test_evaluate_helper() {
+    fn test_evaluate_helper() -> Result<(), HclError> {
         let input = r#"
             name = "my_app"
             dynamic "item" {
@@ -165,14 +174,14 @@ mod tests {
                 }
             }
         "#;
-        let body = crate::api::evaluate(input, None).unwrap();
+        let body = crate::api::evaluate(input, None)?;
         assert_eq!(body.blocks.len(), 2);
         assert_eq!(body.blocks[0].block_type, "item");
         assert_eq!(body.blocks[1].block_type, "item");
         let mut ctx = Context::with_stdlib();
-        let body2 = crate::api::evaluate(input, Some(&mut ctx)).unwrap();
+        let body2 = crate::api::evaluate(input, Some(&mut ctx))?;
         assert_eq!(body2.blocks.len(), 2);
-        let err = crate::api::evaluate("invalid syntax {{{", None);
+        let err = crate::api::evaluate("= invalid syntax", None);
         assert!(err.is_err());
         let dyn_err_input = r#"
             dynamic "item" {
@@ -182,10 +191,11 @@ mod tests {
         "#;
         let err_dyn = crate::api::evaluate(dyn_err_input, None);
         assert!(err_dyn.is_err());
+        Ok(())
     }
     #[test]
     fn test_api_error_branches() {
-        let bad_syntax = "invalid syntax {{{";
+        let bad_syntax = "= invalid syntax";
         let bad_dyn = r#"
             name = "a"
             count = 1
@@ -206,7 +216,7 @@ mod tests {
         assert!(crate::api::evaluate_expr("1 / 0", None).is_err());
     }
     #[test]
-    fn test_from_file_and_evaluate_file() {
+    fn test_from_file_and_evaluate_file() -> Result<(), HclError> {
         use crate::api::{evaluate_file, from_file, from_file_with_context};
         use std::io::Write;
         let dir = std::env::temp_dir();
@@ -217,9 +227,9 @@ mod tests {
             features = ["network", "storage"]
             enabled = true
         "#;
-        let mut f = std::fs::File::create(&file_path).unwrap();
-        f.write_all(content.as_bytes()).unwrap();
-        let config: MockConfig = from_file(&file_path).unwrap();
+        let mut f = std::fs::File::create(&file_path)?;
+        f.write_all(content.as_bytes())?;
+        let config: MockConfig = from_file(&file_path)?;
         assert_eq!(config.name, "file_app");
         assert_eq!(config.count, 42);
         assert_eq!(
@@ -228,12 +238,12 @@ mod tests {
         );
         assert!(config.enabled);
         let mut ctx = Context::with_stdlib();
-        let config2: MockConfig = from_file_with_context(&file_path, &mut ctx).unwrap();
+        let config2: MockConfig = from_file_with_context(&file_path, &mut ctx)?;
         assert_eq!(config2.count, 42);
-        let body = evaluate_file(&file_path, None).unwrap();
+        let body = evaluate_file(&file_path, None)?;
         assert_eq!(body.attributes.len(), 4);
         let mut eval_ctx = Context::with_stdlib();
-        let body_with_ctx = evaluate_file(&file_path, Some(&mut eval_ctx)).unwrap();
+        let body_with_ctx = evaluate_file(&file_path, Some(&mut eval_ctx))?;
         assert_eq!(body_with_ctx.attributes.len(), 4);
         let bad_path = dir.join("nonexistent_hcl_file_999.hcl");
         assert!(from_file::<MockConfig>(&bad_path).is_err());
@@ -246,10 +256,11 @@ mod tests {
                 content {}
             }
         "#;
-        let mut f_dyn = std::fs::File::create(&bad_dyn_file).unwrap();
-        f_dyn.write_all(bad_dyn_content.as_bytes()).unwrap();
+        let mut f_dyn = std::fs::File::create(&bad_dyn_file)?;
+        f_dyn.write_all(bad_dyn_content.as_bytes())?;
         assert!(from_file_with_context::<MockConfig>(&bad_dyn_file, &mut ctx).is_err());
         let _ = std::fs::remove_file(&bad_dyn_file);
         let _ = std::fs::remove_file(&file_path);
+        Ok(())
     }
 }

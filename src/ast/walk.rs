@@ -657,17 +657,9 @@ pub fn walk_fold_body<F: AstFolder>(folder: &mut F, mut body: Body) -> Body {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::ast::expr::{BinaryOp, Conditional, ForExpr, FuncCall};
     use crate::span::Span;
-    use std::str::FromStr;
     #[derive(Default)]
     struct CounterVisitor {
         exprs: usize,
@@ -714,7 +706,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_visitor_walks_all_nodes() {
+    fn test_visitor_walks_template_and_literal_nodes() {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
         let attr = Attribute {
@@ -785,6 +777,30 @@ mod tests {
                         ],
                         span.clone(),
                     ),
+                ],
+                span.clone(),
+            ),
+            span,
+            leading_comments: Vec::new(),
+            trailing_comment: None,
+        };
+        body.attributes.insert("test".to_string(), attr);
+        let mut visitor = CounterVisitor::default();
+        walk_body(&mut visitor, &body);
+        assert!(visitor.exprs >= 10);
+        assert_eq!(visitor.attrs, 1);
+    }
+
+    #[test]
+    fn test_visitor_walks_operator_nodes() {
+        let span = Span::new(0, 10, 1, 1, 1, 11);
+        let mut body = Body::new(span.clone());
+        let attr = Attribute {
+            name: "test".to_string(),
+            name_span: span.clone(),
+            equals_span: span.clone(),
+            expr: Expression::Tuple(
+                vec![
                     Expression::FuncCall(
                         Box::new(FuncCall {
                             name: "func".into(),
@@ -797,11 +813,11 @@ mod tests {
                         Box::new(Conditional {
                             cond_expr: Expression::Bool(true, span.clone()),
                             true_expr: Expression::Number(
-                                crate::number::Number::from_str("1").unwrap(),
+                                crate::number::Number::from(1),
                                 span.clone(),
                             ),
                             false_expr: Expression::Number(
-                                crate::number::Number::from_str("0").unwrap(),
+                                crate::number::Number::from(0),
                                 span.clone(),
                             ),
                         }),
@@ -859,11 +875,21 @@ mod tests {
                 ],
                 span.clone(),
             ),
-            span: span.clone(),
+            span,
             leading_comments: Vec::new(),
             trailing_comment: None,
         };
         body.attributes.insert("test".to_string(), attr);
+        let mut visitor = CounterVisitor::default();
+        walk_body(&mut visitor, &body);
+        assert!(visitor.exprs > 10);
+        assert_eq!(visitor.attrs, 1);
+    }
+
+    #[test]
+    fn test_visitor_walks_all_nodes() {
+        let span = Span::new(0, 10, 1, 1, 1, 11);
+        let mut body = Body::new(span.clone());
         let block = Block {
             block_type: "resource".to_string(),
             type_span: span.clone(),
@@ -904,8 +930,6 @@ mod tests {
         ));
         let mut visitor = CounterVisitor::default();
         walk_body(&mut visitor, &body);
-        assert!(visitor.exprs > 20);
-        assert_eq!(visitor.attrs, 1);
         assert_eq!(visitor.blocks, 1);
         assert_eq!(visitor.dyns, 1);
         assert_eq!(visitor.vals, 1);
@@ -1037,13 +1061,67 @@ mod tests {
     }
     struct IdentityFolder;
     impl AstFolder for IdentityFolder {}
-    fn build_comprehensive_ast(span: Span) -> Body {
-        let mut body = Body::new(span.clone());
-        let expr = Expression::Tuple(
+    fn build_comprehensive_template(span: &Span) -> Expression {
+        Expression::Template(
+            vec![
+                TemplatePart::Literal("lit".to_string(), span.clone()),
+                TemplatePart::Interpolation(
+                    Expression::Variable("x".to_string(), span.clone()),
+                    span.clone(),
+                ),
+                TemplatePart::Directive(
+                    Directive::If {
+                        cond: Expression::Bool(true, span.clone()),
+                        true_expr: vec![TemplatePart::Literal("t".to_string(), span.clone())],
+                        else_ifs: vec![(
+                            Expression::Bool(false, span.clone()),
+                            vec![TemplatePart::Literal("elif_t".to_string(), span.clone())],
+                        )],
+                        false_expr: Some(vec![TemplatePart::Literal(
+                            "f".to_string(),
+                            span.clone(),
+                        )]),
+                    },
+                    span.clone(),
+                ),
+                TemplatePart::Directive(
+                    Directive::If {
+                        cond: Expression::Bool(false, span.clone()),
+                        true_expr: vec![TemplatePart::Literal(
+                            "only_true".to_string(),
+                            span.clone(),
+                        )],
+                        else_ifs: vec![],
+                        false_expr: None,
+                    },
+                    span.clone(),
+                ),
+                TemplatePart::Directive(
+                    Directive::Strip {
+                        strip_left: false,
+                        strip_right: true,
+                    },
+                    span.clone(),
+                ),
+                TemplatePart::Directive(
+                    Directive::For {
+                        key_var: Some("k".to_string()),
+                        val_var: "v".to_string(),
+                        collection: Expression::Variable("items".to_string(), span.clone()),
+                        body: vec![TemplatePart::Literal("body".to_string(), span.clone())],
+                    },
+                    span.clone(),
+                ),
+            ],
+            span.clone(),
+        )
+    }
+    fn build_comprehensive_expr(span: &Span) -> Expression {
+        Expression::Tuple(
             vec![
                 Expression::Null(span.clone()),
                 Expression::Bool(true, span.clone()),
-                Expression::Number(crate::number::Number::from_str("42").unwrap(), span.clone()),
+                Expression::Number(crate::number::Number::from(42), span.clone()),
                 Expression::String("str".to_string(), span.clone()),
                 Expression::Variable("var".to_string(), span.clone()),
                 Expression::Object(
@@ -1053,62 +1131,7 @@ mod tests {
                     )],
                     span.clone(),
                 ),
-                Expression::Template(
-                    vec![
-                        TemplatePart::Literal("lit".to_string(), span.clone()),
-                        TemplatePart::Interpolation(
-                            Expression::Variable("x".to_string(), span.clone()),
-                            span.clone(),
-                        ),
-                        TemplatePart::Directive(
-                            Directive::If {
-                                cond: Expression::Bool(true, span.clone()),
-                                true_expr: vec![TemplatePart::Literal(
-                                    "t".to_string(),
-                                    span.clone(),
-                                )],
-                                else_ifs: vec![(
-                                    Expression::Bool(false, span.clone()),
-                                    vec![TemplatePart::Literal("elif_t".to_string(), span.clone())],
-                                )],
-                                false_expr: Some(vec![TemplatePart::Literal(
-                                    "f".to_string(),
-                                    span.clone(),
-                                )]),
-                            },
-                            span.clone(),
-                        ),
-                        TemplatePart::Directive(
-                            Directive::If {
-                                cond: Expression::Bool(false, span.clone()),
-                                true_expr: vec![TemplatePart::Literal(
-                                    "only_true".to_string(),
-                                    span.clone(),
-                                )],
-                                else_ifs: vec![],
-                                false_expr: None,
-                            },
-                            span.clone(),
-                        ),
-                        TemplatePart::Directive(
-                            Directive::Strip {
-                                strip_left: false,
-                                strip_right: true,
-                            },
-                            span.clone(),
-                        ),
-                        TemplatePart::Directive(
-                            Directive::For {
-                                key_var: Some("k".to_string()),
-                                val_var: "v".to_string(),
-                                collection: Expression::Variable("items".to_string(), span.clone()),
-                                body: vec![TemplatePart::Literal("body".to_string(), span.clone())],
-                            },
-                            span.clone(),
-                        ),
-                    ],
-                    span.clone(),
-                ),
+                build_comprehensive_template(span),
                 Expression::Traversal(
                     Box::new(Traversal {
                         expr: Box::new(Expression::Variable("base".to_string(), span.clone())),
@@ -1133,12 +1156,9 @@ mod tests {
                 Expression::Conditional(
                     Box::new(Conditional {
                         cond_expr: Expression::Bool(true, span.clone()),
-                        true_expr: Expression::Number(
-                            crate::number::Number::from_str("1").unwrap(),
-                            span.clone(),
-                        ),
+                        true_expr: Expression::Number(crate::number::Number::from(1), span.clone()),
                         false_expr: Expression::Number(
-                            crate::number::Number::from_str("0").unwrap(),
+                            crate::number::Number::from(0),
                             span.clone(),
                         ),
                     }),
@@ -1153,7 +1173,7 @@ mod tests {
                 Expression::UnaryOp(
                     crate::ast::expr::UnaryOp::Neg,
                     Box::new(Expression::Number(
-                        crate::number::Number::from_str("1").unwrap(),
+                        crate::number::Number::from(1),
                         span.clone(),
                     )),
                     span.clone(),
@@ -1162,42 +1182,47 @@ mod tests {
                     Box::new(Expression::Variable("p".to_string(), span.clone())),
                     span.clone(),
                 ),
-                Expression::ForExpr(
-                    Box::new(ForExpr {
-                        key_var: Some("k".to_string()),
-                        val_var: "v".to_string(),
-                        collection: Box::new(Expression::Variable(
-                            "coll".to_string(),
-                            span.clone(),
-                        )),
-                        key_expr: Some(Box::new(Expression::Variable(
-                            "k".to_string(),
-                            span.clone(),
-                        ))),
-                        val_expr: Box::new(Expression::Variable("v".to_string(), span.clone())),
-                        cond_expr: Some(Box::new(Expression::Bool(true, span.clone()))),
-                        grouping: true,
-                    }),
-                    span.clone(),
-                ),
-                Expression::ForExpr(
-                    Box::new(ForExpr {
-                        key_var: None,
-                        val_var: "elem".to_string(),
-                        collection: Box::new(Expression::Variable(
-                            "list".to_string(),
-                            span.clone(),
-                        )),
-                        key_expr: None,
-                        val_expr: Box::new(Expression::Variable("elem".to_string(), span.clone())),
-                        cond_expr: None,
-                        grouping: false,
-                    }),
-                    span.clone(),
-                ),
+                build_comprehensive_for_expr(span, true),
+                build_comprehensive_for_expr(span, false),
             ],
             span.clone(),
-        );
+        )
+    }
+    fn build_comprehensive_for_expr(span: &Span, grouping: bool) -> Expression {
+        if grouping {
+            Expression::ForExpr(
+                Box::new(ForExpr {
+                    key_var: Some("k".to_string()),
+                    val_var: "v".to_string(),
+                    collection: Box::new(Expression::Variable("coll".to_string(), span.clone())),
+                    key_expr: Some(Box::new(Expression::Variable(
+                        "k".to_string(),
+                        span.clone(),
+                    ))),
+                    val_expr: Box::new(Expression::Variable("v".to_string(), span.clone())),
+                    cond_expr: Some(Box::new(Expression::Bool(true, span.clone()))),
+                    grouping: true,
+                }),
+                span.clone(),
+            )
+        } else {
+            Expression::ForExpr(
+                Box::new(ForExpr {
+                    key_var: None,
+                    val_var: "elem".to_string(),
+                    collection: Box::new(Expression::Variable("list".to_string(), span.clone())),
+                    key_expr: None,
+                    val_expr: Box::new(Expression::Variable("elem".to_string(), span.clone())),
+                    cond_expr: None,
+                    grouping: false,
+                }),
+                span.clone(),
+            )
+        }
+    }
+    fn build_comprehensive_ast(span: Span) -> Body {
+        let mut body = Body::new(span.clone());
+        let expr = build_comprehensive_expr(&span);
         let attr = Attribute {
             name: "full".to_string(),
             name_span: span.clone(),
@@ -1267,6 +1292,18 @@ mod tests {
     }
     #[test]
     fn test_walk_pruning_visitor() {
+        struct TraversalSkipVisitor;
+        impl AstVisitor for TraversalSkipVisitor {
+            fn visit_traversal(&mut self, _trav: &Traversal) -> bool {
+                false
+            }
+        }
+        struct FuncCallSkipVisitor;
+        impl AstVisitor for FuncCallSkipVisitor {
+            fn visit_func_call(&mut self, _fc: &FuncCall) -> bool {
+                false
+            }
+        }
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let body = build_comprehensive_ast(span.clone());
         let mut pruning = PruningVisitor;
@@ -1285,27 +1322,15 @@ mod tests {
         assert!(!pruning.visit_traversal(&trav));
         let expr_trav = Expression::Traversal(Box::new(trav), span.clone());
         walk_expression(&mut pruning, &expr_trav);
-        struct TraversalSkipVisitor;
-        impl AstVisitor for TraversalSkipVisitor {
-            fn visit_traversal(&mut self, _trav: &Traversal) -> bool {
-                false
-            }
-        }
         let mut trav_skip = TraversalSkipVisitor;
         walk_expression(&mut trav_skip, &expr_trav);
-        struct FuncCallSkipVisitor;
-        impl AstVisitor for FuncCallSkipVisitor {
-            fn visit_func_call(&mut self, _fc: &FuncCall) -> bool {
-                false
-            }
-        }
         let fc_expr = Expression::FuncCall(
             Box::new(FuncCall {
                 name: "test".into(),
                 args: vec![Expression::Null(span.clone())],
                 expand_final: false,
             }),
-            span.clone(),
+            span,
         );
         let mut fc_skip = FuncCallSkipVisitor;
         walk_expression(&mut fc_skip, &fc_expr);
@@ -1329,10 +1354,7 @@ mod tests {
             walk_fold_expression(&mut id_folder, bool_expr.clone()),
             bool_expr
         );
-        let num_expr = Expression::Number(
-            crate::number::Number::from_str("123").unwrap(),
-            span.clone(),
-        );
+        let num_expr = Expression::Number(crate::number::Number::from(123), span.clone());
         assert_eq!(
             walk_fold_expression(&mut id_folder, num_expr.clone()),
             num_expr
@@ -1405,7 +1427,7 @@ mod tests {
                 collection: Expression::Variable("new_coll".to_string(), span.clone()),
                 body: vec![TemplatePart::Literal("b".to_string(), span.clone())],
             },
-            span.clone(),
+            span,
         );
         let folded_for = walk_fold_template_part(&mut renamer, for_part);
         assert_eq!(folded_for, expected_for);

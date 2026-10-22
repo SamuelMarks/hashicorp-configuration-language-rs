@@ -1,14 +1,15 @@
 //! Function definitions, specifications, and signatures for HCL evaluation.
 use crate::diagnostic::{Diagnostic, Diagnostics};
+use crate::error::HclError;
 use crate::span::Span;
 use crate::types::{Type, Value};
 use std::sync::Arc;
 /// A native function implementation closure.
-pub type NativeFunc = Arc<dyn Fn(&[Value]) -> Result<Value, String> + Send + Sync>;
+pub type NativeFunc = Arc<dyn Fn(&[Value]) -> Result<Value, HclError> + Send + Sync>;
 /// Return type calculation closure for dynamic or static return types.
-pub type ReturnTypeCalc = Arc<dyn Fn(&[Type]) -> Result<Type, String> + Send + Sync>;
+pub type ReturnTypeCalc = Arc<dyn Fn(&[Type]) -> Result<Type, HclError> + Send + Sync>;
 /// Return type calculation closure based on evaluated input argument values.
-pub type ValueReturnTypeCalc = Arc<dyn Fn(&[Value]) -> Result<Type, String> + Send + Sync>;
+pub type ValueReturnTypeCalc = Arc<dyn Fn(&[Value]) -> Result<Type, HclError> + Send + Sync>;
 /// Specification for a function parameter.
 #[derive(Clone, PartialEq, Eq)]
 pub struct FunctionParamSpec {
@@ -59,7 +60,7 @@ impl FunctionParamSpec {
     /// # Arguments
     /// * `allow` - `true` if null is permitted.
     #[must_use]
-    pub fn with_allow_null(mut self, allow: bool) -> Self {
+    pub const fn with_allow_null(mut self, allow: bool) -> Self {
         self.allow_null = allow;
         self
     }
@@ -68,7 +69,7 @@ impl FunctionParamSpec {
     /// # Arguments
     /// * `allow` - `true` if unknown is permitted.
     #[must_use]
-    pub fn with_allow_unknown(mut self, allow: bool) -> Self {
+    pub const fn with_allow_unknown(mut self, allow: bool) -> Self {
         self.allow_unknown = allow;
         self
     }
@@ -77,7 +78,7 @@ impl FunctionParamSpec {
     /// # Arguments
     /// * `allow` - `true` if dynamic types are permitted.
     #[must_use]
-    pub fn with_allow_dynamic_type(mut self, allow: bool) -> Self {
+    pub const fn with_allow_dynamic_type(mut self, allow: bool) -> Self {
         self.allow_dynamic_type = allow;
         self
     }
@@ -159,7 +160,7 @@ impl FunctionSignature {
     /// # Arguments
     /// * `is_deterministic` - Whether the function is deterministic.
     #[must_use]
-    pub fn with_deterministic(mut self, is_deterministic: bool) -> Self {
+    pub const fn with_deterministic(mut self, is_deterministic: bool) -> Self {
         self.is_deterministic = is_deterministic;
         self
     }
@@ -309,7 +310,7 @@ impl Function {
             Err(e) => {
                 diags.push(Diagnostic::error(
                     format!("Failed to determine return type for '{}'", self.name),
-                    e,
+                    e.to_string(),
                     Span::new(0, 0, 0, 0, 0, 0),
                 ));
                 Err(diags)
@@ -354,23 +355,17 @@ impl Function {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::types::{Type, Value, ValueData};
     #[test]
-    fn test_function_call() {
+    fn test_function_call() -> Result<(), HclError> {
         let f = Function::new(
             "test_func",
             Arc::new(|_| Ok(Value::new(Type::Bool, ValueData::Bool(true)))),
         );
-        let res = (f.func)(&[]);
-        assert_eq!(res.unwrap(), Value::new(Type::Bool, ValueData::Bool(true)));
+        let res = (f.func)(&[])?;
+        assert_eq!(res, Value::new(Type::Bool, ValueData::Bool(true)));
+        Ok(())
     }
     #[test]
     fn test_function_debug() {
@@ -406,8 +401,10 @@ mod tests {
             sig.description.as_deref(),
             Some("Test function description")
         );
-        assert!(format!("{p1:?}").contains("FunctionParamSpec"));
-        assert!(format!("{sig:?}").contains("FunctionSignature"));
+        let p1_dbg = format!("{p1:?}");
+        assert!(p1_dbg.contains("FunctionParamSpec"));
+        let sig_dbg = format!("{sig:?}");
+        assert!(sig_dbg.contains("FunctionSignature"));
         assert_eq!(p1, p1.clone());
         assert_ne!(p1, p_var);
     }
@@ -457,7 +454,11 @@ mod tests {
         );
         let sig_err_ret = FunctionSignature::new(
             vec![FunctionParamSpec::new("a", Type::String)],
-            Arc::new(|_| Err("custom return type calculation failure".to_string())),
+            Arc::new(|_| {
+                Err(HclError::Type(
+                    "custom return type calculation failure".to_string(),
+                ))
+            }),
         );
         let func_err_ret = Function::new("err_ret_fn", Arc::new(|_| Ok(Value::null(Type::Bool))))
             .with_signature(sig_err_ret);

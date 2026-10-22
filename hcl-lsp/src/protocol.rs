@@ -456,23 +456,18 @@ pub struct SemanticTokens {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::error::HclError;
+
     #[test]
-    fn test_protocol_serialization_roundtrip() {
+    fn test_protocol_serialization_roundtrip() -> Result<(), HclError> {
         let req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(1),
             method: "initialize".to_string(),
             params: None,
         };
-        let s = serde_json::to_string(&req).unwrap();
+        let s = serde_json::to_string(&req)?;
         assert!(s.contains("\"method\":\"initialize\""));
         let resp = Response::ok(
             RequestId::Number(1),
@@ -499,6 +494,7 @@ mod tests {
         assert_eq!(loc.uri, "file:///test.hcl");
         let markup = MarkupContent::markdown("# Heading");
         assert_eq!(markup.kind, "markdown");
+        Ok(())
     }
 }
 

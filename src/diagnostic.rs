@@ -120,7 +120,7 @@ impl std::error::Error for Diagnostic {}
 impl Diagnostic {
     /// Create a new error diagnostic.
     #[must_use]
-    pub fn new(error: HclError, subject: Span) -> Self {
+    pub const fn new(error: HclError, subject: Span) -> Self {
         Self {
             severity: Severity::Error,
             error,
@@ -232,7 +232,7 @@ impl Diagnostic {
     }
     /// Set the severity on this diagnostic.
     #[must_use]
-    pub fn with_severity(mut self, severity: Severity) -> Self {
+    pub const fn with_severity(mut self, severity: Severity) -> Self {
         self.severity = severity;
         self
     }
@@ -286,11 +286,9 @@ impl Diagnostic {
     /// Returns the summary string for this diagnostic.
     #[must_use]
     pub fn summary_str(&self) -> String {
-        if let Some(ref s) = self.summary {
-            s.clone()
-        } else {
-            self.error.to_string()
-        }
+        self.summary
+            .as_ref()
+            .map_or_else(|| self.error.to_string(), Clone::clone)
     }
 }
 /// A collection of diagnostics.
@@ -299,7 +297,7 @@ pub struct Diagnostics(Vec<Diagnostic>);
 impl Diagnostics {
     /// Create a new, empty collection of diagnostics.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self(Vec::new())
     }
     /// Add a diagnostic to the collection.
@@ -399,6 +397,7 @@ impl std::fmt::Display for Diagnostics {
         Ok(())
     }
 }
+impl std::error::Error for Diagnostics {}
 impl From<Diagnostic> for Diagnostics {
     fn from(d: Diagnostic) -> Self {
         Self(vec![d])
@@ -406,7 +405,7 @@ impl From<Diagnostic> for Diagnostics {
 }
 impl Diagnostics {
     /// Extend this collection with another.
-    pub fn extend(&mut self, other: Diagnostics) {
+    pub fn extend(&mut self, other: Self) {
         self.0.extend(other.0);
     }
 }
@@ -429,7 +428,7 @@ impl Default for DiagnosticWriter {
 impl DiagnosticWriter {
     /// Create a new `DiagnosticWriter` specifying whether ANSI color codes are enabled.
     #[must_use]
-    pub fn new(color: bool) -> Self {
+    pub const fn new(color: bool) -> Self {
         Self {
             color,
             max_lines: 10,
@@ -437,23 +436,23 @@ impl DiagnosticWriter {
     }
     /// Create a plain-text `DiagnosticWriter` without ANSI escape codes.
     #[must_use]
-    pub fn plain() -> Self {
+    pub const fn plain() -> Self {
         Self::new(false)
     }
     /// Create a colored `DiagnosticWriter` using ANSI escape codes.
     #[must_use]
-    pub fn colored() -> Self {
+    pub const fn colored() -> Self {
         Self::new(true)
     }
     /// Toggle ANSI color output on this writer.
     #[must_use]
-    pub fn with_color(mut self, color: bool) -> Self {
+    pub const fn with_color(mut self, color: bool) -> Self {
         self.color = color;
         self
     }
     /// Set the maximum number of source lines to render per diagnostic excerpt.
     #[must_use]
-    pub fn with_max_lines(mut self, max_lines: usize) -> Self {
+    pub const fn with_max_lines(mut self, max_lines: usize) -> Self {
         self.max_lines = max_lines;
         self
     }
@@ -588,81 +587,44 @@ impl DiagnosticWriter {
         }
         let lines: Vec<&str> = source.lines().collect();
         if !lines.is_empty() && start_line > 0 && start_line <= lines.len() {
-            let mut line_set = BTreeSet::new();
-            let subj_start = diag.subject.start_line.clamp(1, lines.len());
-            let subj_end = diag.subject.end_line.clamp(subj_start, lines.len());
-            for l in subj_start..=subj_end {
+            self.render_source_excerpt(diag, &lines, start_line, out);
+        }
+        self.render_eval_callouts(diag, out);
+        if let Some(detail) = diag.detail.as_deref().filter(|s| !s.is_empty()) {
+            let _ = writeln!(out, "{detail}");
+        }
+    }
+
+    fn render_source_excerpt(
+        &self,
+        diag: &Diagnostic,
+        lines: &[&str],
+        start_line: usize,
+        out: &mut String,
+    ) {
+        let mut line_set = BTreeSet::new();
+        let subj_start = diag.subject.start_line.clamp(1, lines.len());
+        let subj_end = diag.subject.end_line.clamp(subj_start, lines.len());
+        for l in subj_start..=subj_end {
+            line_set.insert(l);
+        }
+        if let Some(ctx) = diag
+            .context
+            .as_ref()
+            .filter(|c| c.start_line > 0 && c.start_line <= lines.len())
+        {
+            let ctx_start = ctx.start_line.clamp(1, lines.len());
+            let ctx_end = ctx.end_line.clamp(ctx_start, lines.len());
+            for l in ctx_start..=ctx_end {
                 line_set.insert(l);
             }
-            if let Some(ctx) = diag
-                .context
-                .as_ref()
-                .filter(|c| c.start_line > 0 && c.start_line <= lines.len())
-            {
-                let ctx_start = ctx.start_line.clamp(1, lines.len());
-                let ctx_end = ctx.end_line.clamp(ctx_start, lines.len());
-                for l in ctx_start..=ctx_end {
-                    line_set.insert(l);
-                }
-            }
-            let max_line = line_set.iter().copied().max().unwrap_or(start_line);
-            let gutter_width = max_line.to_string().len().max(2);
-            let displayed_lines: Vec<usize> = line_set.into_iter().take(self.max_lines).collect();
-            let mut prev_line = 0;
-            for &line_num in &displayed_lines {
-                if prev_line > 0 && line_num > prev_line + 1 {
-                    let gutter_ellipsis = if self.color {
-                        format!("\x1b[36m{:>gutter_width$} |\x1b[0m ...", "")
-                    } else {
-                        format!("{:>gutter_width$} | ...", "")
-                    };
-                    let _ = writeln!(out, "{gutter_ellipsis}");
-                }
-                prev_line = line_num;
-                let line_content = lines.get(line_num - 1).copied().unwrap_or("");
-                let line_gutter = if self.color {
-                    format!("\x1b[36m{line_num:>gutter_width$} |\x1b[0m {line_content}")
-                } else {
-                    format!("{line_num:>gutter_width$} | {line_content}")
-                };
-                let _ = writeln!(out, "{line_gutter}");
-                let (c_start, c_end) = if let Some(ref ctx) = diag.context {
-                    compute_span_cols(line_num, line_content.len(), ctx)
-                } else {
-                    (0, 0)
-                };
-                let (s_start, s_end) =
-                    compute_span_cols(line_num, line_content.len(), &diag.subject);
-                if c_start < c_end || s_start < s_end {
-                    let needed_len = line_content.len().max(s_end).max(c_end);
-                    let mut underline = vec![' '; needed_len];
-                    if c_start < c_end {
-                        for col in c_start..c_end {
-                            underline[col - 1] = '~';
-                        }
-                    }
-                    if s_start < s_end {
-                        for col in s_start..s_end {
-                            underline[col - 1] = '^';
-                        }
-                    }
-                    while underline.last() == Some(&' ') {
-                        underline.pop();
-                    }
-                    let styled_underline = if self.color {
-                        style_underline_colored(&underline)
-                    } else {
-                        underline.into_iter().collect()
-                    };
-                    let pointer_line = if self.color {
-                        format!("\x1b[36m{:>gutter_width$} |\x1b[0m {styled_underline}", "")
-                    } else {
-                        format!("{:>gutter_width$} | {styled_underline}", "")
-                    };
-                    let _ = writeln!(out, "{pointer_line}");
-                }
-            }
-            if displayed_lines.len() < max_line && self.max_lines < lines.len() {
+        }
+        let max_line = line_set.iter().copied().max().unwrap_or(start_line);
+        let gutter_width = max_line.to_string().len().max(2);
+        let displayed_lines: Vec<usize> = line_set.into_iter().take(self.max_lines).collect();
+        let mut prev_line = 0;
+        for &line_num in &displayed_lines {
+            if prev_line > 0 && line_num > prev_line + 1 {
                 let gutter_ellipsis = if self.color {
                     format!("\x1b[36m{:>gutter_width$} |\x1b[0m ...", "")
                 } else {
@@ -670,37 +632,86 @@ impl DiagnosticWriter {
                 };
                 let _ = writeln!(out, "{gutter_ellipsis}");
             }
-        }
-        if !diag.eval_callouts.is_empty() {
-            let gutter_width = if diag.subject.start_line > 0 {
-                diag.subject.start_line.to_string().len().max(2)
+            prev_line = line_num;
+            let line_content = lines.get(line_num - 1).copied().unwrap_or("");
+            let line_gutter = if self.color {
+                format!("\x1b[36m{line_num:>gutter_width$} |\x1b[0m {line_content}")
             } else {
-                2
+                format!("{line_num:>gutter_width$} | {line_content}")
             };
-            for (idx, callout) in diag.eval_callouts.iter().enumerate() {
-                let is_last = idx + 1 == diag.eval_callouts.len();
-                let branch = if is_last { "└─" } else { "├─" };
-                let expr_str = if self.color {
-                    format!("\x1b[1m{}\x1b[0m", callout.expression_text)
+            let _ = writeln!(out, "{line_gutter}");
+            let (c_start, c_end) = diag.context.as_ref().map_or((0, 0), |ctx| {
+                compute_span_cols(line_num, line_content.len(), ctx)
+            });
+            let (s_start, s_end) = compute_span_cols(line_num, line_content.len(), &diag.subject);
+            if c_start < c_end || s_start < s_end {
+                let needed_len = line_content.len().max(s_end).max(c_end);
+                let mut underline = vec![' '; needed_len];
+                if c_start < c_end {
+                    for col in c_start..c_end {
+                        underline[col - 1] = '~';
+                    }
+                }
+                if s_start < s_end {
+                    for col in s_start..s_end {
+                        underline[col - 1] = '^';
+                    }
+                }
+                while underline.last() == Some(&' ') {
+                    underline.pop();
+                }
+                let styled_underline = if self.color {
+                    style_underline_colored(&underline)
                 } else {
-                    callout.expression_text.clone()
+                    underline.into_iter().collect()
                 };
-                let line = if self.color {
-                    format!(
-                        "\x1b[36m{:>gutter_width$} |\x1b[0m   {branch} {expr_str} is {}",
-                        "", callout.evaluated_value
-                    )
+                let pointer_line = if self.color {
+                    format!("\x1b[36m{:>gutter_width$} |\x1b[0m {styled_underline}", "")
                 } else {
-                    format!(
-                        "{:>gutter_width$} |   {branch} {expr_str} is {}",
-                        "", callout.evaluated_value
-                    )
+                    format!("{:>gutter_width$} | {styled_underline}", "")
                 };
-                let _ = writeln!(out, "{line}");
+                let _ = writeln!(out, "{pointer_line}");
             }
         }
-        if let Some(detail) = diag.detail.as_deref().filter(|s| !s.is_empty()) {
-            let _ = writeln!(out, "{detail}");
+        if displayed_lines.len() < max_line && self.max_lines < lines.len() {
+            let gutter_ellipsis = if self.color {
+                format!("\x1b[36m{:>gutter_width$} |\x1b[0m ...", "")
+            } else {
+                format!("{:>gutter_width$} | ...", "")
+            };
+            let _ = writeln!(out, "{gutter_ellipsis}");
+        }
+    }
+
+    fn render_eval_callouts(&self, diag: &Diagnostic, out: &mut String) {
+        if diag.eval_callouts.is_empty() {
+            return;
+        }
+        let gutter_width = if diag.subject.start_line > 0 {
+            diag.subject.start_line.to_string().len().max(2)
+        } else {
+            2
+        };
+        for (idx, callout) in diag.eval_callouts.iter().enumerate() {
+            let is_last = idx + 1 == diag.eval_callouts.len();
+            let branch = if is_last { "└─" } else { "├─" };
+            let expr_str = if self.color {
+                format!("\x1b[1m{}\x1b[0m", callout.expression_text)
+            } else {
+                callout.expression_text.clone()
+            };
+            let line = if self.color {
+                format!(
+                    "\x1b[36m{:>gutter_width$} |\x1b[0m   {branch} {expr_str} is {}",
+                    "", callout.evaluated_value
+                )
+            } else {
+                format!(
+                    "{:>gutter_width$} |   {branch} {expr_str} is {}",
+                    "", callout.evaluated_value
+                )
+            };
+            let _ = writeln!(out, "{line}");
         }
     }
 }
@@ -767,13 +778,6 @@ fn style_underline_colored(chars: &[char]) -> String {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
     fn test_diagnostic_error() {
@@ -943,7 +947,7 @@ mod tests {
         assert!(rendered.contains("| ..."));
     }
     #[test]
-    fn test_diagnostic_writer_write_methods() {
+    fn test_diagnostic_writer_write_methods() -> Result<(), HclError> {
         let source = "val = 1\n";
         let span = Span::new(0, 7, 1, 1, 1, 8);
         let first_err = Diagnostic::error("Err 1", "det 1", span.clone());
@@ -956,15 +960,12 @@ mod tests {
         assert!(formatted.contains("Err 1"));
         assert!(formatted.contains("Warn 2"));
         let mut buf_single = Vec::new();
-        writer
-            .write_diagnostic(&first_err, "test.hcl", source, &mut buf_single)
-            .unwrap();
+        writer.write_diagnostic(&first_err, "test.hcl", source, &mut buf_single)?;
         assert_ne!(buf_single, Vec::<u8>::new());
         let mut buf_multi = Vec::new();
-        writer
-            .write_diagnostics(&diag_list, "test.hcl", source, &mut buf_multi)
-            .unwrap();
+        writer.write_diagnostics(&diag_list, "test.hcl", source, &mut buf_multi)?;
         assert_ne!(buf_multi, Vec::<u8>::new());
+        Ok(())
     }
     #[test]
     fn test_diagnostic_writer_colored_gap_and_truncation() {
@@ -1102,7 +1103,7 @@ mod tests {
         assert_eq!(callout_plain.evaluated_value, "\"public_info\"");
         let val_sens = Value::new(Type::String, ValueData::String("super_secret".into()))
             .mark(ValueMark::Sensitive);
-        let callout_sens = EvalCallout::from_value(span.clone(), "var.secret", &val_sens);
+        let callout_sens = EvalCallout::from_value(span, "var.secret", &val_sens);
         assert_eq!(callout_sens.expression_text, "var.secret");
         assert_eq!(callout_sens.evaluated_value, "(sensitive value)");
     }
@@ -1132,32 +1133,31 @@ mod tests {
     }
     /// Tests uncovered helper methods, JSON conversions, and context rendering branches.
     #[test]
-    fn test_diagnostic_coverage_gaps() {
+    fn test_diagnostic_coverage_gaps() -> Result<(), HclError> {
         let span = Span::new_with_file(0, 10, 1, 1, 1, 11, Some(std::sync::Arc::from("main.tf")));
         let diag = Diagnostic::error("summary only", "", span.clone());
         assert_eq!(diag.detail, None);
         assert_eq!(diag.summary_str(), "summary only");
         let diag_string = Diagnostic::error("sum".to_string(), String::new(), span.clone());
         assert_eq!(diag_string.detail, None);
-        let mut diag_no_summary =
-            Diagnostic::new(HclError::Parse("err text".to_string()), span.clone());
+        let mut diag_no_summary = Diagnostic::new(HclError::Parse("err text".to_string()), span);
         diag_no_summary.summary = None;
         assert_eq!(diag_no_summary.summary_str(), "Parse error: err text");
         let json_val = diag.to_json_value(Some("code line\n"));
         assert!(json_val.is_object());
-        let json_str = diag.to_json(Some("code line\n")).unwrap();
+        let json_str = diag.to_json(Some("code line\n"))?;
         assert!(json_str.contains("summary only"));
         let d_addr = diag.clone().with_address("module.foo");
         assert_eq!(d_addr.address.as_deref(), Some("module.foo"));
-        let from_j = Diagnostic::from_json(&json_str).unwrap();
+        let from_j = Diagnostic::from_json(&json_str)?;
         assert_eq!(from_j.summary.as_deref(), Some("summary only"));
         assert!(Diagnostic::from_json("invalid json").is_err());
         let mut diags = Diagnostics::new();
         diags.push(diag.clone());
         let arr_val = diags.to_json_value(Some("code line\n"));
         assert!(arr_val.is_array());
-        let diags_json = diags.to_json(Some("code line\n")).unwrap();
-        let parsed_diags = Diagnostics::from_json(&diags_json).unwrap();
+        let diags_json = diags.to_json(Some("code line\n"))?;
+        let parsed_diags = Diagnostics::from_json(&diags_json)?;
         assert_eq!(parsed_diags.errors().len(), 1);
         let mut diag_same_file = diag;
         let mut ctx_span = Span::new(0, 5, 1, 1, 1, 6);
@@ -1178,5 +1178,6 @@ mod tests {
         let snippet = String::from_utf8_lossy(&html_buf);
         assert!(!snippet.contains("<!DOCTYPE html>"));
         assert!(snippet.contains("summary only"));
+        Ok(())
     }
 }

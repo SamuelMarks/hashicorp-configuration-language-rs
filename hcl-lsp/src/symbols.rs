@@ -2,11 +2,14 @@
 //!
 //! Generates hierarchical symbols for blocks, labels, attributes, and functions
 //! according to Language Server Protocol 3.17 (`textDocument/documentSymbol`).
+#![deny(missing_docs)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use crate::cache::VirtualDocument;
 use crate::protocol::{DocumentSymbol, Location, Position, Range, SymbolKind, WorkspaceSymbol};
-
 use hashicorp_configuration_language_rs::ast::structure::{Block, Body};
 use hashicorp_configuration_language_rs::span::Span;
+
 /// Generates hierarchical document symbols for the outline view of a document.
 ///
 /// # Arguments
@@ -21,6 +24,7 @@ pub fn document_symbols(doc: &VirtualDocument) -> Vec<DocumentSymbol> {
     };
     body_to_symbols(body)
 }
+
 fn body_to_symbols(body: &Body) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
     for (name, attr) in &body.attributes {
@@ -50,13 +54,14 @@ fn body_to_symbols(body: &Body) -> Vec<DocumentSymbol> {
     }
     symbols
 }
+
 fn block_to_symbol(block: &Block) -> DocumentSymbol {
     let range = span_to_range(&block.span);
     let sel_range = span_to_range(&block.type_span);
     let display_name = if block.labels.is_empty() {
         block.block_type.clone()
     } else {
-        format!("{} \"{}\"", block.block_type, block.labels.join("\" \""))
+        format!(r#"{} "{}""#, block.block_type, block.labels.join(r#"" ""#))
     };
     let mut children = Vec::new();
     for (idx, label) in block.labels.iter().enumerate() {
@@ -64,7 +69,7 @@ fn block_to_symbol(block: &Block) -> DocumentSymbol {
             .label_spans
             .get(idx)
             .cloned()
-            .unwrap_or(block.type_span.clone());
+            .unwrap_or_else(|| block.type_span.clone());
         let l_range = span_to_range(&label_span);
         children.push(DocumentSymbol {
             name: label.clone(),
@@ -90,6 +95,7 @@ fn block_to_symbol(block: &Block) -> DocumentSymbol {
         },
     }
 }
+
 /// Converts an internal [`Span`] to an LSP zero-indexed [`Range`].
 ///
 /// # Arguments
@@ -99,10 +105,14 @@ fn block_to_symbol(block: &Block) -> DocumentSymbol {
 /// An LSP [`Range`].
 #[must_use]
 pub fn span_to_range(span: &Span) -> Range {
-    let start_line = span.start_line.saturating_sub(1) as u32;
-    let start_col = span.start_col.saturating_sub(1) as u32;
-    let end_line = (span.end_line.saturating_sub(1) as u32).max(start_line);
-    let end_col = (span.end_col.saturating_sub(1) as u32).max(start_col);
+    let start_line = u32::try_from(span.start_line.saturating_sub(1)).unwrap_or(u32::MAX);
+    let start_col = u32::try_from(span.start_col.saturating_sub(1)).unwrap_or(u32::MAX);
+    let end_line = u32::try_from(span.end_line.saturating_sub(1))
+        .unwrap_or(u32::MAX)
+        .max(start_line);
+    let end_col = u32::try_from(span.end_col.saturating_sub(1))
+        .unwrap_or(u32::MAX)
+        .max(start_col);
     Range::new(
         Position::new(start_line, start_col),
         Position::new(end_line, end_col),
@@ -128,7 +138,7 @@ pub fn workspace_symbols(uri: &str, doc: &VirtualDocument, query: &str) -> Vec<W
 
 fn flatten_symbols(
     uri: &str,
-    container_name: Option<String>,
+    container_name: Option<&str>,
     symbols: &[DocumentSymbol],
     out: &mut Vec<WorkspaceSymbol>,
     query: &str,
@@ -143,28 +153,24 @@ fn flatten_symbols(
                     uri: uri.to_string(),
                     range: sym.selection_range,
                 },
-                container_name: container_name.clone(),
+                container_name: container_name.map(ToString::to_string),
             });
         }
         if let Some(ref children) = sym.children {
-            flatten_symbols(uri, Some(sym.name.clone()), children, out, query);
+            flatten_symbols(uri, Some(&sym.name), children, out, query);
         }
     }
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::error::HclError;
     use crate::protocol::TextDocumentItem;
+
     #[test]
-    fn test_document_symbols_hierarchy() {
+    fn test_document_symbols_hierarchy() -> Result<(), HclError> {
         let hcl = r#"
             region = "us-east-1"
 
@@ -186,21 +192,32 @@ mod tests {
         let doc = VirtualDocument::new(item, None);
         let symbols = document_symbols(&doc);
         assert_eq!(symbols.len(), 2);
-        let attr_sym = symbols.iter().find(|s| s.name == "region").unwrap();
+        let attr_sym = symbols
+            .iter()
+            .find(|s| s.name == "region")
+            .ok_or_else(|| HclError::Eval("missing region".to_string()))?;
         assert_eq!(attr_sym.kind, SymbolKind::PROPERTY);
         let block_sym = symbols
             .iter()
             .find(|s| s.name.contains("aws_instance"))
-            .unwrap();
+            .ok_or_else(|| HclError::Eval("missing aws_instance".to_string()))?;
         assert_eq!(block_sym.kind, SymbolKind::NAMESPACE);
-        let children = block_sym.children.as_ref().unwrap();
-        let label_sym = children.iter().find(|c| c.name == "aws_instance").unwrap();
+        let children = block_sym
+            .children
+            .as_ref()
+            .ok_or_else(|| HclError::Eval("missing children".to_string()))?;
+        let label_sym = children
+            .iter()
+            .find(|c| c.name == "aws_instance")
+            .ok_or_else(|| HclError::Eval("missing label".to_string()))?;
         assert_eq!(label_sym.kind, SymbolKind::STRING);
         assert!(children.iter().any(|c| c.name == "ami"));
         assert!(children.iter().any(|c| c.name == "network_interface"));
+        Ok(())
     }
+
     #[test]
-    fn test_document_symbols_edge_cases() {
+    fn test_document_symbols_edge_cases() -> Result<(), HclError> {
         use hashicorp_configuration_language_rs::ast::structure::Block;
         let item_empty = TextDocumentItem {
             uri: "file:///empty.hcl".to_string(),
@@ -247,13 +264,28 @@ mod tests {
             sp,
         );
         block_no_label_spans.label_spans.clear();
-        let b = doc_func.parsed_body.as_mut().unwrap();
+        let b = doc_func
+            .parsed_body
+            .as_mut()
+            .ok_or_else(|| HclError::Eval("missing body".to_string()))?;
         b.blocks.push(block_no_label_spans);
         let syms = document_symbols(&doc_func);
-        let calc = syms.iter().find(|s| s.name == "calculate").unwrap();
+        let calc = syms
+            .iter()
+            .find(|s| s.name == "calculate")
+            .ok_or_else(|| HclError::Eval("missing calculate".to_string()))?;
         assert_eq!(calc.kind, SymbolKind::FUNCTION);
-        let srv = syms.iter().find(|s| s.name.contains("server")).unwrap();
-        let srv_children = srv.children.as_ref().unwrap();
+        let srv = syms
+            .iter()
+            .find(|s| s.name.contains("server"))
+            .ok_or_else(|| HclError::Eval("missing server".to_string()))?;
+        let srv_children = srv
+            .children
+            .as_ref()
+            .ok_or_else(|| HclError::Eval("missing srv children".to_string()))?;
         assert_eq!(srv_children[0].name, "node1");
+        let all_ws = workspace_symbols("file:///func.hcl", &doc_func, "");
+        assert!(!all_ws.is_empty());
+        Ok(())
     }
 }

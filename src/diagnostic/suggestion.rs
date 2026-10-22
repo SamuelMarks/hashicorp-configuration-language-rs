@@ -108,13 +108,6 @@ pub fn suggest_closest_name<'a>(
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
     fn test_damerau_levenshtein_empty() {

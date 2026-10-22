@@ -183,7 +183,7 @@ impl HtmlDiagnosticWriter {
     /// # Arguments
     /// * `standalone` - `true` for full HTML document, `false` for snippet.
     #[must_use]
-    pub fn with_standalone(mut self, standalone: bool) -> Self {
+    pub const fn with_standalone(mut self, standalone: bool) -> Self {
         self.standalone = standalone;
         self
     }
@@ -367,13 +367,6 @@ pub fn diagnostics_to_html(
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::diagnostic::{EvalCallout, Span};
     use crate::error::HclError;

@@ -209,7 +209,7 @@ impl VarManager {
     }
     /// Returns a reference to the merged variables map.
     #[must_use]
-    pub fn variables(&self) -> &BTreeMap<String, Value> {
+    pub const fn variables(&self) -> &BTreeMap<String, Value> {
         &self.variables
     }
     /// Consumes the manager and returns the merged variables map.
@@ -219,77 +219,75 @@ impl VarManager {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
-    fn test_parse_var_flag_primitives_and_compounds() {
-        let (k1, v1) = parse_var_flag("enabled=true").unwrap();
+    fn test_parse_var_flag_primitives_and_compounds() -> Result<(), HclError> {
+        let (k1, v1) = parse_var_flag("enabled=true")?;
         assert_eq!(k1, "enabled");
         assert_eq!(v1.data.as_ref(), &ValueData::Bool(true));
-        let (k2, v2) = parse_var_flag("disabled=false").unwrap();
+        let (k2, v2) = parse_var_flag("disabled=false")?;
         assert_eq!(k2, "disabled");
         assert_eq!(v2.data.as_ref(), &ValueData::Bool(false));
-        let (kn, vn) = parse_var_flag("empty=null").unwrap();
+        let (kn, vn) = parse_var_flag("empty=null")?;
         assert_eq!(kn, "empty");
         assert!(vn.is_null());
-        let (k3, v3) = parse_var_flag("port=8080").unwrap();
+        let (k3, v3) = parse_var_flag("port=8080")?;
         assert_eq!(k3, "port");
         assert_eq!(v3.ty(), &Type::Number);
-        let (k4, v4) = parse_var_flag("env=\"production\"").unwrap();
+        let (k4, v4) = parse_var_flag("env=\"production\"")?;
         assert_eq!(k4, "env");
         assert_eq!(v4.data.as_ref(), &ValueData::String("production".into()));
-        let (k5, v5) = parse_var_flag("raw_str=staging").unwrap();
+        let (k5, v5) = parse_var_flag("raw_str=staging")?;
         assert_eq!(k5, "raw_str");
         assert_eq!(v5.data.as_ref(), &ValueData::String("staging".into()));
-        let (k6, v6) = parse_var_flag("ports=[80, 443]").unwrap();
+        let (k6, v6) = parse_var_flag("ports=[80, 443]")?;
         assert_eq!(k6, "ports");
-        assert!(matches!(v6.ty(), Type::Tuple(_) | Type::List(_)));
-        let (k7, v7) = parse_var_flag("tags={\"env\": \"prod\"}").unwrap();
+        assert_eq!(v6.ty(), &Type::Tuple(vec![Type::Number, Type::Number]));
+        let (k7, v7) = parse_var_flag("tags={\"env\": \"prod\"}")?;
         assert_eq!(k7, "tags");
         assert!(matches!(v7.data.as_ref(), ValueData::Object(_)));
-        let (k8, v8) = parse_var_flag("bad_eval=[1 / 0]").unwrap();
+        let (k8, v8) = parse_var_flag("bad_eval=[1 / 0]")?;
         assert_eq!(k8, "bad_eval");
         assert_eq!(v8.data.as_ref(), &ValueData::String("[1 / 0]".into()));
         assert!(parse_var_flag("invalid_no_equals").is_err());
         assert!(parse_var_flag("=missing_key").is_err());
+        Ok(())
     }
     #[test]
-    fn test_var_manager_and_var_files() {
+    fn test_var_manager_and_var_files() -> Result<(), HclError> {
         let temp_dir = std::env::temp_dir().join(format!("test_vm_dir_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
+        drop(std::fs::remove_dir_all(&temp_dir));
+        std::fs::create_dir_all(&temp_dir)?;
         let f_hcl = temp_dir.join("test.pkrvars.hcl");
-        std::fs::write(&f_hcl, "env = \"dev\"\ncount = 1\n").unwrap();
+        std::fs::write(&f_hcl, "env = \"dev\"\ncount = 1\n")?;
         let f_json = temp_dir.join("test.pkrvars.json");
         std::fs::write(
             &f_json,
             "{\n  \"env\": \"staging\",\n  \"active\": true\n}\n",
-        )
-        .unwrap();
+        )?;
         let mut mgr = VarManager::new();
-        mgr.add_var_file(&f_hcl).unwrap();
+        mgr.add_var_file(&f_hcl)?;
         assert_eq!(mgr.variables().len(), 2);
-        mgr.add_var_file(&f_json).unwrap();
+        mgr.add_var_file(&f_json)?;
         assert_eq!(mgr.variables().len(), 3);
-        assert_eq!(
-            mgr.variables().get("env").unwrap().data.as_ref(),
-            &ValueData::String("staging".into())
-        );
-        mgr.add_var_flag("env=prod").unwrap();
-        assert_eq!(
-            mgr.variables().get("env").unwrap().data.as_ref(),
-            &ValueData::String("prod".into())
-        );
+        let env_val = mgr
+            .variables()
+            .get("env")
+            .ok_or_else(|| HclError::Eval("missing env".to_string()))?;
+        assert_eq!(env_val.data.as_ref(), &ValueData::String("staging".into()));
+        mgr.add_var_flag("env=prod")?;
+        let env_val2 = mgr
+            .variables()
+            .get("env")
+            .ok_or_else(|| HclError::Eval("missing env".to_string()))?;
+        assert_eq!(env_val2.data.as_ref(), &ValueData::String("prod".into()));
         let mut ctx = Context::new();
         mgr.populate_context(&mut ctx);
-        let var_scope = ctx.get_variable("var").unwrap();
+        let var_scope = ctx
+            .get_variable("var")
+            .ok_or_else(|| HclError::Eval("missing var".to_string()))?;
         assert!(var_scope.to_string().contains("prod"));
         let mut extra = BTreeMap::new();
         extra.insert(
@@ -303,18 +301,19 @@ mod tests {
         let bad_file = temp_dir.join("missing.pkrvars.hcl");
         assert!(parse_var_file(bad_file).is_err());
         let syntax_err_file = temp_dir.join("syntax_err.pkrvars.hcl");
-        std::fs::write(&syntax_err_file, "bad = = syntax").unwrap();
+        std::fs::write(&syntax_err_file, "bad = = syntax")?;
         assert!(parse_var_file(&syntax_err_file).is_err());
         let eval_err_file = temp_dir.join("eval_err.pkrvars.hcl");
-        std::fs::write(&eval_err_file, "bad_num = 10 / 0\n").unwrap();
+        std::fs::write(&eval_err_file, "bad_num = 10 / 0\n")?;
         assert!(parse_var_file(&eval_err_file).is_err());
         let bad_json_file = temp_dir.join("bad.pkrvars.json");
-        std::fs::write(&bad_json_file, "{ invalid json }").unwrap();
+        std::fs::write(&bad_json_file, "{ invalid json }")?;
         assert!(parse_var_file(&bad_json_file).is_err());
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        drop(std::fs::remove_dir_all(&temp_dir));
+        Ok(())
     }
     #[test]
-    fn test_var_manager_coverage_gaps() {
+    fn test_var_manager_coverage_gaps() -> Result<(), HclError> {
         let val_bracket = parse_var_value("[unclosed_bracket");
         assert_eq!(
             val_bracket.data.as_ref(),
@@ -361,22 +360,23 @@ mod tests {
         assert!(mgr.add_var_flag("flag_ok=42").is_ok());
         assert!(parse_var_flag("   =value").is_err());
         let temp_dir = std::env::temp_dir().join(format!("test_vm_gaps_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        let _ = std::fs::create_dir_all(&temp_dir);
+        drop(std::fs::remove_dir_all(&temp_dir));
+        std::fs::create_dir_all(&temp_dir)?;
         let missing_file = temp_dir.join("nonexistent_vars.tfvars");
         let add_file_res = mgr.add_var_file(&missing_file);
         assert!(add_file_res.is_err());
         let no_ext_file = temp_dir.join("vars_without_ext");
-        assert!(std::fs::write(&no_ext_file, "flag = true\n").is_ok());
-        let parsed_no_ext = parse_var_file(&no_ext_file).unwrap();
+        std::fs::write(&no_ext_file, "flag = true\n")?;
+        let parsed_no_ext = parse_var_file(&no_ext_file)?;
         assert!(parsed_no_ext.contains_key("flag"));
         let upper_json_file = temp_dir.join("vars.JSON");
-        assert!(std::fs::write(&upper_json_file, "{\"active\": false}").is_ok());
-        let parsed_upper = parse_var_file(&upper_json_file).unwrap();
+        std::fs::write(&upper_json_file, "{\"active\": false}")?;
+        let parsed_upper = parse_var_file(&upper_json_file)?;
         assert!(parsed_upper.contains_key("active"));
         let mgr_cloned = mgr.clone();
         let debug_str = format!("{mgr_cloned:?}");
         assert!(debug_str.contains("VarManager"));
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        drop(std::fs::remove_dir_all(&temp_dir));
+        Ok(())
     }
 }

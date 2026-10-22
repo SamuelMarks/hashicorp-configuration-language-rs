@@ -1,5 +1,4 @@
 //! AST expressions and operations in HCL.
-#![allow(clippy::all, clippy::pedantic)]
 use crate::number::Number;
 use crate::span::Span;
 /// An operator for a binary expression.
@@ -57,7 +56,7 @@ pub enum TraversalOperator {
 impl TraversalOperator {
     /// Returns `true` if this traversal operator is a splat operator ([`Self::AttrSplat`] or [`Self::FullSplat`]).
     #[must_use]
-    pub fn is_splat(&self) -> bool {
+    pub const fn is_splat(&self) -> bool {
         matches!(self, Self::AttrSplat(_) | Self::FullSplat(_))
     }
     /// Returns the source [`Span`] covering this traversal operator.
@@ -307,7 +306,7 @@ impl PartialEq<str> for NamespacedIdent {
         if self.namespace.is_empty() {
             self.name == other
         } else {
-            self.to_string() == other
+            self.to_string().as_str() == other
         }
     }
 }
@@ -389,9 +388,9 @@ impl TemplatePart {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            TemplatePart::Literal(_, span)
-            | TemplatePart::Interpolation(_, span)
-            | TemplatePart::Directive(_, span) => span.clone(),
+            Self::Literal(_, span) | Self::Interpolation(_, span) | Self::Directive(_, span) => {
+                span.clone()
+            }
         }
     }
 }
@@ -433,21 +432,21 @@ impl Expression {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            Expression::Null(span)
-            | Expression::Bool(_, span)
-            | Expression::Number(_, span)
-            | Expression::String(_, span)
-            | Expression::Tuple(_, span)
-            | Expression::Object(_, span)
-            | Expression::Template(_, span)
-            | Expression::Variable(_, span)
-            | Expression::Traversal(_, span)
-            | Expression::FuncCall(_, span)
-            | Expression::Conditional(_, span)
-            | Expression::BinaryOp(_, _, _, span)
-            | Expression::UnaryOp(_, _, span)
-            | Expression::ForExpr(_, span)
-            | Expression::Parentheses(_, span) => span.clone(),
+            Self::Null(span)
+            | Self::Bool(_, span)
+            | Self::Number(_, span)
+            | Self::String(_, span)
+            | Self::Tuple(_, span)
+            | Self::Object(_, span)
+            | Self::Template(_, span)
+            | Self::Variable(_, span)
+            | Self::Traversal(_, span)
+            | Self::FuncCall(_, span)
+            | Self::Conditional(_, span)
+            | Self::BinaryOp(_, _, _, span)
+            | Self::UnaryOp(_, _, span)
+            | Self::ForExpr(_, span)
+            | Self::Parentheses(_, span) => span.clone(),
         }
     }
     /// Finds the innermost sub-expression at the given spatial [`Position`](crate::span::Position).
@@ -458,12 +457,12 @@ impl Expression {
     /// # Arguments
     /// * `pos` - The coordinate position to query.
     #[must_use]
-    pub fn expr_at_position(&self, pos: &crate::span::Position) -> Option<&Expression> {
+    pub fn expr_at_position(&self, pos: &crate::span::Position) -> Option<&Self> {
         if !self.span().contains_position(pos) {
             return None;
         }
         match self {
-            Expression::Tuple(elements, _) => {
+            Self::Tuple(elements, _) => {
                 for elem in elements {
                     if let Some(inner) = elem.expr_at_position(pos) {
                         return Some(inner);
@@ -471,7 +470,7 @@ impl Expression {
                 }
                 Some(self)
             }
-            Expression::Object(pairs, _) => {
+            Self::Object(pairs, _) => {
                 for (k, v) in pairs {
                     if let Some(inner) = k.expr_at_position(pos) {
                         return Some(inner);
@@ -482,30 +481,13 @@ impl Expression {
                 }
                 Some(self)
             }
-            Expression::Template(parts, _) => {
-                for part in parts {
-                    match part {
-                        TemplatePart::Interpolation(expr, span) => {
-                            if span.contains_position(pos) {
-                                if let Some(inner) = expr.expr_at_position(pos) {
-                                    return Some(inner);
-                                }
-                                return Some(expr);
-                            }
-                        }
-                        TemplatePart::Directive(directive, span) => {
-                            if span.contains_position(pos) {
-                                if let Some(inner) = directive_expr_at(directive, pos) {
-                                    return Some(inner);
-                                }
-                            }
-                        }
-                        TemplatePart::Literal(_, _) => {}
-                    }
+            Self::Template(parts, _) => {
+                if let Some(inner) = template_expr_at(parts, pos) {
+                    return Some(inner);
                 }
                 Some(self)
             }
-            Expression::Traversal(t, _) => {
+            Self::Traversal(t, _) => {
                 for op in &t.operators {
                     if let TraversalOperator::Index(idx_expr, _) = op {
                         if let Some(inner) = idx_expr.expr_at_position(pos) {
@@ -518,7 +500,7 @@ impl Expression {
                 }
                 Some(self)
             }
-            Expression::FuncCall(f, _) => {
+            Self::FuncCall(f, _) => {
                 for arg in &f.args {
                     if let Some(inner) = arg.expr_at_position(pos) {
                         return Some(inner);
@@ -526,7 +508,7 @@ impl Expression {
                 }
                 Some(self)
             }
-            Expression::Conditional(c, _) => {
+            Self::Conditional(c, _) => {
                 if let Some(inner) = c.cond_expr.expr_at_position(pos) {
                     return Some(inner);
                 }
@@ -538,7 +520,7 @@ impl Expression {
                 }
                 Some(self)
             }
-            Expression::BinaryOp(_, lhs, rhs, _) => {
+            Self::BinaryOp(_, lhs, rhs, _) => {
                 if let Some(inner) = lhs.expr_at_position(pos) {
                     return Some(inner);
                 }
@@ -547,45 +529,95 @@ impl Expression {
                 }
                 Some(self)
             }
-            Expression::UnaryOp(_, inner, _) => {
+            Self::UnaryOp(_, inner, _) | Self::Parentheses(inner, _) => {
                 if let Some(child) = inner.expr_at_position(pos) {
                     return Some(child);
                 }
                 Some(self)
             }
-            Expression::ForExpr(f, _) => {
-                if let Some(inner) = f.collection.expr_at_position(pos) {
+            Self::ForExpr(f, _) => {
+                if let Some(inner) = for_expr_at(f, pos) {
                     return Some(inner);
-                }
-                if let Some(ref key_expr) = f.key_expr {
-                    if let Some(inner) = key_expr.expr_at_position(pos) {
-                        return Some(inner);
-                    }
-                }
-                if let Some(inner) = f.val_expr.expr_at_position(pos) {
-                    return Some(inner);
-                }
-                if let Some(ref cond_expr) = f.cond_expr {
-                    if let Some(inner) = cond_expr.expr_at_position(pos) {
-                        return Some(inner);
-                    }
                 }
                 Some(self)
             }
-            Expression::Parentheses(inner, _) => {
-                if let Some(child) = inner.expr_at_position(pos) {
-                    return Some(child);
-                }
-                Some(self)
-            }
-            Expression::Null(_)
-            | Expression::Bool(_, _)
-            | Expression::Number(_, _)
-            | Expression::String(_, _)
-            | Expression::Variable(_, _) => Some(self),
+            Self::Null(_)
+            | Self::Bool(_, _)
+            | Self::Number(_, _)
+            | Self::String(_, _)
+            | Self::Variable(_, _) => Some(self),
         }
     }
 }
+/// Finds the innermost sub-expression inside a slice of [`TemplatePart`]s at the given [`Position`](crate::span::Position).
+///
+/// # Arguments
+/// * `parts` - The template parts to inspect.
+/// * `pos` - The coordinate position to query.
+///
+/// # Returns
+/// The matching inner [`Expression`], if any.
+fn template_expr_at<'a>(
+    parts: &'a [TemplatePart],
+    pos: &crate::span::Position,
+) -> Option<&'a Expression> {
+    for part in parts {
+        match part {
+            TemplatePart::Interpolation(expr, span) => {
+                if span.contains_position(pos) {
+                    if let Some(inner) = expr.expr_at_position(pos) {
+                        return Some(inner);
+                    }
+                    return Some(expr);
+                }
+            }
+            TemplatePart::Directive(directive, span) => {
+                if span.contains_position(pos) {
+                    if let Some(inner) = directive_expr_at(directive, pos) {
+                        return Some(inner);
+                    }
+                }
+            }
+            TemplatePart::Literal(_, _) => {}
+        }
+    }
+    None
+}
+/// Finds the innermost sub-expression inside a [`ForExpr`] at the given [`Position`](crate::span::Position).
+///
+/// # Arguments
+/// * `f` - The `for` expression to inspect.
+/// * `pos` - The coordinate position to query.
+///
+/// # Returns
+/// The matching inner [`Expression`], if any.
+fn for_expr_at<'a>(f: &'a ForExpr, pos: &crate::span::Position) -> Option<&'a Expression> {
+    if let Some(inner) = f.collection.expr_at_position(pos) {
+        return Some(inner);
+    }
+    if let Some(ref key_expr) = f.key_expr {
+        if let Some(inner) = key_expr.expr_at_position(pos) {
+            return Some(inner);
+        }
+    }
+    if let Some(inner) = f.val_expr.expr_at_position(pos) {
+        return Some(inner);
+    }
+    if let Some(ref cond_expr) = f.cond_expr {
+        if let Some(inner) = cond_expr.expr_at_position(pos) {
+            return Some(inner);
+        }
+    }
+    None
+}
+/// Finds the innermost sub-expression inside a [`Directive`] at the given [`Position`](crate::span::Position).
+///
+/// # Arguments
+/// * `directive` - The template directive to inspect.
+/// * `pos` - The coordinate position to query.
+///
+/// # Returns
+/// The matching inner [`Expression`], if any.
 fn directive_expr_at<'a>(
     directive: &'a Directive,
     pos: &crate::span::Position,
@@ -650,13 +682,6 @@ fn directive_expr_at<'a>(
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::span::Span;
     #[test]
@@ -730,7 +755,7 @@ mod tests {
         let attr_splat = TraversalOperator::AttrSplat(s.clone());
         let full_splat = TraversalOperator::FullSplat(s.clone());
         let get_attr = TraversalOperator::GetAttr("attr".to_string(), s.clone());
-        let index = TraversalOperator::Index(null_expr.clone(), s.clone());
+        let index = TraversalOperator::Index(null_expr, s.clone());
         let legacy_index = TraversalOperator::LegacyIndex(42, s.clone());
         assert!(attr_splat.is_splat());
         assert!(full_splat.is_splat());
@@ -768,6 +793,8 @@ mod tests {
         let key_clone = key.clone();
         assert_eq!(key, key_clone);
         assert_eq!(format!("{key:?}"), format!("{key_clone:?}"));
+        drop(key);
+        assert_eq!(key_clone.expr, Expression::Null(s.clone()));
         let if_dir = Directive::If {
             cond: Expression::Bool(true, s.clone()),
             true_expr: vec![],
@@ -777,7 +804,7 @@ mod tests {
         let for_dir = Directive::For {
             key_var: Some("k".to_string()),
             val_var: "v".to_string(),
-            collection: Expression::Null(s.clone()),
+            collection: Expression::Null(s),
             body: vec![],
         };
         assert_ne!(if_dir, for_dir);
@@ -814,7 +841,7 @@ mod tests {
                 let span = attr.expr.span();
                 let pos = Position::new(span.start_line, span.start_col, span.start_byte);
                 let found = attr.expr.expr_at_position(&pos);
-                assert!(found.is_some(), "expr_at_position failed for {}", attr.name);
+                assert!(found.is_some());
             }
             for first_attr in body.attributes.values().take(1) {
                 let pos_outside = Position::new(1, 1, 0);
@@ -911,17 +938,17 @@ mod tests {
         );
         let other_trav = Traversal {
             expr: Box::new(Expression::Tuple(vec![], s.clone())),
-            operators: vec![TraversalOperator::GetAttr("prop".to_string(), s.clone())],
+            operators: vec![TraversalOperator::GetAttr("prop".to_string(), s)],
         };
         let s_out = other_trav.to_string();
         assert!(s_out.starts_with("(Tuple([]"));
         assert!(s_out.ends_with(")).prop"));
     }
     #[test]
-    fn test_namespaced_ident_full_coverage() {
+    fn test_namespaced_ident_simple() {
         use std::collections::HashSet;
         let s = Span::new(0, 10, 1, 1, 1, 11);
-        let id_simple = NamespacedIdent::simple("my_func", s.clone());
+        let id_simple = NamespacedIdent::simple("my_func", s);
         assert!(id_simple.is_simple());
         assert_eq!(id_simple.to_string(), "my_func");
         assert_eq!(id_simple, "my_func");
@@ -932,11 +959,24 @@ mod tests {
         assert_eq!(String::from("my_func"), id_simple);
         assert_ne!(id_simple, "other");
         assert_ne!("other", id_simple);
-        assert!(!(id_simple == *"other"));
-        assert!(!(*"other" == id_simple));
+        assert!(id_simple != *"other");
+        assert!(*"other" != id_simple);
         assert_ne!(id_simple, String::from("other"));
         assert_ne!(String::from("other"), id_simple);
-        let id_namespaced = NamespacedIdent::parse("provider::aws::arn_parse", s.clone());
+        let fc_simple = FuncCall {
+            name: id_simple.clone(),
+            args: vec![],
+            expand_final: false,
+        };
+        assert_eq!(fc_simple.simple_name(), Some("my_func"));
+        let mut set = HashSet::new();
+        set.insert(id_simple.clone());
+        assert!(set.contains(&id_simple));
+    }
+    #[test]
+    fn test_namespaced_ident_namespaced_and_conversions() {
+        let s = Span::new(0, 10, 1, 1, 1, 11);
+        let id_namespaced = NamespacedIdent::parse("provider::aws::arn_parse", s);
         assert!(!id_namespaced.is_simple());
         assert_eq!(id_namespaced.to_string(), "provider::aws::arn_parse");
         assert_eq!(id_namespaced, "provider::aws::arn_parse");
@@ -947,8 +987,8 @@ mod tests {
         assert_eq!(String::from("provider::aws::arn_parse"), id_namespaced);
         assert_ne!(id_namespaced, "provider::aws::other");
         assert_ne!("provider::aws::other", id_namespaced);
-        assert!(!(id_namespaced == *"provider::aws::other"));
-        assert!(!(*"provider::aws::other" == id_namespaced));
+        assert!(id_namespaced != *"provider::aws::other");
+        assert!(*"provider::aws::other" != id_namespaced);
         assert_ne!(id_namespaced, String::from("provider::aws::other"));
         assert_ne!(String::from("provider::aws::other"), id_namespaced);
         let from_string = NamespacedIdent::from(String::from("ns::func"));
@@ -956,25 +996,16 @@ mod tests {
         assert_eq!(from_string.name, "func");
         let from_str = NamespacedIdent::from("ns::func");
         assert_eq!(from_str, from_string);
-        let fc_simple = FuncCall {
-            name: id_simple.clone(),
-            args: vec![],
-            expand_final: false,
-        };
-        assert_eq!(fc_simple.simple_name(), Some("my_func"));
         let fc_namespaced = FuncCall {
-            name: id_namespaced.clone(),
+            name: id_namespaced,
             args: vec![],
             expand_final: false,
         };
         assert_eq!(fc_namespaced.simple_name(), None);
-        let mut set = HashSet::new();
-        set.insert(id_simple.clone());
-        assert!(set.contains(&id_simple));
     }
     #[test]
     fn test_all_operators_derives() {
-        let ops = vec![
+        let ops = [
             BinaryOp::Add,
             BinaryOp::Sub,
             BinaryOp::Mul,
@@ -1000,7 +1031,7 @@ mod tests {
                 }
             }
         }
-        let uops = vec![UnaryOp::Not, UnaryOp::Neg];
+        let uops = [UnaryOp::Not, UnaryOp::Neg];
         assert_eq!(uops[0], uops[0].clone());
         assert_eq!(uops[1], uops[1].clone());
         assert_ne!(uops[0], uops[1]);
@@ -1008,12 +1039,12 @@ mod tests {
         assert_eq!(format!("{:?}", uops[1]), "Neg");
     }
     #[test]
-    fn test_expr_at_position_branches() {
+    fn test_expr_at_position_collections_and_calls() {
         use crate::span::Position;
         let tup_span = Span::new(0, 50, 1, 1, 1, 51);
         let elem1 = Expression::Number(Number::from(1), Span::new(10, 20, 1, 11, 1, 21));
         let elem2 = Expression::Number(Number::from(2), Span::new(25, 35, 1, 26, 1, 36));
-        let tuple = Expression::Tuple(vec![elem1.clone(), elem2.clone()], tup_span.clone());
+        let tuple = Expression::Tuple(vec![elem1.clone(), elem2], tup_span);
         let pos_elem1 = Position::new(1, 15, 15);
         assert_eq!(tuple.expr_at_position(&pos_elem1), Some(&elem1));
         let pos_tup_pad = Position::new(1, 2, 2);
@@ -1021,7 +1052,7 @@ mod tests {
         let obj_span = Span::new(0, 60, 1, 1, 1, 61);
         let key = Expression::String("k".to_string(), Span::new(5, 15, 1, 6, 1, 16));
         let val = Expression::String("v".to_string(), Span::new(20, 30, 1, 21, 1, 31));
-        let obj = Expression::Object(vec![(key.clone(), val.clone())], obj_span.clone());
+        let obj = Expression::Object(vec![(key.clone(), val.clone())], obj_span);
         let pos_key = Position::new(1, 10, 10);
         assert_eq!(obj.expr_at_position(&pos_key), Some(&key));
         let pos_val = Position::new(1, 25, 25);
@@ -1039,7 +1070,7 @@ mod tests {
                     Span::new(15, 30, 1, 16, 1, 31),
                 )],
             }),
-            trav_span.clone(),
+            trav_span,
         );
         let pos_idx = Position::new(1, 22, 22);
         assert_eq!(trav.expr_at_position(&pos_idx), Some(&idx_sub));
@@ -1055,12 +1086,16 @@ mod tests {
                 args: vec![arg.clone()],
                 expand_final: false,
             }),
-            fc_span.clone(),
+            fc_span,
         );
         let pos_arg = Position::new(1, 15, 15);
         assert_eq!(fc.expr_at_position(&pos_arg), Some(&arg));
         let pos_fc_pad = Position::new(1, 8, 8);
         assert_eq!(fc.expr_at_position(&pos_fc_pad), Some(&fc));
+    }
+    #[test]
+    fn test_expr_at_position_operators_and_leaves() {
+        use crate::span::Position;
         let cond_span = Span::new(0, 60, 1, 1, 1, 61);
         let c_cond = Expression::Bool(true, Span::new(0, 10, 1, 1, 1, 11));
         let c_true = Expression::Number(Number::from(1), Span::new(15, 25, 1, 16, 1, 26));
@@ -1071,7 +1106,7 @@ mod tests {
                 true_expr: c_true.clone(),
                 false_expr: c_false.clone(),
             }),
-            cond_span.clone(),
+            cond_span,
         );
         let pos_c_cond = Position::new(1, 5, 5);
         assert_eq!(cond.expr_at_position(&pos_c_cond), Some(&c_cond));
@@ -1088,7 +1123,7 @@ mod tests {
             BinaryOp::Add,
             Box::new(b_lhs.clone()),
             Box::new(b_rhs.clone()),
-            bin_span.clone(),
+            bin_span,
         );
         let pos_b_lhs = Position::new(1, 5, 5);
         assert_eq!(bin.expr_at_position(&pos_b_lhs), Some(&b_lhs));
@@ -1098,16 +1133,16 @@ mod tests {
         assert_eq!(bin.expr_at_position(&pos_bin_pad), Some(&bin));
         let un_span = Span::new(0, 20, 1, 1, 1, 21);
         let u_inner = Expression::Bool(false, Span::new(5, 15, 1, 6, 1, 16));
-        let un = Expression::UnaryOp(UnaryOp::Not, Box::new(u_inner.clone()), un_span.clone());
+        let un = Expression::UnaryOp(UnaryOp::Not, Box::new(u_inner.clone()), un_span);
         let pos_u_inner = Position::new(1, 10, 10);
         assert_eq!(un.expr_at_position(&pos_u_inner), Some(&u_inner));
         let pos_un_pad = Position::new(1, 2, 2);
         assert_eq!(un.expr_at_position(&pos_un_pad), Some(&un));
         let par_span = Span::new(0, 20, 1, 1, 1, 21);
         let p_inner = Expression::Number(Number::from(42), Span::new(5, 15, 1, 6, 1, 16));
-        let par = Expression::Parentheses(Box::new(p_inner.clone()), par_span.clone());
-        let pos_p_inner = Position::new(1, 10, 10);
-        assert_eq!(par.expr_at_position(&pos_p_inner), Some(&p_inner));
+        let par = Expression::Parentheses(Box::new(p_inner.clone()), par_span);
+        let pos_paren_inner = Position::new(1, 10, 10);
+        assert_eq!(par.expr_at_position(&pos_paren_inner), Some(&p_inner));
         let pos_par_pad = Position::new(1, 2, 2);
         assert_eq!(par.expr_at_position(&pos_par_pad), Some(&par));
         let for_span = Span::new(0, 100, 1, 1, 1, 101);
@@ -1125,7 +1160,7 @@ mod tests {
                 cond_expr: Some(Box::new(cond_e.clone())),
                 grouping: false,
             }),
-            for_span.clone(),
+            for_span,
         );
         let pos_coll = Position::new(1, 15, 15);
         assert_eq!(full_for.expr_at_position(&pos_coll), Some(&coll));
@@ -1143,15 +1178,18 @@ mod tests {
         let bool_e = Expression::Bool(true, s_leaf.clone());
         let num_e = Expression::Number(Number::from(1), s_leaf.clone());
         let str_e = Expression::String("s".to_string(), s_leaf.clone());
-        let var_e = Expression::Variable("x".to_string(), s_leaf.clone());
+        let variable_expr = Expression::Variable("x".to_string(), s_leaf);
         assert_eq!(null_e.expr_at_position(&pos_leaf), Some(&null_e));
         assert_eq!(bool_e.expr_at_position(&pos_leaf), Some(&bool_e));
         assert_eq!(num_e.expr_at_position(&pos_leaf), Some(&num_e));
         assert_eq!(str_e.expr_at_position(&pos_leaf), Some(&str_e));
-        assert_eq!(var_e.expr_at_position(&pos_leaf), Some(&var_e));
+        assert_eq!(
+            variable_expr.expr_at_position(&pos_leaf),
+            Some(&variable_expr)
+        );
     }
     #[test]
-    fn test_template_and_directive_expr_at_branches() {
+    fn test_directive_expr_at_branches() {
         use crate::span::Position;
         let if_cond = Expression::Bool(true, Span::new(0, 15, 1, 1, 1, 16));
         let true_sub = Expression::Variable("t_var".to_string(), Span::new(25, 35, 1, 26, 1, 36));
@@ -1212,7 +1250,7 @@ mod tests {
             None
         );
         let if_dir_no_false = Directive::If {
-            cond: if_cond.clone(),
+            cond: if_cond,
             true_expr: vec![],
             else_ifs: vec![],
             false_expr: None,
@@ -1249,6 +1287,18 @@ mod tests {
             strip_right: true,
         };
         assert_eq!(directive_expr_at(&strip_dir, &Position::new(1, 5, 5)), None);
+    }
+    #[test]
+    fn test_template_expr_at_branches() {
+        use crate::span::Position;
+        let if_cond = Expression::Bool(true, Span::new(31, 40, 1, 32, 1, 41));
+        let elif_cond = Expression::Bool(false, Span::new(45, 55, 1, 46, 1, 56));
+        let if_dir = Directive::If {
+            cond: if_cond,
+            true_expr: vec![],
+            else_ifs: vec![(elif_cond.clone(), vec![])],
+            false_expr: None,
+        };
         let tmpl_span = Span::new(0, 100, 1, 1, 1, 101);
         let interp_var = Expression::Variable("v".to_string(), Span::new(15, 25, 1, 16, 1, 26));
         let tmpl = Expression::Template(
@@ -1257,7 +1307,7 @@ mod tests {
                 TemplatePart::Interpolation(interp_var.clone(), Span::new(10, 30, 1, 11, 1, 31)),
                 TemplatePart::Directive(if_dir, Span::new(30, 90, 1, 31, 1, 91)),
             ],
-            tmpl_span.clone(),
+            tmpl_span,
         );
         assert_eq!(
             tmpl.expr_at_position(&Position::new(1, 20, 20)),
@@ -1272,6 +1322,7 @@ mod tests {
         assert_eq!(tmpl.expr_at_position(&pos_in_dir_inner), Some(&elif_cond));
         let pos_in_dir_none = Position::new(1, 88, 88);
         assert_eq!(tmpl.expr_at_position(&pos_in_dir_none), Some(&tmpl));
+        let for_coll = Expression::Variable("my_coll".to_string(), Span::new(0, 15, 1, 1, 1, 16));
         let for_body_lit =
             TemplatePart::Literal("txt".to_string(), Span::new(35, 40, 1, 36, 1, 41));
         let for_body_sub =

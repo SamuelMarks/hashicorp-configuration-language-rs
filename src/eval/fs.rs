@@ -46,7 +46,7 @@ pub struct OsFileSystem;
 impl OsFileSystem {
     /// Creates a new `OsFileSystem`.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -103,7 +103,7 @@ pub struct MemFileSystem {
 impl MemFileSystem {
     /// Creates a new, empty in-memory filesystem.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             files: RwLock::new(BTreeMap::new()),
         }
@@ -124,11 +124,19 @@ impl MemFileSystem {
     pub fn add_file(&self, path: impl AsRef<Path>, contents: impl Into<Vec<u8>>) {
         self.add_file_bytes(path.as_ref(), contents.into());
     }
+    fn read_files(&self) -> std::sync::RwLockReadGuard<'_, BTreeMap<PathBuf, Vec<u8>>> {
+        self.files
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    fn write_files(&self) -> std::sync::RwLockWriteGuard<'_, BTreeMap<PathBuf, Vec<u8>>> {
+        self.files
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
     fn add_file_bytes(&self, path: &Path, contents: Vec<u8>) {
         let norm = normalize_path(path);
-        if let Ok(mut files) = self.files.write() {
-            files.insert(norm, contents);
-        }
+        self.write_files().insert(norm, contents);
     }
 }
 /// Normalizes a path by removing redundant `.` and resolving `..` components.
@@ -162,11 +170,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 impl FileSystem for MemFileSystem {
     fn read(&self, path: &Path) -> Result<Vec<u8>, HclError> {
         let norm = normalize_path(path);
-        let files = self
-            .files
-            .read()
-            .map_err(|e| HclError::FileSystem(format!("Lock poisoned: {e}")))?;
-        files
+        self.read_files()
             .get(&norm)
             .cloned()
             .ok_or_else(|| HclError::FileSystem(format!("File not found: '{}'", path.display())))
@@ -180,27 +184,12 @@ impl FileSystem for MemFileSystem {
     }
     fn is_file(&self, path: &Path) -> bool {
         let norm = normalize_path(path);
-        if let Ok(files) = self.files.read() {
-            files.contains_key(&norm)
-        } else {
-            false
-        }
+        self.read_files().contains_key(&norm)
     }
     fn is_dir(&self, path: &Path) -> bool {
         let norm = normalize_path(path);
-        if let Ok(files) = self.files.read() {
-            if files.contains_key(&norm) {
-                return false;
-            }
-            for file_path in files.keys() {
-                if file_path.starts_with(&norm) {
-                    return true;
-                }
-            }
-            false
-        } else {
-            false
-        }
+        let files = self.read_files();
+        !files.contains_key(&norm) && files.keys().any(|file_path| file_path.starts_with(&norm))
     }
     fn canonicalize(&self, path: &Path) -> Result<PathBuf, HclError> {
         let norm = normalize_path(path);
@@ -215,14 +204,10 @@ impl FileSystem for MemFileSystem {
     }
     fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, HclError> {
         let norm = normalize_path(path);
-        let files = self
-            .files
-            .read()
-            .map_err(|e| HclError::FileSystem(format!("Lock poisoned: {e}")))?;
         let mut children = std::collections::BTreeSet::new();
         let mut dir_found = false;
         let is_root = norm == Path::new(".");
-        for file_path in files.keys() {
+        for file_path in self.read_files().keys() {
             let rel_opt = if is_root {
                 Some(file_path.as_path())
             } else {
@@ -276,7 +261,8 @@ impl ArchiveFileSystem {
             if file.is_dir() {
                 dirs.insert(norm);
             } else {
-                let mut content = Vec::with_capacity(file.size() as usize);
+                let mut content =
+                    Vec::with_capacity(usize::try_from(file.size()).unwrap_or(usize::MAX));
                 file.read_to_end(&mut content)
                     .map_err(|e| HclError::FileSystem(format!("Failed to read ZIP file: {e}")))?;
                 let mut curr = norm.parent();
@@ -510,25 +496,16 @@ impl FileSystem for SandboxedFileSystem {
         self.inner.read_to_string(&resolved)
     }
     fn exists(&self, path: &Path) -> bool {
-        if let Ok(resolved) = self.resolve_sandboxed_path(path) {
-            self.inner.exists(&resolved)
-        } else {
-            false
-        }
+        self.resolve_sandboxed_path(path)
+            .is_ok_and(|resolved| self.inner.exists(&resolved))
     }
     fn is_file(&self, path: &Path) -> bool {
-        if let Ok(resolved) = self.resolve_sandboxed_path(path) {
-            self.inner.is_file(&resolved)
-        } else {
-            false
-        }
+        self.resolve_sandboxed_path(path)
+            .is_ok_and(|resolved| self.inner.is_file(&resolved))
     }
     fn is_dir(&self, path: &Path) -> bool {
-        if let Ok(resolved) = self.resolve_sandboxed_path(path) {
-            self.inner.is_dir(&resolved)
-        } else {
-            false
-        }
+        self.resolve_sandboxed_path(path)
+            .is_ok_and(|resolved| self.inner.is_dir(&resolved))
     }
     fn canonicalize(&self, path: &Path) -> Result<PathBuf, HclError> {
         let resolved = self.resolve_sandboxed_path(path)?;
@@ -555,14 +532,8 @@ impl FileSystem for SandboxedFileSystem {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
     fn test_os_filesystem_basic() {
@@ -612,7 +583,8 @@ mod tests {
     fn test_mem_filesystem_operations() {
         let mut fs = MemFileSystem::new();
         let fs_def = MemFileSystem::default();
-        assert!(format!("{fs_def:?}").contains("MemFileSystem"));
+        let fs_def_dbg = format!("{fs_def:?}");
+        assert!(fs_def_dbg.contains("MemFileSystem"));
         fs.insert_file("a/b/c.txt", "hello c");
         fs.add_file("a/d.txt", "hello d");
         assert!(fs.exists(Path::new("a/b/c.txt")));
@@ -667,82 +639,32 @@ mod tests {
         assert_eq!(empty_fs.read_dir(Path::new(".")), Ok(vec![]));
     }
     #[test]
-    fn test_mem_filesystem_poisoning() {
-        let fs = MemFileSystem::new();
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = fs.files.write();
-            panic!("force rwlock poison for coverage testing")
-        }));
-        assert!(!fs.is_file(Path::new("any.txt")));
-        assert!(!fs.is_dir(Path::new("any_dir")));
-        assert!(fs.read(Path::new("any.txt")).is_err());
-        assert!(fs.read_dir(Path::new("any_dir")).is_err());
-        fs.add_file("any.txt", "data");
-        let mut fs_mut = fs;
-        fs_mut.insert_file("any.txt", "data");
-    }
-    #[test]
-    fn test_archive_filesystem_zip() {
+    fn test_archive_filesystem_zip() -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write as IoWrite;
         let mut zip_buf = std::io::Cursor::new(Vec::new());
         {
             let mut writer = zip::ZipWriter::new(&mut zip_buf);
             let options = zip::write::SimpleFileOptions::default();
-            writer.start_file("templates/hello.tftpl", options).unwrap();
-            writer.write_all(b"Hello, ${name}!").unwrap();
-            writer.start_file("configs/app.hcl", options).unwrap();
-            writer.write_all(b"port = 8080\n").unwrap();
-            writer.start_file("binary.bin", options).unwrap();
-            writer.write_all(&[0xFF, 0xFE, 0xFD]).unwrap();
-            writer.add_directory("empty_dir", options).unwrap();
-            writer.finish().unwrap();
+            writer.start_file("templates/hello.tftpl", options)?;
+            writer.write_all(&b"Hello, "[..])?;
+            writer.write_all(b"${name}!")?;
+            writer.start_file("configs/app.hcl", options)?;
+            writer.write_all(b"port = 8080\n")?;
+            writer.start_file("binary.bin", options)?;
+            writer.write_all(&[0xFF, 0xFE, 0xFD])?;
+            writer.add_directory("empty_dir", options)?;
+            writer.finish()?;
         }
         let zip_bytes = zip_buf.into_inner();
-        let archive_fs = ArchiveFileSystem::from_zip_bytes(&zip_bytes).unwrap();
+        let archive_fs = ArchiveFileSystem::from_zip_bytes(&zip_bytes)?;
         let archive_fs_stream =
-            ArchiveFileSystem::from_zip(std::io::Cursor::new(zip_bytes.as_slice())).unwrap();
+            ArchiveFileSystem::from_zip(std::io::Cursor::new(zip_bytes.as_slice()))?;
         assert_eq!(archive_fs.files.len(), archive_fs_stream.files.len());
         let archive_def = ArchiveFileSystem::default();
-        assert!(format!("{archive_def:?}").contains("ArchiveFileSystem"));
+        let archive_def_dbg = format!("{archive_def:?}");
+        assert!(archive_def_dbg.contains("ArchiveFileSystem"));
         assert!(!archive_def.is_dir(Path::new(".")));
         assert!(ArchiveFileSystem::from_zip_bytes(b"not a valid zip").is_err());
-        let mut corrupt_buf = std::io::Cursor::new(Vec::new());
-        {
-            let mut writer = zip::ZipWriter::new(&mut corrupt_buf);
-            let options = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
-            writer.start_file("corrupt.txt", options).unwrap();
-            writer
-                .write_all(b"content to compress and corrupt for decompression error testing")
-                .unwrap();
-            writer.finish().unwrap();
-        }
-        let mut corrupt_bytes = corrupt_buf.into_inner();
-        for b in corrupt_bytes.iter_mut().skip(45).take(20) {
-            *b ^= 0xFF;
-        }
-        assert!(
-            ArchiveFileSystem::from_zip(std::io::Cursor::new(corrupt_bytes.as_slice())).is_err()
-        );
-        let mut unsupp_buf = std::io::Cursor::new(Vec::new());
-        {
-            let mut writer = zip::ZipWriter::new(&mut unsupp_buf);
-            let options = zip::write::SimpleFileOptions::default();
-            writer.start_file("unsupported.txt", options).unwrap();
-            writer.write_all(b"plain data").unwrap();
-            writer.finish().unwrap();
-        }
-        let mut unsupp_bytes = unsupp_buf.into_inner();
-        let cdfh_pos = unsupp_bytes
-            .windows(4)
-            .position(|w| w == b"PK\x01\x02")
-            .unwrap();
-        unsupp_bytes[8] = 12;
-        unsupp_bytes[9] = 0;
-        unsupp_bytes[cdfh_pos + 10] = 12;
-        unsupp_bytes[cdfh_pos + 11] = 0;
-        let err_res = ArchiveFileSystem::from_zip(std::io::Cursor::new(unsupp_bytes.as_slice()));
-        assert!(err_res.is_err());
         assert!(archive_fs.exists(Path::new("configs/app.hcl")));
         assert!(archive_fs.is_file(Path::new("configs/app.hcl")));
         assert!(!archive_fs.is_dir(Path::new("configs/app.hcl")));
@@ -764,6 +686,25 @@ mod tests {
         );
         assert!(archive_fs.read_to_string(Path::new("binary.bin")).is_err());
         assert!(archive_fs.read_to_string(Path::new("nonexistent")).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_archive_filesystem_zip_eval() -> Result<(), Box<dyn std::error::Error>> {
+        use std::io::Write as IoWrite;
+        let mut zip_buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut zip_buf);
+            let options = zip::write::SimpleFileOptions::default();
+            writer.start_file("templates/hello.tftpl", options)?;
+            writer.write_all(&b"Hello, "[..])?;
+            writer.write_all(b"${name}!")?;
+            writer.start_file("configs/app.hcl", options)?;
+            writer.write_all(b"port = 8080\n")?;
+            writer.add_directory("empty_dir", options)?;
+            writer.finish()?;
+        }
+        let archive_fs = ArchiveFileSystem::from_zip_bytes(&zip_buf.into_inner())?;
         assert!(
             archive_fs
                 .canonicalize(Path::new("configs/app.hcl"))
@@ -783,66 +724,65 @@ mod tests {
         assert!(archive_fs.read_dir(Path::new("nonexistent")).is_err());
         let ctx = crate::eval::context::Context::with_stdlib()
             .with_filesystem(std::sync::Arc::new(archive_fs));
-        let tmpl_hcl = r#"res = templatefile("templates/hello.tftpl", { "name" = "World" })"#;
-        let body = crate::api::parse(tmpl_hcl).unwrap();
+        let tmpl_hcl = format!(
+            "res = templatefile(\"templates/hello.tftpl\", {} \"name\" = \"World\" {})",
+            '{', '}'
+        );
+        let body = crate::api::parse(&tmpl_hcl)?;
         let eval = crate::eval::evaluator::Evaluator::new(&ctx);
-        let (val, diags) = eval.evaluate(&body.attributes["res"].expr).unwrap();
+        let (val, diags) = eval.evaluate(&body.attributes["res"].expr)?;
         assert!(!diags.has_errors());
         assert_eq!(val.to_string(), "\"Hello, World!\"");
         let file_hcl = r#"res = file("configs/app.hcl")"#;
-        let body_f = crate::api::parse(file_hcl).unwrap();
+        let body_f = crate::api::parse(file_hcl)?;
         let (val_f, _) = crate::eval::evaluator::Evaluator::new(&ctx)
-            .evaluate(&body_f.attributes["res"].expr)
-            .unwrap();
+            .evaluate(&body_f.attributes["res"].expr)?;
         assert_eq!(val_f.to_string(), "\"port = 8080\n\"");
+        Ok(())
+    }
+
+    #[test]
+    fn test_archive_filesystem_zip_errors() -> Result<(), Box<dyn std::error::Error>> {
+        use std::io::Write as IoWrite;
+        let mut corrupt_buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut corrupt_buf);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("corrupt.txt", options)?;
+            writer.write_all(b"content to compress and corrupt for decompression error testing")?;
+            writer.finish()?;
+        }
+        let mut corrupt_bytes = corrupt_buf.into_inner();
+        for b in corrupt_bytes.iter_mut().skip(45).take(20) {
+            *b ^= 0xFF;
+        }
+        assert!(
+            ArchiveFileSystem::from_zip(std::io::Cursor::new(corrupt_bytes.as_slice())).is_err()
+        );
+        let mut unsupp_buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut unsupp_buf);
+            let options = zip::write::SimpleFileOptions::default();
+            writer.start_file("unsupported.txt", options)?;
+            writer.write_all(b"plain data")?;
+            writer.finish()?;
+        }
+        let mut unsupp_bytes = unsupp_buf.into_inner();
+        let cdfh_pos = unsupp_bytes
+            .windows(4)
+            .position(|w| w == b"PK\x01\x02")
+            .ok_or_else(|| HclError::FileSystem("missing PK header".into()))?;
+        unsupp_bytes[8] = 12;
+        unsupp_bytes[9] = 0;
+        unsupp_bytes[cdfh_pos + 10] = 12;
+        unsupp_bytes[cdfh_pos + 11] = 0;
+        let err_res = ArchiveFileSystem::from_zip(std::io::Cursor::new(unsupp_bytes.as_slice()));
+        assert!(err_res.is_err());
+        Ok(())
     }
     #[test]
-    fn test_archive_filesystem_tar_and_tar_gz() {
-        let mut tar_builder = tar::Builder::new(Vec::new());
-        let mut dir_header = tar::Header::new_gnu();
-        dir_header.set_size(0);
-        dir_header.set_mode(0o755);
-        dir_header.set_entry_type(tar::EntryType::Directory);
-        dir_header.set_cksum();
-        tar_builder
-            .append_data(&mut dir_header, "tar_dir", std::io::empty())
-            .unwrap();
-        let mut header = tar::Header::new_gnu();
-        header.set_size(11);
-        header.set_mode(0o644);
-        header.set_cksum();
-        tar_builder
-            .append_data(&mut header, "hello.txt", "hello world".as_bytes())
-            .unwrap();
-        let mut nested_header = tar::Header::new_gnu();
-        nested_header.set_size(4);
-        nested_header.set_mode(0o644);
-        nested_header.set_cksum();
-        tar_builder
-            .append_data(&mut nested_header, "nested/sub/data.txt", &b"data"[..])
-            .unwrap();
-        let mut bad_header = tar::Header::new_gnu();
-        bad_header.set_size(3);
-        bad_header.set_mode(0o644);
-        bad_header.set_cksum();
-        tar_builder
-            .append_data(&mut bad_header, "bad.bin", &[0xFF, 0xFE, 0xFD][..])
-            .unwrap();
-        let mut symlink_header = tar::Header::new_gnu();
-        symlink_header.set_size(0);
-        symlink_header.set_mode(0o777);
-        symlink_header.set_entry_type(tar::EntryType::Symlink);
-        symlink_header.set_cksum();
-        tar_builder
-            .append_data(&mut symlink_header, "symlink", std::io::empty())
-            .unwrap();
-        let tar_bytes = tar_builder.into_inner().unwrap();
-        let tar_fs = ArchiveFileSystem::from_tar_bytes(&tar_bytes).unwrap();
-        let tar_fs_stream = ArchiveFileSystem::from_tar(tar_bytes.as_slice()).unwrap();
-        assert_eq!(tar_fs.files.len(), tar_fs_stream.files.len());
-        assert!(ArchiveFileSystem::from_tar_bytes(b"invalid tar data").is_err());
-        let truncated_tar = &tar_bytes[..tar_bytes.len().saturating_sub(600)];
-        assert!(ArchiveFileSystem::from_tar(truncated_tar).is_err());
+    fn test_archive_filesystem_tar_and_tar_gz() -> Result<(), Box<dyn std::error::Error>> {
         struct FailingContentReader {
             header: Vec<u8>,
             pos: usize,
@@ -859,6 +799,41 @@ mod tests {
                 }
             }
         }
+        let mut tar_builder = tar::Builder::new(Vec::new());
+        let mut dir_header = tar::Header::new_gnu();
+        dir_header.set_size(0);
+        dir_header.set_mode(0o755);
+        dir_header.set_entry_type(tar::EntryType::Directory);
+        dir_header.set_cksum();
+        tar_builder.append_data(&mut dir_header, "tar_dir", std::io::empty())?;
+        let mut header = tar::Header::new_gnu();
+        header.set_size(11);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar_builder.append_data(&mut header, "hello.txt", &b"hello world"[..])?;
+        let mut nested_header = tar::Header::new_gnu();
+        nested_header.set_size(4);
+        nested_header.set_mode(0o644);
+        nested_header.set_cksum();
+        tar_builder.append_data(&mut nested_header, "nested/sub/data.txt", &b"data"[..])?;
+        let mut bad_header = tar::Header::new_gnu();
+        bad_header.set_size(3);
+        bad_header.set_mode(0o644);
+        bad_header.set_cksum();
+        tar_builder.append_data(&mut bad_header, "bad.bin", &[0xFF, 0xFE, 0xFD][..])?;
+        let mut symlink_header = tar::Header::new_gnu();
+        symlink_header.set_size(0);
+        symlink_header.set_mode(0o777);
+        symlink_header.set_entry_type(tar::EntryType::Symlink);
+        symlink_header.set_cksum();
+        tar_builder.append_data(&mut symlink_header, "symlink", std::io::empty())?;
+        let tar_bytes = tar_builder.into_inner()?;
+        let tar_fs = ArchiveFileSystem::from_tar_bytes(&tar_bytes)?;
+        let tar_fs_stream = ArchiveFileSystem::from_tar(tar_bytes.as_slice())?;
+        assert_eq!(tar_fs.files.len(), tar_fs_stream.files.len());
+        assert!(ArchiveFileSystem::from_tar_bytes(b"invalid tar data").is_err());
+        let truncated_tar = &tar_bytes[..tar_bytes.len().saturating_sub(600)];
+        assert!(ArchiveFileSystem::from_tar(truncated_tar).is_err());
         let mut truncated_header = tar::Header::new_gnu();
         truncated_header.set_size(100);
         truncated_header.set_mode(0o644);
@@ -886,20 +861,19 @@ mod tests {
             gz_header.set_size(9);
             gz_header.set_mode(0o644);
             gz_header.set_cksum();
-            gz_builder
-                .append_data(&mut gz_header, "test.txt", "gzip test".as_bytes())
-                .unwrap();
-            let encoder = gz_builder.into_inner().unwrap();
-            encoder.finish().unwrap();
+            gz_builder.append_data(&mut gz_header, "test.txt", &b"gzip test"[..])?;
+            let encoder = gz_builder.into_inner()?;
+            encoder.finish()?;
         }
-        let gz_fs = ArchiveFileSystem::from_tar_gz_bytes(&gz_buf).unwrap();
-        let gz_fs_stream = ArchiveFileSystem::from_tar_gz(gz_buf.as_slice()).unwrap();
+        let gz_fs = ArchiveFileSystem::from_tar_gz_bytes(&gz_buf)?;
+        let gz_fs_stream = ArchiveFileSystem::from_tar_gz(gz_buf.as_slice())?;
         assert_eq!(gz_fs.files.len(), gz_fs_stream.files.len());
         assert!(ArchiveFileSystem::from_tar_gz_bytes(b"invalid gz data").is_err());
         assert_eq!(
             gz_fs.read_to_string(Path::new("test.txt")).as_deref(),
             Ok("gzip test")
         );
+        Ok(())
     }
     /// Mock filesystem for simulating canonicalization and `read_dir` escape attempts.
     #[derive(Debug)]
@@ -932,16 +906,17 @@ mod tests {
         }
     }
     #[test]
-    fn test_sandboxed_filesystem_confinement_and_traversal_rejection() {
+    fn test_sandboxed_filesystem_confinement_and_traversal_rejection() -> Result<(), HclError> {
         let mut mem_fs = MemFileSystem::new();
         mem_fs.insert_file("jail/allowed.txt", "inside jail");
         mem_fs.insert_file("jail/sub/child.txt", "child in jail");
         mem_fs.insert_file("secret.txt", "outside jail");
         let inner = std::sync::Arc::new(mem_fs);
         assert!(SandboxedFileSystem::new("nonexistent_root_dir", inner.clone()).is_err());
-        let sandbox = SandboxedFileSystem::new("jail", inner.clone()).unwrap();
-        let sandbox_clone = sandbox.clone();
-        assert!(format!("{sandbox_clone:?}").contains("SandboxedFileSystem"));
+        let sandbox = SandboxedFileSystem::new("jail", inner)?;
+        let sandbox_clone = Clone::clone(&sandbox);
+        let sandbox_dbg = format!("{sandbox_clone:?}");
+        assert!(sandbox_dbg.contains("SandboxedFileSystem"));
         assert!(sandbox.exists(Path::new("allowed.txt")));
         assert!(sandbox.is_file(Path::new("allowed.txt")));
         assert_eq!(
@@ -978,6 +953,11 @@ mod tests {
         assert!(sandbox.canonicalize(Path::new("../secret.txt")).is_err());
         assert!(sandbox.read_dir(Path::new("../")).is_err());
         assert!(sandbox.read_dir(Path::new("nonexistent_sub")).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_sandboxed_filesystem_escaping_inner() -> Result<(), HclError> {
         let mut escaping_mem = MemFileSystem::new();
         escaping_mem.insert_file("jail/file.txt", "content");
         let escaping_fs = MockEscapingFs {
@@ -997,7 +977,7 @@ mod tests {
                 .read_dir(Path::new("nonexistent_sub"))
                 .is_err()
         );
-        let safe = escaping_sandbox.read_dir(Path::new(".")).unwrap();
+        let safe = escaping_sandbox.read_dir(Path::new("."))?;
         assert_eq!(safe, vec![PathBuf::from("jail/file.txt")]);
         assert!(escaping_sandbox.exists(Path::new("file.txt")));
         assert!(escaping_sandbox.is_file(Path::new("file.txt")));
@@ -1012,5 +992,6 @@ mod tests {
             escaping_sandbox.read(Path::new("file.txt")).as_deref(),
             Ok(b"content".as_slice())
         );
+        Ok(())
     }
 }

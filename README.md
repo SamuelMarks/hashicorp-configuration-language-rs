@@ -3,8 +3,8 @@ hashicorp-configuration-language-rs
 
 [![License](https://img.shields.io/badge/license-CC0%20OR%20Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/SamuelMarks/hashicorp-configuration-language-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/hashicorp-configuration-language-rs/actions/workflows/ci.yml)
-![Test Coverage](https://img.shields.io/badge/Test%20Coverage-99.9%25-brightgreen)
-![Doc Coverage](https://img.shields.io/badge/Doc%20Coverage-99.8%25-brightgreen)
+![Test Coverage](https://img.shields.io/badge/Test%20Coverage-100.0%25-brightgreen)
+![Doc Coverage](https://img.shields.io/badge/Doc%20Coverage-100.0%25-brightgreen)
 
 A production-grade, spec-compliant, 100% native Rust implementation of the **HashiCorp Configuration Language (HCL2)** and the **`cty` type system**.
 
@@ -166,9 +166,6 @@ cargo run --bin hcl-repl
 
 # Configuration and schema validator
 cargo run --bin hcl-validate -- <FILE>
-
-# Parity test runner against reference Go implementations
-cargo run --bin grounding
 ```
 
 ---

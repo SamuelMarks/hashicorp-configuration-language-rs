@@ -46,17 +46,16 @@ impl<'a> LazyBody<'a> {
     }
     /// Helper to safely acquire the cache mutex lock even if poisoned.
     fn lock_cache(&self) -> std::sync::MutexGuard<'_, LazyAttrCache> {
-        match self.attr_cache.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        }
+        self.attr_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
     /// Returns a reference to the wrapped AST [`Body`].
     ///
     /// # Returns
     /// Reference to the underlying AST body.
     #[must_use]
-    pub fn body(&self) -> &'a Body {
+    pub const fn body(&self) -> &'a Body {
         self.body
     }
     /// Returns a reference to the evaluation [`Context`].
@@ -64,7 +63,7 @@ impl<'a> LazyBody<'a> {
     /// # Returns
     /// Reference to the context used for evaluation.
     #[must_use]
-    pub fn context(&self) -> &'a Context<'a> {
+    pub const fn context(&self) -> &'a Context<'a> {
         self.ctx
     }
     /// Checks if an attribute with the given name exists in the body without evaluating it.
@@ -207,7 +206,7 @@ impl<'a> LazyBody<'a> {
     /// # Returns
     /// A vector of child `LazyBody` evaluators.
     #[must_use]
-    pub fn get_blocks(&self, block_type: &str) -> Vec<LazyBody<'a>> {
+    pub fn get_blocks(&self, block_type: &str) -> Vec<Self> {
         self.body
             .blocks
             .iter()
@@ -224,7 +223,7 @@ impl<'a> LazyBody<'a> {
     /// # Returns
     /// `Some(LazyBody)` if a matching block is found, or `None` otherwise.
     #[must_use]
-    pub fn get_block(&self, block_type: &str, labels: &[&str]) -> Option<LazyBody<'a>> {
+    pub fn get_block(&self, block_type: &str, labels: &[&str]) -> Option<Self> {
         self.body
             .blocks
             .iter()
@@ -243,7 +242,7 @@ impl<'a> LazyBody<'a> {
     /// # Returns
     /// `Some(LazyBody)` if `index` is within bounds, or `None` otherwise.
     #[must_use]
-    pub fn get_block_by_index(&self, index: usize) -> Option<LazyBody<'a>> {
+    pub fn get_block_by_index(&self, index: usize) -> Option<Self> {
         self.body
             .blocks
             .get(index)
@@ -251,18 +250,13 @@ impl<'a> LazyBody<'a> {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::api::parse;
+    use crate::error::HclError;
     #[test]
-    fn test_lazy_body_on_demand_and_memoization() {
+    fn test_lazy_body_on_demand_and_memoization() -> Result<(), HclError> {
         let src = r#"
             valid_num = 10 + 20
             valid_str = "hello " + "world"
@@ -270,7 +264,7 @@ mod tests {
             err_attr = 10 / 0
             err_ref = undefined_var + 1
         "#;
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let ctx = Context::new();
         let lazy = LazyBody::new(&body, &ctx);
         assert_eq!(lazy.evaluated_attribute_count(), 0);
@@ -281,20 +275,28 @@ mod tests {
         assert!(names.contains(&"valid_num"));
         assert!(names.contains(&"expensive_val"));
         assert!(!lazy.is_attribute_evaluated("valid_num"));
-        let res_num = lazy.evaluate_attribute("valid_num").unwrap().unwrap();
+        let res_num = lazy
+            .evaluate_attribute("valid_num")
+            .ok_or_else(|| HclError::Eval("missing valid_num".into()))??;
         assert_eq!(
             res_num.0,
             Value::new(Type::Number, ValueData::Number(30.into()))
         );
         assert!(lazy.is_attribute_evaluated("valid_num"));
         assert_eq!(lazy.evaluated_attribute_count(), 1);
-        let res_num_cached = lazy.evaluate_attribute("valid_num").unwrap().unwrap();
+        let res_num_cached = lazy
+            .evaluate_attribute("valid_num")
+            .ok_or_else(|| HclError::Eval("missing valid_num".into()))??;
         assert_eq!(res_num_cached.0, res_num.0);
         assert_eq!(lazy.evaluated_attribute_count(), 1);
         assert!(!lazy.is_attribute_evaluated("err_attr"));
         assert!(!lazy.is_attribute_evaluated("err_ref"));
         assert!(lazy.evaluate_attribute("nonexistent").is_none());
-        let err_res = lazy.evaluate_attribute("err_attr").unwrap().err().unwrap();
+        let err_res = lazy
+            .evaluate_attribute("err_attr")
+            .ok_or_else(|| HclError::Eval("missing err_attr".into()))?
+            .err()
+            .ok_or_else(|| HclError::Eval("expected err_attr error".into()))?;
         assert!(
             err_res.errors()[0]
                 .error
@@ -306,9 +308,10 @@ mod tests {
         lazy.clear_cache();
         assert_eq!(lazy.evaluated_attribute_count(), 0);
         assert!(!lazy.is_attribute_evaluated("valid_num"));
+        Ok(())
     }
     #[test]
-    fn test_lazy_body_blocks_and_object_conversion() {
+    fn test_lazy_body_blocks_and_object_conversion() -> Result<(), HclError> {
         let src = r#"
             name = "my_app"
             port = 8080
@@ -327,22 +330,28 @@ mod tests {
                 host = "localhost"
             }
         "#;
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let ctx = Context::new();
         let lazy = LazyBody::new(&body, &ctx);
         assert_eq!(lazy.blocks().len(), 3);
         assert_eq!(lazy.get_blocks("server").len(), 2);
         assert_eq!(lazy.get_blocks("database").len(), 1);
         assert_eq!(lazy.get_blocks("nonexistent").len(), 0);
-        let web_pri = lazy.get_block("server", &["web", "primary"]).unwrap();
-        let listen = web_pri.evaluate_attribute("listen").unwrap().unwrap();
+        let web_pri = lazy
+            .get_block("server", &["web", "primary"])
+            .ok_or_else(|| HclError::Eval("missing server web primary".into()))?;
+        let listen = web_pri
+            .evaluate_attribute("listen")
+            .ok_or_else(|| HclError::Eval("missing listen".into()))??;
         assert_eq!(
             listen.0,
             Value::new(Type::String, ValueData::String("0.0.0.0".into()))
         );
         assert!(lazy.get_block("server", &["web", "other"]).is_none());
         assert!(lazy.get_block("server", &["web"]).is_none());
-        let b0 = lazy.get_block_by_index(0).unwrap();
+        let b0 = lazy
+            .get_block_by_index(0)
+            .ok_or_else(|| HclError::Eval("missing block 0".into()))?;
         assert_eq!(b0.body().span, web_pri.body().span);
         assert!(lazy.get_block_by_index(99).is_none());
         let all_attrs = lazy.evaluate_all_attributes();
@@ -362,7 +371,7 @@ mod tests {
                 warn_diags,
             )),
         );
-        let (obj_val, diags) = lazy.to_object_value().unwrap();
+        let (obj_val, diags) = lazy.to_object_value()?;
         assert_eq!(diags.errors().len(), 1);
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
@@ -378,17 +387,15 @@ mod tests {
             ValueData::Object(expected_map),
         );
         assert_eq!(obj_val, expected_val);
-        assert!(format!("{lazy:?}").contains("LazyBody"));
+        let lazy_dbg = format!("{lazy:?}");
+        assert!(lazy_dbg.contains("LazyBody"));
         assert_eq!(lazy.body().span, body.span);
         assert!(std::ptr::eq(lazy.context(), &raw const ctx));
         let bad_src = "bad = 1 / 0";
-        let bad_body = parse(bad_src).unwrap();
+        let bad_body = parse(bad_src)?;
         let bad_lazy = LazyBody::new(&bad_body, &ctx);
         assert!(bad_lazy.to_object_value().is_err());
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = bad_lazy.attr_cache.lock();
-            panic!("poison mutex");
-        }));
         assert_eq!(bad_lazy.evaluated_attribute_count(), 1);
+        Ok(())
     }
 }

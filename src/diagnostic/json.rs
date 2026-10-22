@@ -129,7 +129,7 @@ impl DiagnosticJson {
         } else {
             Severity::Error
         };
-        let subject = if let Some(ref r) = self.range {
+        let subject = self.range.as_ref().map_or_else(Span::default, |r| {
             let file = if r.filename.is_empty() {
                 None
             } else {
@@ -144,9 +144,7 @@ impl DiagnosticJson {
                 r.end.column,
                 file,
             )
-        } else {
-            Span::default()
-        };
+        });
         let error = HclError::Parse(self.summary.clone());
         let mut diag = Diagnostic::new(error, subject);
         diag.severity = severity;
@@ -216,13 +214,6 @@ pub fn diagnostics_from_json(json_str: &str) -> Result<Diagnostics, HclError> {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     struct FailingSerialize;
     impl serde::Serialize for FailingSerialize {
@@ -234,7 +225,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_diagnostic_json_roundtrip() {
+    fn test_diagnostic_json_roundtrip() -> Result<(), HclError> {
         let span = Span::new_with_file(0, 10, 1, 1, 1, 11, Some(std::sync::Arc::from("test.hcl")));
         let mut diag = Diagnostic::new(HclError::Parse("Syntax error".to_string()), span);
         diag.summary = Some("Syntax error".to_string());
@@ -243,14 +234,14 @@ mod tests {
         let source = "foo = bar
 baz = 123
 ";
-        let json_str = diagnostics_to_json(&Diagnostics::from(diag.clone()), Some(source)).unwrap();
+        let json_str = diagnostics_to_json(&Diagnostics::from(diag), Some(source))?;
         assert!(json_str.contains("\"severity\": \"error\""));
         assert!(json_str.contains("\"summary\": \"Syntax error\""));
         assert!(json_str.contains("\"detail\": \"Unexpected token found\""));
         assert!(json_str.contains("\"address\": \"resource.aws_instance.foo\""));
         assert!(json_str.contains("\"filename\": \"test.hcl\""));
         assert!(json_str.contains("\"code\": \"foo = bar\""));
-        let deserialized = diagnostics_from_json(&json_str).unwrap();
+        let deserialized = diagnostics_from_json(&json_str)?;
         assert_eq!(deserialized.errors().len(), 1);
         let d = &deserialized.errors()[0];
         assert_eq!(d.severity, Severity::Error);
@@ -259,19 +250,21 @@ baz = 123
         assert_eq!(d.address, Some("resource.aws_instance.foo".to_string()));
         assert_eq!(d.subject.start_line, 1);
         assert_eq!(d.subject.start_col, 1);
+        Ok(())
     }
     #[test]
-    fn test_diagnostic_json_warning_and_no_source() {
+    fn test_diagnostic_json_warning_and_no_source() -> Result<(), HclError> {
         let span = Span::default();
         let mut diag = Diagnostic::new(HclError::Lint("Unused var".to_string()), span);
         diag.severity = Severity::Warning;
         diag.summary = Some("Unused var".to_string());
-        let json_str = diagnostics_to_json(&Diagnostics::from(diag), None).unwrap();
+        let json_str = diagnostics_to_json(&Diagnostics::from(diag), None)?;
         assert!(json_str.contains("\"severity\": \"warning\""));
         assert!(!json_str.contains("\"snippet\""));
-        let deserialized = diagnostics_from_json(&json_str).unwrap();
+        let deserialized = diagnostics_from_json(&json_str)?;
         assert_eq!(deserialized.errors().len(), 1);
         assert_eq!(deserialized.errors()[0].severity, Severity::Warning);
+        Ok(())
     }
     #[test]
     fn test_extract_snippet_empty_or_out_of_bounds() {

@@ -1,20 +1,25 @@
 //! Continuous integration and batch validation CLI tool (`hcl-validate`).
+#![cfg_attr(all(coverage_nightly, test), feature(coverage_attribute))]
 #![deny(missing_docs)]
+#![deny(rustdoc::missing_crate_level_docs)]
+#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use hashicorp_configuration_language_rs::analysis::Linter;
 use hashicorp_configuration_language_rs::analysis::type_check::TypeChecker;
 use hashicorp_configuration_language_rs::ast::schema::{
     AttributeSchema, BlockHeaderSchema, BodySchema,
 };
 use hashicorp_configuration_language_rs::diagnostic::{Diagnostics, Severity};
+use hashicorp_configuration_language_rs::error::HclError;
 use hashicorp_configuration_language_rs::parse::parser::Parser;
 use hashicorp_configuration_language_rs::types::Type;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-#[cfg(not(test))]
-use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
 /// Command-line configuration options for `hcl-validate`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ValidateOptions {
@@ -27,6 +32,7 @@ pub struct ValidateOptions {
     /// Target files or directories to validate.
     pub targets: Vec<String>,
 }
+
 /// JSON schema representation for loading declarative validation schemas.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SchemaSpecJson {
@@ -37,6 +43,7 @@ pub struct SchemaSpecJson {
     #[serde(default)]
     pub blocks: HashMap<String, BlockSpecJson>,
 }
+
 impl SchemaSpecJson {
     /// Converts this JSON schema specification into a strongly-typed [`BodySchema`].
     #[must_use]
@@ -65,6 +72,7 @@ impl SchemaSpecJson {
         schema
     }
 }
+
 /// Parses a type name string into an HCL [`Type`].
 ///
 /// # Arguments
@@ -80,6 +88,7 @@ fn parse_type_str(s: &str) -> Type {
         _ => Type::Dynamic,
     }
 }
+
 /// Attribute specification in JSON schema format.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AttrSpecJson {
@@ -93,6 +102,7 @@ pub struct AttrSpecJson {
     #[serde(default)]
     pub r#type: Option<String>,
 }
+
 /// Block specification in JSON schema format.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BlockSpecJson {
@@ -106,16 +116,17 @@ pub struct BlockSpecJson {
     #[serde(default)]
     pub body: Option<SchemaSpecJson>,
 }
+
 /// Parses CLI arguments into [`ValidateOptions`].
 ///
 /// # Arguments
 /// * `args` - The command-line argument strings.
 ///
 /// # Errors
-/// Returns an error message if unknown flags or missing arguments are encountered.
+/// Returns [`HclError::CliArgs`] if unknown flags or missing arguments are encountered.
 pub fn parse_validate_args<I: IntoIterator<Item = String>>(
     args: I,
-) -> Result<ValidateOptions, String> {
+) -> Result<ValidateOptions, HclError> {
     let mut opts = ValidateOptions::default();
     let mut iter = args.into_iter();
     while let Some(arg) = iter.next() {
@@ -123,19 +134,19 @@ pub fn parse_validate_args<I: IntoIterator<Item = String>>(
             "--strict" => opts.strict = true,
             "--json" => opts.json = true,
             "--schema" => {
-                let schema_file = iter
-                    .next()
-                    .ok_or_else(|| "Missing argument for --schema".to_string())?;
+                let schema_file = iter.next().ok_or_else(|| {
+                    HclError::CliArgs("Missing argument for --schema".to_string())
+                })?;
                 opts.schema_path = Some(schema_file);
             }
             "-h" | "--help" => {
-                return Err(
+                return Err(HclError::CliArgs(
                     "Usage: hcl-validate [--schema <schema.json>] [--strict] [--json] [file/dir ...]"
                         .to_string(),
-                );
+                ));
             }
             flag if flag.starts_with('-') => {
-                return Err(format!("Unknown flag '{flag}'"));
+                return Err(HclError::CliArgs(format!("Unknown flag '{flag}'")));
             }
             target => opts.targets.push(target.to_string()),
         }
@@ -145,17 +156,21 @@ pub fn parse_validate_args<I: IntoIterator<Item = String>>(
     }
     Ok(opts)
 }
+
 /// Recursively discovers target `.hcl` and `.tf` files from a path string.
 ///
 /// # Arguments
 /// * `target` - File or directory path.
 ///
 /// # Errors
-/// Returns error string on I/O failure.
-pub fn collect_validate_files(target: &str) -> Result<Vec<PathBuf>, String> {
+/// Returns [`HclError::Io`] on I/O failure.
+pub fn collect_validate_files(target: &str) -> Result<Vec<PathBuf>, HclError> {
     let path = Path::new(target);
     if !path.exists() {
-        return Err(format!("Path '{}' does not exist", path.display()));
+        return Err(HclError::Io(format!(
+            "Path '{}' does not exist",
+            path.display()
+        )));
     }
     if path.is_file() {
         return Ok(vec![path.to_path_buf()]);
@@ -165,6 +180,7 @@ pub fn collect_validate_files(target: &str) -> Result<Vec<PathBuf>, String> {
     files.sort();
     Ok(files)
 }
+
 /// Recursively walks a directory looking for `.hcl` and `.tf` files.
 ///
 /// # Arguments
@@ -172,10 +188,10 @@ pub fn collect_validate_files(target: &str) -> Result<Vec<PathBuf>, String> {
 /// * `files` - Output vector collecting matched file paths.
 ///
 /// # Errors
-/// Returns an error string if reading the directory fails.
-fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+/// Returns [`HclError::Io`] if reading the directory fails.
+fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), HclError> {
     let entries = fs::read_dir(dir)
-        .map_err(|e| format!("Failed to read directory '{}': {e}", dir.display()))?;
+        .map_err(|e| HclError::Io(format!("Failed to read directory '{}': {e}", dir.display())))?;
     for entry in entries.flatten() {
         let p = entry.path();
         if p.is_dir() {
@@ -190,6 +206,7 @@ fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
     }
     Ok(())
 }
+
 /// Runs validation on target files, writing diagnostic outputs and returning an exit code.
 ///
 /// Exit codes:
@@ -203,17 +220,17 @@ fn walk_directory(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
 /// * `stderr` - Error stream.
 ///
 /// # Errors
-/// Returns an error string on unrecoverable I/O or configuration failure.
+/// Returns [`HclError`] on unrecoverable I/O or configuration failure.
 pub fn run_validate<O: Write, E: Write>(
     opts: &ValidateOptions,
     stdout: &mut O,
     stderr: &mut E,
-) -> Result<i32, String> {
+) -> Result<i32, HclError> {
     let schema = if let Some(ref sp) = opts.schema_path {
         let content = fs::read_to_string(sp)
-            .map_err(|e| format!("Failed to read schema file '{sp}': {e}"))?;
+            .map_err(|e| HclError::Io(format!("Failed to read schema file '{sp}': {e}")))?;
         let spec: SchemaSpecJson = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse schema JSON '{sp}': {e}"))?;
+            .map_err(|e| HclError::Json(format!("Failed to parse schema JSON '{sp}': {e}")))?;
         Some(spec.to_body_schema())
     } else {
         None
@@ -232,7 +249,7 @@ pub fn run_validate<O: Write, E: Write>(
     for file_path in all_files {
         let display_name = file_path.to_string_lossy().to_string();
         let content = fs::read_to_string(&file_path)
-            .map_err(|e| format!("Failed to read file '{display_name}': {e}"))?;
+            .map_err(|e| HclError::Io(format!("Failed to read file '{display_name}': {e}")))?;
         let mut file_diags = Diagnostics::new();
         let mut parser = Parser::new(&content);
         let body = parser.parse_body();
@@ -261,27 +278,14 @@ pub fn run_validate<O: Write, E: Write>(
                     Severity::Error => "error",
                     Severity::Warning => "warning",
                 };
-                let _ = writeln!(
-                    stderr,
-                    "{}: {}: {}",
-                    display_name,
-                    level,
-                    diag.summary_str()
-                );
+                let _ = writeln!(stderr, "{display_name}: {level}: {}", diag.summary_str());
             }
         }
     }
     if had_errors {
         Ok(1)
-    } else if opts.strict {
-        if had_warnings {
-            Ok(2)
-        } else {
-            if !opts.json {
-                let _ = writeln!(stdout, "Success! The configuration is valid.");
-            }
-            Ok(0)
-        }
+    } else if opts.strict && had_warnings {
+        Ok(2)
     } else {
         if !opts.json {
             let _ = writeln!(stdout, "Success! The configuration is valid.");
@@ -289,44 +293,54 @@ pub fn run_validate<O: Write, E: Write>(
         Ok(0)
     }
 }
+
 #[cfg(test)]
 thread_local! {
-    static TEST_ARGS : std::cell::RefCell < Option < Vec < String >>> = const {
-    std::cell::RefCell::new(None) };
+    static TEST_ARGS: std::cell::RefCell<Option<Vec<String>>> = const {
+        std::cell::RefCell::new(None)
+    };
 }
+
 #[cfg(test)]
 fn set_test_args(args: Vec<String>) {
     TEST_ARGS.with(|a| *a.borrow_mut() = Some(args));
 }
+
 #[cfg(test)]
 fn get_test_args() -> Vec<String> {
-    match TEST_ARGS.with(|a| a.borrow_mut().take()) {
-        Some(args) => args,
-        None => vec!["--help".to_string()],
-    }
+    TEST_ARGS
+        .with(|a| a.borrow_mut().take())
+        .unwrap_or_else(|| vec!["--help".to_string()])
 }
+
 /// Main entry point for `hcl-validate`.
 ///
 /// # Errors
-/// Returns error string on validation failure.
-pub fn main() -> Result<(), String> {
+/// Returns [`HclError`] on validation failure.
+pub fn main() -> Result<(), HclError> {
     #[cfg(not(test))]
-    let args: Vec<String> = env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
     #[cfg(test)]
     let args: Vec<String> = get_test_args();
+
     let opts = parse_validate_args(args)?;
     let mut stdout = io::stdout();
     let mut stderr = io::stderr();
     let exit_code = run_validate(&opts, &mut stdout, &mut stderr)?;
-    if exit_code != 0 {
-        Err(format!("Validation failed with exit code {exit_code}"))
-    } else {
+    if exit_code == 0 {
         Ok(())
+    } else {
+        Err(HclError::Validation(format!(
+            "Validation failed with exit code {exit_code}"
+        )))
     }
 }
+
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+
     #[test]
     fn test_parse_type_str_variants() {
         assert_eq!(parse_type_str("string"), Type::String);
@@ -339,8 +353,9 @@ mod tests {
         assert_eq!(parse_type_str("set"), Type::Set(Box::new(Type::Dynamic)));
         assert_eq!(parse_type_str("custom_unknown"), Type::Dynamic);
     }
+
     #[test]
-    fn test_parse_validate_args_variations() {
+    fn test_parse_validate_args_variations() -> Result<(), HclError> {
         let args = vec![
             "--schema".to_string(),
             "schema.json".to_string(),
@@ -348,35 +363,37 @@ mod tests {
             "--json".to_string(),
             "config.hcl".to_string(),
         ];
-        let opts = parse_validate_args(args).expect("args ok");
+        let opts = parse_validate_args(args)?;
         assert_eq!(opts.schema_path, Some("schema.json".to_string()));
         assert!(opts.strict);
         assert!(opts.json);
         assert_eq!(opts.targets, vec!["config.hcl".to_string()]);
-        let opts_default =
-            parse_validate_args(vec!["--strict".to_string()]).expect("default target ok");
+        let opts_default = parse_validate_args(vec!["--strict".to_string()])?;
         assert_eq!(opts_default.targets, vec![".".to_string()]);
         let err_schema = parse_validate_args(vec!["--schema".to_string()]);
-        assert!(err_schema.is_err());
         assert_eq!(
-            err_schema.err().as_deref(),
-            Some("Missing argument for --schema")
+            err_schema,
+            Err(HclError::CliArgs(
+                "Missing argument for --schema".to_string()
+            ))
         );
         let err_h = parse_validate_args(vec!["-h".to_string()]);
-        assert!(err_h.expect_err("expected help").contains("Usage:"));
+        assert!(matches!(err_h, Err(HclError::CliArgs(ref s)) if s.contains("Usage:")));
         let err_help = parse_validate_args(vec!["--help".to_string()]);
-        assert!(err_help.expect_err("expected help").contains("Usage:"));
+        assert!(matches!(err_help, Err(HclError::CliArgs(ref s)) if s.contains("Usage:")));
         let err_unknown = parse_validate_args(vec!["--unknown-flag".to_string()]);
-        assert!(err_unknown.is_err());
         assert_eq!(
-            err_unknown.err().as_deref(),
-            Some("Unknown flag '--unknown-flag'")
+            err_unknown,
+            Err(HclError::CliArgs(
+                "Unknown flag '--unknown-flag'".to_string()
+            ))
         );
+        Ok(())
     }
+
     #[test]
-    fn test_schema_spec_json_to_body_schema_exhaustive() {
-        let json = r#"
-        {
+    fn test_schema_spec_json_to_body_schema_exhaustive() -> Result<(), HclError> {
+        let json = serde_json::json!({
             "attributes": {
                 "name": { "required": true, "type": "string", "description": "Resource name" },
                 "port": { "required": false, "type": "number" },
@@ -396,9 +413,9 @@ mod tests {
                     "labels": []
                 }
             }
-        }
-        "#;
-        let spec: SchemaSpecJson = serde_json::from_str(json).expect("deserialize schema json");
+        })
+        .to_string();
+        let spec: SchemaSpecJson = serde_json::from_str(&json)?;
         let body_schema = spec.to_body_schema();
         assert_eq!(body_schema.attributes.len(), 3);
         assert!(body_schema.attributes["name"].required);
@@ -420,27 +437,28 @@ mod tests {
         assert!(cluster.label_names.is_empty());
         assert_eq!(cluster.description, None);
         assert!(cluster.body_schema.is_none());
+        Ok(())
     }
+
     #[test]
-    fn test_collect_validate_files_and_walk() {
+    fn test_collect_validate_files_and_walk() -> Result<(), HclError> {
         assert!(collect_validate_files("nonexistent_path_definitely_absent_123").is_err());
         let dir = std::env::temp_dir().join(format!("hcl_validate_walk_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let file_path = dir.join("solo.hcl");
-        fs::write(&file_path, "a = 1\n").expect("write solo");
+        fs::write(&file_path, "a = 1\n")?;
         let mut err_files = Vec::new();
         assert!(walk_directory(&file_path, &mut err_files).is_err());
-        let single =
-            collect_validate_files(file_path.to_str().expect("to_str")).expect("collect single");
+        let single = collect_validate_files(&file_path.to_string_lossy())?;
         assert_eq!(single, vec![file_path.clone()]);
         let sub_dir = dir.join("sub");
         let _ = fs::create_dir_all(&sub_dir);
         let tf_file = sub_dir.join("main.tf");
-        fs::write(&tf_file, "b = 2\n").expect("write tf");
+        fs::write(&tf_file, "b = 2\n")?;
         let txt_file = sub_dir.join("notes.txt");
-        fs::write(&txt_file, "text").expect("write txt");
+        fs::write(&txt_file, "text")?;
         let no_ext = sub_dir.join("LICENSE");
-        fs::write(&no_ext, "MIT").expect("write no ext");
+        fs::write(&no_ext, "MIT")?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -459,26 +477,30 @@ mod tests {
             let _ = fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o755));
             let _ = fs::set_permissions(&child_unreadable, fs::Permissions::from_mode(0o755));
         }
-        let collected = collect_validate_files(dir.to_str().expect("to_str")).expect("collect dir");
+        let collected = collect_validate_files(&dir.to_string_lossy())?;
         assert!(collected.contains(&file_path));
         assert!(collected.contains(&tf_file));
         assert!(!collected.contains(&txt_file));
         assert!(!collected.contains(&no_ext));
         let _ = fs::remove_dir_all(&dir);
+        Ok(())
     }
+
     #[test]
-    fn test_run_validate_clean_and_errors() {
+    fn test_run_validate_clean_and_errors() -> Result<(), HclError> {
         let dir =
             std::env::temp_dir().join(format!("hcl_validate_clean_err_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let valid_file = dir.join("valid.hcl");
-        fs::write(&valid_file, "name = \"app\"\n").expect("write valid");
+        fs::write(&valid_file, "name = \"app\"\n")?;
         let schema_file = dir.join("schema.json");
         fs::write(
             &schema_file,
-            r#"{ "attributes": { "name": { "required": true, "type": "string" } } }"#,
-        )
-        .expect("write schema");
+            serde_json::json!({
+                "attributes": { "name": { "required": true, "type": "string" } }
+            })
+            .to_string(),
+        )?;
         let opts_clean = ValidateOptions {
             schema_path: Some(schema_file.to_string_lossy().to_string()),
             strict: false,
@@ -487,7 +509,7 @@ mod tests {
         };
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let code_clean = run_validate(&opts_clean, &mut stdout, &mut stderr).expect("validate ok");
+        let code_clean = run_validate(&opts_clean, &mut stdout, &mut stderr)?;
         assert_eq!(code_clean, 0);
         let stdout_str = String::from_utf8_lossy(&stdout);
         assert!(stdout_str.contains("Success! The configuration is valid."));
@@ -506,12 +528,11 @@ mod tests {
         };
         let mut stdout_cj = Vec::new();
         let mut stderr_cj = Vec::new();
-        let code_cj = run_validate(&opts_clean_json, &mut stdout_cj, &mut stderr_cj)
-            .expect("validate clean json");
+        let code_cj = run_validate(&opts_clean_json, &mut stdout_cj, &mut stderr_cj)?;
         assert_eq!(code_cj, 0);
         assert!(stdout_cj.is_empty());
         let bad_file = dir.join("bad.hcl");
-        fs::write(&bad_file, "{ invalid syntax").expect("write bad");
+        fs::write(&bad_file, "= invalid syntax")?;
         let opts_err = ValidateOptions {
             schema_path: None,
             strict: false,
@@ -520,8 +541,7 @@ mod tests {
         };
         let mut stdout_err = Vec::new();
         let mut stderr_err = Vec::new();
-        let code_err =
-            run_validate(&opts_err, &mut stdout_err, &mut stderr_err).expect("validate err ok");
+        let code_err = run_validate(&opts_err, &mut stdout_err, &mut stderr_err)?;
         assert_eq!(code_err, 1);
         assert!(!stderr_err.is_empty());
         let mut stdout_err_txt = Vec::new();
@@ -532,15 +552,16 @@ mod tests {
             json: false,
             targets: vec![bad_file.to_string_lossy().to_string()],
         };
-        let code_err_txt = run_validate(&opts_err_txt, &mut stdout_err_txt, &mut stderr_err_txt)
-            .expect("validate err txt");
+        let code_err_txt = run_validate(&opts_err_txt, &mut stdout_err_txt, &mut stderr_err_txt)?;
         assert_eq!(code_err_txt, 1);
         let err_txt_str = String::from_utf8_lossy(&stderr_err_txt);
         assert!(err_txt_str.contains("error:"));
         let _ = fs::remove_dir_all(&dir);
+        Ok(())
     }
+
     #[test]
-    fn test_run_validate_schema_checking_and_read_errors() {
+    fn test_run_validate_schema_checking_and_read_errors() -> Result<(), HclError> {
         let dir =
             std::env::temp_dir().join(format!("hcl_validate_schema_err_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
@@ -554,7 +575,7 @@ mod tests {
         let mut stderr = Vec::new();
         assert!(run_validate(&opts_missing_schema, &mut stdout, &mut stderr).is_err());
         let bad_json_file = dir.join("invalid_schema.json");
-        fs::write(&bad_json_file, "invalid json {").expect("write bad json");
+        fs::write(&bad_json_file, "invalid json [")?;
         let opts_bad_json = ValidateOptions {
             schema_path: Some(bad_json_file.to_string_lossy().to_string()),
             strict: false,
@@ -563,7 +584,7 @@ mod tests {
         };
         assert!(run_validate(&opts_bad_json, &mut stdout, &mut stderr).is_err());
         let bad_utf8_file = dir.join("bad_utf8.hcl");
-        fs::write(&bad_utf8_file, [0xFF, 0xFE, 0xFD]).expect("write non utf8");
+        fs::write(&bad_utf8_file, [0xFF, 0xFE, 0xFD])?;
         let opts_bad_utf8 = ValidateOptions {
             schema_path: None,
             strict: false,
@@ -574,28 +595,31 @@ mod tests {
         let schema_file = dir.join("strict_schema.json");
         fs::write(
             &schema_file,
-            r#"{ "attributes": { "req_key": { "required": true, "type": "string" } } }"#,
-        )
-        .expect("write schema");
+            serde_json::json!({
+                "attributes": { "req_key": { "required": true, "type": "string" } }
+            })
+            .to_string(),
+        )?;
         let incomplete_hcl = dir.join("incomplete.hcl");
-        fs::write(&incomplete_hcl, "other_key = 123\n").expect("write incomplete");
+        fs::write(&incomplete_hcl, "other_key = 123\n")?;
         let opts_schema_mismatch = ValidateOptions {
             schema_path: Some(schema_file.to_string_lossy().to_string()),
             strict: false,
             json: false,
             targets: vec![incomplete_hcl.to_string_lossy().to_string()],
         };
-        let code_mismatch =
-            run_validate(&opts_schema_mismatch, &mut stdout, &mut stderr).expect("run ok");
+        let code_mismatch = run_validate(&opts_schema_mismatch, &mut stdout, &mut stderr)?;
         assert_eq!(code_mismatch, 1);
         let _ = fs::remove_dir_all(&dir);
+        Ok(())
     }
+
     #[test]
-    fn test_run_validate_strict_warnings() {
+    fn test_run_validate_strict_warnings() -> Result<(), HclError> {
         let dir = std::env::temp_dir().join(format!("hcl_validate_strict_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let warn_file = dir.join("warn.hcl");
-        fs::write(&warn_file, "val = true ? 1 : 2\n").expect("write warn");
+        fs::write(&warn_file, "val = true ? 1 : 2\n")?;
         let opts_strict = ValidateOptions {
             schema_path: None,
             strict: true,
@@ -604,8 +628,7 @@ mod tests {
         };
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let code_strict =
-            run_validate(&opts_strict, &mut stdout, &mut stderr).expect("strict validate");
+        let code_strict = run_validate(&opts_strict, &mut stdout, &mut stderr)?;
         assert_eq!(code_strict, 2);
         let stderr_str = String::from_utf8_lossy(&stderr);
         assert!(stderr_str.contains("warning:"));
@@ -617,70 +640,67 @@ mod tests {
         };
         let mut stdout_ns = Vec::new();
         let mut stderr_ns = Vec::new();
-        let code_ns =
-            run_validate(&opts_non_strict, &mut stdout_ns, &mut stderr_ns).expect("non strict");
+        let code_ns = run_validate(&opts_non_strict, &mut stdout_ns, &mut stderr_ns)?;
         assert_eq!(code_ns, 0);
         let clean_file = dir.join("clean.hcl");
-        fs::write(&clean_file, "a = 10\n").expect("write clean");
+        fs::write(&clean_file, "a = 10\n")?;
         let opts_clean_strict = ValidateOptions {
             schema_path: None,
             strict: true,
             json: false,
             targets: vec![clean_file.to_string_lossy().to_string()],
         };
-        let mut stdout_cs = Vec::new();
-        let mut stderr_cs = Vec::new();
-        let code_cs =
-            run_validate(&opts_clean_strict, &mut stdout_cs, &mut stderr_cs).expect("clean strict");
-        assert_eq!(code_cs, 0);
+        let mut stdout_clean = Vec::new();
+        let mut stderr_clean = Vec::new();
+        let code_clean = run_validate(&opts_clean_strict, &mut stdout_clean, &mut stderr_clean)?;
+        assert_eq!(code_clean, 0);
         let _ = fs::remove_dir_all(&dir);
+        Ok(())
     }
+
     #[test]
     fn test_validate_options_and_specs_derives() {
         let opts = ValidateOptions::default();
-        let opts_clone = opts.clone();
-        assert_eq!(opts, opts_clone);
-        assert!(format!("{opts:?}").contains("ValidateOptions"));
+        assert_eq!(opts.clone(), opts);
+        let opts_dbg = format!("{opts:?}");
+        assert!(opts_dbg.contains("ValidateOptions"));
         let attr = AttrSpecJson::default();
-        let attr_clone = attr.clone();
-        assert!(format!("{attr_clone:?}").contains("AttrSpecJson"));
+        let attr_clone = Clone::clone(&attr);
+        assert_eq!(format!("{attr:?}"), format!("{attr_clone:?}"));
         let block = BlockSpecJson::default();
-        let block_clone = block.clone();
-        assert!(format!("{block_clone:?}").contains("BlockSpecJson"));
+        let block_clone = Clone::clone(&block);
+        assert_eq!(format!("{block:?}"), format!("{block_clone:?}"));
         let schema = SchemaSpecJson::default();
-        let schema_clone = schema.clone();
-        assert!(format!("{schema_clone:?}").contains("SchemaSpecJson"));
+        let schema_clone = Clone::clone(&schema);
+        assert_eq!(format!("{schema:?}"), format!("{schema_clone:?}"));
     }
+
     #[test]
-    fn test_main_function() {
+    fn test_main_function() -> Result<(), HclError> {
         let dir = std::env::temp_dir().join(format!("hcl_validate_main_{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let valid_file = dir.join("valid.hcl");
-        fs::write(&valid_file, "foo = \"bar\"\n").expect("write valid");
+        fs::write(&valid_file, "foo = \"bar\"\n")?;
         set_test_args(vec![valid_file.to_string_lossy().to_string()]);
         assert!(main().is_ok());
         let bad_file = dir.join("bad.hcl");
-        fs::write(&bad_file, "{ syntax error").expect("write bad");
+        fs::write(&bad_file, "= syntax error")?;
         set_test_args(vec![bad_file.to_string_lossy().to_string()]);
         let res_err = main();
         assert!(
-            res_err
-                .expect_err("expected failure")
-                .contains("Validation failed with exit code 1")
+            matches!(res_err, Err(HclError::Validation(ref s)) if s.contains("Validation failed with exit code 1"))
         );
         set_test_args(vec!["--unknown".to_string()]);
         let res_arg_err = main();
+        assert!(matches!(res_arg_err, Err(HclError::CliArgs(ref s)) if s.contains("Unknown flag")));
+
+        set_test_args(vec!["--schema".to_string()]);
+        let res_schema_err = main();
         assert!(
-            res_arg_err
-                .expect_err("expected parse error")
-                .contains("Unknown flag")
+            matches!(res_schema_err, Err(HclError::CliArgs(ref s)) if s.contains("Missing argument for --schema"))
         );
         let res_default = main();
-        assert!(
-            res_default
-                .expect_err("expected help error")
-                .contains("Usage:")
-        );
+        assert!(matches!(res_default, Err(HclError::CliArgs(ref s)) if s.contains("Usage:")));
         set_test_args(vec![
             "--schema".to_string(),
             dir.join("nonexistent_schema.json")
@@ -690,7 +710,7 @@ mod tests {
         ]);
         assert!(main().is_err());
         let bad_schema = dir.join("bad_schema.json");
-        fs::write(&bad_schema, "not json {").expect("write bad schema");
+        fs::write(&bad_schema, "not json [")?;
         set_test_args(vec![
             "--schema".to_string(),
             bad_schema.to_string_lossy().to_string(),
@@ -698,7 +718,7 @@ mod tests {
         ]);
         assert!(main().is_err());
         let bad_utf8 = dir.join("bad_utf8.hcl");
-        fs::write(&bad_utf8, [0xFF, 0xFE]).expect("write bad utf8");
+        fs::write(&bad_utf8, [0xFF, 0xFE])?;
         set_test_args(vec![bad_utf8.to_string_lossy().to_string()]);
         assert!(main().is_err());
         set_test_args(vec![
@@ -712,17 +732,16 @@ mod tests {
         ]);
         assert!(main().is_ok());
         let warn_file = dir.join("warn.hcl");
-        fs::write(&warn_file, "val = true ? 1 : 2\n").expect("write warn");
+        fs::write(&warn_file, "val = true ? 1 : 2\n")?;
         set_test_args(vec![
             "--strict".to_string(),
             warn_file.to_string_lossy().to_string(),
         ]);
         let res_warn_strict = main();
         assert!(
-            res_warn_strict
-                .expect_err("expected warn exit")
-                .contains("Validation failed with exit code 2")
+            matches!(res_warn_strict, Err(HclError::Validation(ref s)) if s.contains("Validation failed with exit code 2"))
         );
         let _ = fs::remove_dir_all(&dir);
+        Ok(())
     }
 }

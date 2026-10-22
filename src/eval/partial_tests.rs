@@ -1,11 +1,4 @@
 //! Unit and property tests for partial evaluation and expression reduction.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
 use crate::api::parse;
 use crate::ast::expr::{
     BinaryOp, Conditional, Directive, Expression, ForExpr, FuncCall, NamespacedIdent, TemplatePart,
@@ -14,6 +7,7 @@ use crate::ast::expr::{
 use crate::ast::structure::{
     Attribute, Block, Body, DynamicBlock, PostconditionBlock, PreconditionBlock, ValidationBlock,
 };
+use crate::error::HclError;
 use crate::eval::context::Context;
 use crate::eval::evaluator::Evaluator;
 use crate::eval::partial::{partial_eval, partial_eval_body, value_to_expression};
@@ -21,44 +15,46 @@ use crate::number::Number;
 use crate::span::Span;
 use crate::types::{Type, Value, ValueData};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-fn empty_span() -> Span {
+const fn empty_span() -> Span {
     Span::new(0, 0, 0, 0, 0, 0)
 }
 #[test]
-fn test_partial_eval_literals() {
+fn test_partial_eval_literals() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let null_expr = Expression::Null(span.clone());
-    assert_eq!(partial_eval(&null_expr, &ctx).unwrap(), null_expr);
+    assert_eq!(partial_eval(&null_expr, &ctx)?, null_expr);
     let bool_expr = Expression::Bool(true, span.clone());
-    assert_eq!(partial_eval(&bool_expr, &ctx).unwrap(), bool_expr);
+    assert_eq!(partial_eval(&bool_expr, &ctx)?, bool_expr);
     let num_expr = Expression::Number(Number::from(42), span.clone());
-    assert_eq!(partial_eval(&num_expr, &ctx).unwrap(), num_expr);
-    let str_expr = Expression::String("hello".to_string(), span.clone());
-    assert_eq!(partial_eval(&str_expr, &ctx).unwrap(), str_expr);
+    assert_eq!(partial_eval(&num_expr, &ctx)?, num_expr);
+    let str_expr = Expression::String("hello".to_string(), span);
+    assert_eq!(partial_eval(&str_expr, &ctx)?, str_expr);
+    Ok(())
 }
 #[test]
-fn test_partial_eval_parentheses() {
+fn test_partial_eval_parentheses() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let paren_lit = Expression::Parentheses(
         Box::new(Expression::Number(Number::from(10), span.clone())),
         span.clone(),
     );
-    let folded = partial_eval(&paren_lit, &ctx).unwrap();
+    let folded = partial_eval(&paren_lit, &ctx)?;
     assert_eq!(folded, Expression::Number(Number::from(10), span.clone()));
     let paren_unk = Expression::Parentheses(
         Box::new(Expression::Variable(
             "unknown_var".to_string(),
             span.clone(),
         )),
-        span.clone(),
+        span,
     );
-    let folded_unk = partial_eval(&paren_unk, &ctx).unwrap();
+    let folded_unk = partial_eval(&paren_unk, &ctx)?;
     assert!(matches!(folded_unk, Expression::Parentheses(..)));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_variables() {
+fn test_partial_eval_variables() -> Result<(), HclError> {
     let mut ctx = Context::new();
     let span = empty_span();
     ctx.set_variable(
@@ -72,27 +68,28 @@ fn test_partial_eval_variables() {
     ctx.set_variable("unknown_val", Value::unknown(Type::String));
     let var1 = Expression::Variable("known_num".to_string(), span.clone());
     assert_eq!(
-        partial_eval(&var1, &ctx).unwrap(),
+        partial_eval(&var1, &ctx)?,
         Expression::Number(Number::from(100), span.clone())
     );
     let var2 = Expression::Variable("known_str".to_string(), span.clone());
     assert_eq!(
-        partial_eval(&var2, &ctx).unwrap(),
+        partial_eval(&var2, &ctx)?,
         Expression::String("val".to_string(), span.clone())
     );
     let var_unk = Expression::Variable("unknown_val".to_string(), span.clone());
     assert_eq!(
-        partial_eval(&var_unk, &ctx).unwrap(),
+        partial_eval(&var_unk, &ctx)?,
         Expression::Variable("unknown_val".to_string(), span.clone())
     );
     let var_missing = Expression::Variable("missing".to_string(), span.clone());
     assert_eq!(
-        partial_eval(&var_missing, &ctx).unwrap(),
-        Expression::Variable("missing".to_string(), span.clone())
+        partial_eval(&var_missing, &ctx)?,
+        Expression::Variable("missing".to_string(), span)
     );
+    Ok(())
 }
 #[test]
-fn test_partial_eval_unary_ops() {
+fn test_partial_eval_unary_ops() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let not_true = Expression::UnaryOp(
@@ -101,7 +98,7 @@ fn test_partial_eval_unary_ops() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&not_true, &ctx).unwrap(),
+        partial_eval(&not_true, &ctx)?,
         Expression::Bool(false, span.clone())
     );
     let not_false = Expression::UnaryOp(
@@ -110,7 +107,7 @@ fn test_partial_eval_unary_ops() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&not_false, &ctx).unwrap(),
+        partial_eval(&not_false, &ctx)?,
         Expression::Bool(true, span.clone())
     );
     let neg_num = Expression::UnaryOp(
@@ -119,21 +116,22 @@ fn test_partial_eval_unary_ops() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&neg_num, &ctx).unwrap(),
+        partial_eval(&neg_num, &ctx)?,
         Expression::Number(Number::from(-10), span.clone())
     );
     let unk_neg = Expression::UnaryOp(
         UnaryOp::Neg,
         Box::new(Expression::Variable("x".to_string(), span.clone())),
-        span.clone(),
+        span,
     );
     assert!(matches!(
-        partial_eval(&unk_neg, &ctx).unwrap(),
+        partial_eval(&unk_neg, &ctx)?,
         Expression::UnaryOp(UnaryOp::Neg, ..)
     ));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_binary_arithmetic() {
+fn test_partial_eval_binary_arithmetic() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let add = Expression::BinaryOp(
@@ -143,7 +141,7 @@ fn test_partial_eval_binary_arithmetic() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&add, &ctx).unwrap(),
+        partial_eval(&add, &ctx)?,
         Expression::Number(Number::from(30), span.clone())
     );
     let sub = Expression::BinaryOp(
@@ -153,7 +151,7 @@ fn test_partial_eval_binary_arithmetic() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&sub, &ctx).unwrap(),
+        partial_eval(&sub, &ctx)?,
         Expression::Number(Number::from(20), span.clone())
     );
     let mul = Expression::BinaryOp(
@@ -163,7 +161,7 @@ fn test_partial_eval_binary_arithmetic() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&mul, &ctx).unwrap(),
+        partial_eval(&mul, &ctx)?,
         Expression::Number(Number::from(42), span.clone())
     );
     let div = Expression::BinaryOp(
@@ -173,7 +171,7 @@ fn test_partial_eval_binary_arithmetic() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&div, &ctx).unwrap(),
+        partial_eval(&div, &ctx)?,
         Expression::Number(Number::from(25), span.clone())
     );
     let rem = Expression::BinaryOp(
@@ -183,7 +181,7 @@ fn test_partial_eval_binary_arithmetic() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&rem, &ctx).unwrap(),
+        partial_eval(&rem, &ctx)?,
         Expression::Number(Number::from(1), span.clone())
     );
     let div_zero = Expression::BinaryOp(
@@ -192,7 +190,9 @@ fn test_partial_eval_binary_arithmetic() {
         Box::new(Expression::Number(Number::from(0), span.clone())),
         span.clone(),
     );
-    let err = partial_eval(&div_zero, &ctx).err().unwrap();
+    let err = partial_eval(&div_zero, &ctx)
+        .err()
+        .ok_or_else(|| HclError::Eval("expected division by zero error".to_string()))?;
     assert!(err.has_errors());
     assert!(
         err.errors()[0]
@@ -204,13 +204,16 @@ fn test_partial_eval_binary_arithmetic() {
         BinaryOp::Mod,
         Box::new(Expression::Number(Number::from(10), span.clone())),
         Box::new(Expression::Number(Number::from(0), span.clone())),
-        span.clone(),
+        span,
     );
-    let err_mod = partial_eval(&mod_zero, &ctx).err().unwrap();
+    let err_mod = partial_eval(&mod_zero, &ctx)
+        .err()
+        .ok_or_else(|| HclError::Eval("expected modulo by zero error".to_string()))?;
     assert!(err_mod.has_errors());
+    Ok(())
 }
 #[test]
-fn test_partial_eval_binary_comparisons() {
+fn test_partial_eval_binary_comparisons() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let eq = Expression::BinaryOp(
@@ -220,7 +223,7 @@ fn test_partial_eval_binary_comparisons() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&eq, &ctx).unwrap(),
+        partial_eval(&eq, &ctx)?,
         Expression::Bool(true, span.clone())
     );
     let lt = Expression::BinaryOp(
@@ -230,7 +233,7 @@ fn test_partial_eval_binary_comparisons() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&lt, &ctx).unwrap(),
+        partial_eval(&lt, &ctx)?,
         Expression::Bool(true, span.clone())
     );
     let lte = Expression::BinaryOp(
@@ -240,7 +243,7 @@ fn test_partial_eval_binary_comparisons() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&lte, &ctx).unwrap(),
+        partial_eval(&lte, &ctx)?,
         Expression::Bool(true, span.clone())
     );
     let gt = Expression::BinaryOp(
@@ -250,7 +253,7 @@ fn test_partial_eval_binary_comparisons() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&gt, &ctx).unwrap(),
+        partial_eval(&gt, &ctx)?,
         Expression::Bool(true, span.clone())
     );
     let gte = Expression::BinaryOp(
@@ -260,7 +263,7 @@ fn test_partial_eval_binary_comparisons() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&gte, &ctx).unwrap(),
+        partial_eval(&gte, &ctx)?,
         Expression::Bool(true, span.clone())
     );
     let neq = Expression::BinaryOp(
@@ -269,13 +272,11 @@ fn test_partial_eval_binary_comparisons() {
         Box::new(Expression::String("b".to_string(), span.clone())),
         span.clone(),
     );
-    assert_eq!(
-        partial_eval(&neq, &ctx).unwrap(),
-        Expression::Bool(true, span.clone())
-    );
+    assert_eq!(partial_eval(&neq, &ctx)?, Expression::Bool(true, span));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_logical_short_circuit() {
+fn test_partial_eval_logical_short_circuit() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let false_and = Expression::BinaryOp(
@@ -285,7 +286,7 @@ fn test_partial_eval_logical_short_circuit() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&false_and, &ctx).unwrap(),
+        partial_eval(&false_and, &ctx)?,
         Expression::Bool(false, span.clone())
     );
     let true_or = Expression::BinaryOp(
@@ -295,7 +296,7 @@ fn test_partial_eval_logical_short_circuit() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&true_or, &ctx).unwrap(),
+        partial_eval(&true_or, &ctx)?,
         Expression::Bool(true, span.clone())
     );
     let true_and = Expression::BinaryOp(
@@ -305,7 +306,7 @@ fn test_partial_eval_logical_short_circuit() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&true_and, &ctx).unwrap(),
+        partial_eval(&true_and, &ctx)?,
         Expression::Variable("my_var".to_string(), span.clone())
     );
     let false_or = Expression::BinaryOp(
@@ -315,12 +316,13 @@ fn test_partial_eval_logical_short_circuit() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&false_or, &ctx).unwrap(),
-        Expression::Variable("my_var".to_string(), span.clone())
+        partial_eval(&false_or, &ctx)?,
+        Expression::Variable("my_var".to_string(), span)
     );
+    Ok(())
 }
 #[test]
-fn test_partial_eval_conditional_branch_pruning() {
+fn test_partial_eval_conditional_branch_pruning() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let cond_true = Expression::Conditional(
@@ -332,7 +334,7 @@ fn test_partial_eval_conditional_branch_pruning() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&cond_true, &ctx).unwrap(),
+        partial_eval(&cond_true, &ctx)?,
         Expression::Number(Number::from(1), span.clone())
     );
     let cond_false = Expression::Conditional(
@@ -344,7 +346,7 @@ fn test_partial_eval_conditional_branch_pruning() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&cond_false, &ctx).unwrap(),
+        partial_eval(&cond_false, &ctx)?,
         Expression::Number(Number::from(2), span.clone())
     );
     let cond_identical = Expression::Conditional(
@@ -356,12 +358,13 @@ fn test_partial_eval_conditional_branch_pruning() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&cond_identical, &ctx).unwrap(),
-        Expression::Number(Number::from(42), span.clone())
+        partial_eval(&cond_identical, &ctx)?,
+        Expression::Number(Number::from(42), span)
     );
+    Ok(())
 }
 #[test]
-fn test_partial_eval_collections_and_templates() {
+fn test_partial_eval_collections_and_templates() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let tuple = Expression::Tuple(
@@ -376,12 +379,17 @@ fn test_partial_eval_collections_and_templates() {
         ],
         span.clone(),
     );
-    let folded_tuple = partial_eval(&tuple, &ctx).unwrap();
-    if let Expression::Tuple(elems, _) = folded_tuple {
-        assert_eq!(elems[0], Expression::Number(Number::from(3), span.clone()));
-    } else {
-        panic!("expected tuple");
-    }
+    let folded_tuple = partial_eval(&tuple, &ctx)?;
+    assert_eq!(
+        folded_tuple,
+        Expression::Tuple(
+            vec![
+                Expression::Number(Number::from(3), span.clone()),
+                Expression::Number(Number::from(4), span.clone()),
+            ],
+            span.clone()
+        )
+    );
     let obj = Expression::Object(
         vec![(
             Expression::String("k".to_string(), span.clone()),
@@ -394,12 +402,17 @@ fn test_partial_eval_collections_and_templates() {
         )],
         span.clone(),
     );
-    let folded_obj = partial_eval(&obj, &ctx).unwrap();
-    if let Expression::Object(kvs, _) = folded_obj {
-        assert_eq!(kvs[0].1, Expression::Number(Number::from(10), span.clone()));
-    } else {
-        panic!("expected object");
-    }
+    let folded_obj = partial_eval(&obj, &ctx)?;
+    assert_eq!(
+        folded_obj,
+        Expression::Object(
+            vec![(
+                Expression::String("k".to_string(), span.clone()),
+                Expression::Number(Number::from(10), span.clone()),
+            )],
+            span.clone()
+        )
+    );
     let tmpl = Expression::Template(
         vec![
             TemplatePart::Literal("hello ".to_string(), span.clone()),
@@ -410,14 +423,15 @@ fn test_partial_eval_collections_and_templates() {
         ],
         span.clone(),
     );
-    let folded_tmpl = partial_eval(&tmpl, &ctx).unwrap();
+    let folded_tmpl = partial_eval(&tmpl, &ctx)?;
     assert_eq!(
         folded_tmpl,
-        Expression::String("hello world".to_string(), span.clone())
+        Expression::String("hello world".to_string(), span)
     );
+    Ok(())
 }
 #[test]
-fn test_partial_eval_deterministic_functions() {
+fn test_partial_eval_deterministic_functions() -> Result<(), HclError> {
     let ctx = Context::with_stdlib();
     let span = empty_span();
     let call_upper = Expression::FuncCall(
@@ -428,7 +442,7 @@ fn test_partial_eval_deterministic_functions() {
         }),
         span.clone(),
     );
-    let folded_upper = partial_eval(&call_upper, &ctx).unwrap();
+    let folded_upper = partial_eval(&call_upper, &ctx)?;
     assert_eq!(
         folded_upper,
         Expression::String("HELLO".to_string(), span.clone())
@@ -439,13 +453,14 @@ fn test_partial_eval_deterministic_functions() {
             args: vec![Expression::Variable("unk".to_string(), span.clone())],
             expand_final: false,
         }),
-        span.clone(),
+        span,
     );
-    let preserved = partial_eval(&call_with_unk, &ctx).unwrap();
+    let preserved = partial_eval(&call_with_unk, &ctx)?;
     assert!(matches!(preserved, Expression::FuncCall(..)));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_body_comprehensive() {
+fn test_partial_eval_body_comprehensive() -> Result<(), HclError> {
     let src = r#"
         a = 10 + 20
         b = var.external + 5
@@ -466,33 +481,31 @@ fn test_partial_eval_body_comprehensive() {
             }
         }
     "#;
-    let body = parse(src).unwrap();
+    let body = parse(src)?;
     let ctx = Context::new();
-    let reduced = partial_eval_body(&body, &ctx).unwrap();
-    if let Expression::Number(n, _) = &reduced.attributes["a"].expr {
-        assert_eq!(*n, Number::from(30));
-    } else {
-        panic!("expected number for attribute a");
-    }
+    let reduced = partial_eval_body(&body, &ctx)?;
+    assert!(matches!(
+        &reduced.attributes["a"].expr,
+        Expression::Number(n, _) if *n == Number::from(30)
+    ));
     assert!(matches!(
         reduced.attributes["b"].expr,
         Expression::BinaryOp(..)
     ));
     let sub_block = &reduced.blocks[0];
-    if let Expression::String(s, _) = &sub_block.body.attributes["c"].expr {
-        assert_eq!(s, "yes");
-    } else {
-        panic!("expected string for attribute c");
-    }
+    assert!(matches!(
+        &sub_block.body.attributes["c"].expr,
+        Expression::String(s, _) if s == "yes"
+    ));
     let dyn_block = &reduced.dynamic_blocks[0];
-    if let Expression::Number(n, _) = &dyn_block.content.attributes["inner"].expr {
-        assert_eq!(*n, Number::from(200));
-    } else {
-        panic!("expected number for inner attribute");
-    }
+    assert!(matches!(
+        &dyn_block.content.attributes["inner"].expr,
+        Expression::Number(n, _) if *n == Number::from(200)
+    ));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_idempotency() {
+fn test_partial_eval_idempotency() -> Result<(), HclError> {
     let ctx = Context::with_stdlib();
     let span = empty_span();
     let complex_expr = Expression::Conditional(
@@ -511,14 +524,15 @@ fn test_partial_eval_idempotency() {
             ),
             false_expr: Expression::Number(Number::from(0), span.clone()),
         }),
-        span.clone(),
+        span,
     );
-    let step1 = partial_eval(&complex_expr, &ctx).unwrap();
-    let step2 = partial_eval(&step1, &ctx).unwrap();
+    let step1 = partial_eval(&complex_expr, &ctx)?;
+    let step2 = partial_eval(&step1, &ctx)?;
     assert_eq!(step1, step2);
+    Ok(())
 }
 #[test]
-fn test_evaluator_partial_evaluate_method() {
+fn test_evaluator_partial_evaluate_method() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let evaluator = Evaluator::new(&ctx);
@@ -528,8 +542,9 @@ fn test_evaluator_partial_evaluate_method() {
         Box::new(Expression::Number(Number::from(4), span.clone())),
         span.clone(),
     );
-    let res = evaluator.partial_evaluate(&expr).unwrap();
+    let res = evaluator.partial_evaluate(&expr)?;
     assert_eq!(res, Expression::Number(Number::from(12), span));
+    Ok(())
 }
 #[test]
 fn test_value_to_expression_all_variants() {
@@ -608,342 +623,340 @@ fn test_value_to_expression_all_variants() {
     let cap_val = Value::capsule("custom_type", 99_i32);
     assert_eq!(
         value_to_expression(&cap_val, span.clone()),
-        Expression::Variable("__unknown__".to_string(), span.clone())
+        Expression::Variable("__unknown__".to_string(), span)
     );
 }
 #[test]
-fn test_partial_eval_binary_ops_exhaustive() {
+fn test_partial_eval_binary_ops_logical() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
-    {
-        let unk_and_t = Expression::BinaryOp(
-            BinaryOp::And,
-            Box::new(Expression::Variable("unk".to_string(), span.clone())),
-            Box::new(Expression::Bool(true, span.clone())),
-            span.clone(),
-        );
-        assert_eq!(
-            partial_eval(&unk_and_t, &ctx).unwrap(),
-            Expression::Variable("unk".to_string(), span.clone())
-        );
-        let unk_and_f = Expression::BinaryOp(
+    let unk_and_t = Expression::BinaryOp(
+        BinaryOp::And,
+        Box::new(Expression::Variable("unk".to_string(), span.clone())),
+        Box::new(Expression::Bool(true, span.clone())),
+        span.clone(),
+    );
+    assert_eq!(
+        partial_eval(&unk_and_t, &ctx)?,
+        Expression::Variable("unk".to_string(), span.clone())
+    );
+    let unk_and_f = Expression::BinaryOp(
+        BinaryOp::And,
+        Box::new(Expression::Variable("unk".to_string(), span.clone())),
+        Box::new(Expression::Bool(false, span.clone())),
+        span.clone(),
+    );
+    assert_eq!(
+        partial_eval(&unk_and_f, &ctx)?,
+        Expression::BinaryOp(
             BinaryOp::And,
             Box::new(Expression::Variable("unk".to_string(), span.clone())),
             Box::new(Expression::Bool(false, span.clone())),
             span.clone(),
-        );
-        assert_eq!(
-            partial_eval(&unk_and_f, &ctx).unwrap(),
-            Expression::BinaryOp(
-                BinaryOp::And,
-                Box::new(Expression::Variable("unk".to_string(), span.clone())),
-                Box::new(Expression::Bool(false, span.clone())),
-                span.clone(),
-            )
-        );
-        let unk_and_other = Expression::BinaryOp(
+        )
+    );
+    let unk_and_other = Expression::BinaryOp(
+        BinaryOp::And,
+        Box::new(Expression::Variable("unk1".to_string(), span.clone())),
+        Box::new(Expression::Variable("unk2".to_string(), span.clone())),
+        span.clone(),
+    );
+    assert_eq!(
+        partial_eval(&unk_and_other, &ctx)?,
+        Expression::BinaryOp(
             BinaryOp::And,
             Box::new(Expression::Variable("unk1".to_string(), span.clone())),
             Box::new(Expression::Variable("unk2".to_string(), span.clone())),
             span.clone(),
-        );
-        assert_eq!(
-            partial_eval(&unk_and_other, &ctx).unwrap(),
-            Expression::BinaryOp(
-                BinaryOp::And,
-                Box::new(Expression::Variable("unk1".to_string(), span.clone())),
-                Box::new(Expression::Variable("unk2".to_string(), span.clone())),
-                span.clone(),
-            )
-        );
-    }
-    {
-        let unk_or_f = Expression::BinaryOp(
-            BinaryOp::Or,
-            Box::new(Expression::Variable("unk".to_string(), span.clone())),
-            Box::new(Expression::Bool(false, span.clone())),
-            span.clone(),
-        );
-        assert_eq!(
-            partial_eval(&unk_or_f, &ctx).unwrap(),
-            Expression::Variable("unk".to_string(), span.clone())
-        );
-        let unk_or_t = Expression::BinaryOp(
+        )
+    );
+    let unk_or_f = Expression::BinaryOp(
+        BinaryOp::Or,
+        Box::new(Expression::Variable("unk".to_string(), span.clone())),
+        Box::new(Expression::Bool(false, span.clone())),
+        span.clone(),
+    );
+    assert_eq!(
+        partial_eval(&unk_or_f, &ctx)?,
+        Expression::Variable("unk".to_string(), span.clone())
+    );
+    let unk_or_t = Expression::BinaryOp(
+        BinaryOp::Or,
+        Box::new(Expression::Variable("unk".to_string(), span.clone())),
+        Box::new(Expression::Bool(true, span.clone())),
+        span.clone(),
+    );
+    assert_eq!(
+        partial_eval(&unk_or_t, &ctx)?,
+        Expression::BinaryOp(
             BinaryOp::Or,
             Box::new(Expression::Variable("unk".to_string(), span.clone())),
             Box::new(Expression::Bool(true, span.clone())),
             span.clone(),
-        );
-        assert_eq!(
-            partial_eval(&unk_or_t, &ctx).unwrap(),
-            Expression::BinaryOp(
-                BinaryOp::Or,
-                Box::new(Expression::Variable("unk".to_string(), span.clone())),
-                Box::new(Expression::Bool(true, span.clone())),
-                span.clone(),
-            )
-        );
-        let unk_or_other = Expression::BinaryOp(
+        )
+    );
+    let unk_or_other = Expression::BinaryOp(
+        BinaryOp::Or,
+        Box::new(Expression::Variable("unk1".to_string(), span.clone())),
+        Box::new(Expression::Variable("unk2".to_string(), span.clone())),
+        span.clone(),
+    );
+    assert_eq!(
+        partial_eval(&unk_or_other, &ctx)?,
+        Expression::BinaryOp(
             BinaryOp::Or,
             Box::new(Expression::Variable("unk1".to_string(), span.clone())),
             Box::new(Expression::Variable("unk2".to_string(), span.clone())),
-            span.clone(),
-        );
-        assert_eq!(
-            partial_eval(&unk_or_other, &ctx).unwrap(),
-            Expression::BinaryOp(
-                BinaryOp::Or,
-                Box::new(Expression::Variable("unk1".to_string(), span.clone())),
-                Box::new(Expression::Variable("unk2".to_string(), span.clone())),
+            span,
+        )
+    );
+    Ok(())
+}
+#[test]
+fn test_partial_eval_binary_ops_numbers_equality() -> Result<(), HclError> {
+    let ctx = Context::new();
+    let span = empty_span();
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::NotEq,
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                Box::new(Expression::Number(Number::from(6), span.clone())),
                 span.clone(),
-            )
-        );
-    }
-    {
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::NotEq,
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    Box::new(Expression::Number(Number::from(6), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(true, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::NotEq,
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Eq,
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    Box::new(Expression::Number(Number::from(6), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Less,
-                    Box::new(Expression::Number(Number::from(6), span.clone())),
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::LessEq,
-                    Box::new(Expression::Number(Number::from(6), span.clone())),
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Greater,
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    Box::new(Expression::Number(Number::from(6), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::GreaterEq,
-                    Box::new(Expression::Number(Number::from(4), span.clone())),
-                    Box::new(Expression::Number(Number::from(5), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::And,
-                    Box::new(Expression::Number(Number::from(1), span.clone())),
-                    Box::new(Expression::Number(Number::from(2), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::BinaryOp(
+            ),
+            &ctx
+        )?,
+        Expression::Bool(true, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::NotEq,
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::Eq,
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                Box::new(Expression::Number(Number::from(6), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span)
+    );
+    Ok(())
+}
+#[test]
+fn test_partial_eval_binary_ops_numbers_comparison_and_logic() -> Result<(), HclError> {
+    let ctx = Context::new();
+    let span = empty_span();
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::Less,
+                Box::new(Expression::Number(Number::from(6), span.clone())),
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::LessEq,
+                Box::new(Expression::Number(Number::from(6), span.clone())),
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::Greater,
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                Box::new(Expression::Number(Number::from(6), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::GreaterEq,
+                Box::new(Expression::Number(Number::from(4), span.clone())),
+                Box::new(Expression::Number(Number::from(5), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
                 BinaryOp::And,
                 Box::new(Expression::Number(Number::from(1), span.clone())),
                 Box::new(Expression::Number(Number::from(2), span.clone())),
                 span.clone(),
-            )
-        );
-    }
-    {
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Eq,
-                    Box::new(Expression::Bool(true, span.clone())),
-                    Box::new(Expression::Bool(true, span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(true, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Eq,
-                    Box::new(Expression::Bool(true, span.clone())),
-                    Box::new(Expression::Bool(false, span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::NotEq,
-                    Box::new(Expression::Bool(true, span.clone())),
-                    Box::new(Expression::Bool(false, span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(true, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::NotEq,
-                    Box::new(Expression::Bool(true, span.clone())),
-                    Box::new(Expression::Bool(true, span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Add,
-                    Box::new(Expression::Bool(true, span.clone())),
-                    Box::new(Expression::Bool(false, span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::BinaryOp(
+            ),
+            &ctx
+        )?,
+        Expression::BinaryOp(
+            BinaryOp::And,
+            Box::new(Expression::Number(Number::from(1), span.clone())),
+            Box::new(Expression::Number(Number::from(2), span.clone())),
+            span,
+        )
+    );
+    Ok(())
+}
+#[test]
+fn test_partial_eval_binary_ops_bools() -> Result<(), HclError> {
+    let ctx = Context::new();
+    let span = empty_span();
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::Eq,
+                Box::new(Expression::Bool(true, span.clone())),
+                Box::new(Expression::Bool(true, span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(true, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::Eq,
+                Box::new(Expression::Bool(true, span.clone())),
+                Box::new(Expression::Bool(false, span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::NotEq,
+                Box::new(Expression::Bool(true, span.clone())),
+                Box::new(Expression::Bool(false, span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(true, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::NotEq,
+                Box::new(Expression::Bool(true, span.clone())),
+                Box::new(Expression::Bool(true, span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
                 BinaryOp::Add,
                 Box::new(Expression::Bool(true, span.clone())),
                 Box::new(Expression::Bool(false, span.clone())),
                 span.clone(),
-            )
-        );
-    }
-    {
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Eq,
-                    Box::new(Expression::String("a".to_string(), span.clone())),
-                    Box::new(Expression::String("a".to_string(), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(true, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Eq,
-                    Box::new(Expression::String("a".to_string(), span.clone())),
-                    Box::new(Expression::String("b".to_string(), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::NotEq,
-                    Box::new(Expression::String("a".to_string(), span.clone())),
-                    Box::new(Expression::String("a".to_string(), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::Bool(false, span.clone())
-        );
-        assert_eq!(
-            partial_eval(
-                &Expression::BinaryOp(
-                    BinaryOp::Sub,
-                    Box::new(Expression::String("a".to_string(), span.clone())),
-                    Box::new(Expression::String("b".to_string(), span.clone())),
-                    span.clone(),
-                ),
-                &ctx
-            )
-            .unwrap(),
-            Expression::BinaryOp(
+            ),
+            &ctx
+        )?,
+        Expression::BinaryOp(
+            BinaryOp::Add,
+            Box::new(Expression::Bool(true, span.clone())),
+            Box::new(Expression::Bool(false, span.clone())),
+            span,
+        )
+    );
+    Ok(())
+}
+#[test]
+fn test_partial_eval_binary_ops_strings() -> Result<(), HclError> {
+    let ctx = Context::new();
+    let span = empty_span();
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::Eq,
+                Box::new(Expression::String("a".to_string(), span.clone())),
+                Box::new(Expression::String("a".to_string(), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(true, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::Eq,
+                Box::new(Expression::String("a".to_string(), span.clone())),
+                Box::new(Expression::String("b".to_string(), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
+                BinaryOp::NotEq,
+                Box::new(Expression::String("a".to_string(), span.clone())),
+                Box::new(Expression::String("a".to_string(), span.clone())),
+                span.clone(),
+            ),
+            &ctx
+        )?,
+        Expression::Bool(false, span.clone())
+    );
+    assert_eq!(
+        partial_eval(
+            &Expression::BinaryOp(
                 BinaryOp::Sub,
                 Box::new(Expression::String("a".to_string(), span.clone())),
                 Box::new(Expression::String("b".to_string(), span.clone())),
                 span.clone(),
-            )
-        );
-    }
+            ),
+            &ctx
+        )?,
+        Expression::BinaryOp(
+            BinaryOp::Sub,
+            Box::new(Expression::String("a".to_string(), span.clone())),
+            Box::new(Expression::String("b".to_string(), span.clone())),
+            span,
+        )
+    );
+    Ok(())
 }
 #[test]
-fn test_partial_eval_conditional_unresolved() {
+fn test_partial_eval_conditional_unresolved() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let cond_unresolved = Expression::Conditional(
@@ -954,7 +967,7 @@ fn test_partial_eval_conditional_unresolved() {
         }),
         span.clone(),
     );
-    let folded = partial_eval(&cond_unresolved, &ctx).unwrap();
+    let folded = partial_eval(&cond_unresolved, &ctx)?;
     assert_eq!(
         folded,
         Expression::Conditional(
@@ -963,12 +976,13 @@ fn test_partial_eval_conditional_unresolved() {
                 true_expr: Expression::Number(Number::from(1), span.clone()),
                 false_expr: Expression::Number(Number::from(2), span.clone()),
             }),
-            span.clone()
+            span
         )
     );
+    Ok(())
 }
 #[test]
-fn test_partial_eval_template_non_literals() {
+fn test_partial_eval_template_non_literals() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let tmpl_unk = Expression::Template(
@@ -981,7 +995,7 @@ fn test_partial_eval_template_non_literals() {
         ],
         span.clone(),
     );
-    let folded_unk = partial_eval(&tmpl_unk, &ctx).unwrap();
+    let folded_unk = partial_eval(&tmpl_unk, &ctx)?;
     assert!(matches!(folded_unk, Expression::Template(..)));
     let tmpl_dir = Expression::Template(
         vec![
@@ -994,13 +1008,14 @@ fn test_partial_eval_template_non_literals() {
                 span.clone(),
             ),
         ],
-        span.clone(),
+        span,
     );
-    let folded_dir = partial_eval(&tmpl_dir, &ctx).unwrap();
+    let folded_dir = partial_eval(&tmpl_dir, &ctx)?;
     assert!(matches!(folded_dir, Expression::Template(..)));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_traversal_advanced() {
+fn test_partial_eval_traversal_advanced() -> Result<(), HclError> {
     let mut ctx = Context::new();
     let span = empty_span();
     let user_map = BTreeMap::from([(
@@ -1022,7 +1037,7 @@ fn test_partial_eval_traversal_advanced() {
         span.clone(),
     );
     assert_eq!(
-        partial_eval(&trav_resolved, &ctx).unwrap(),
+        partial_eval(&trav_resolved, &ctx)?,
         Expression::String("Alice".to_string(), span.clone())
     );
     let trav_missing_field = Expression::Traversal(
@@ -1032,7 +1047,7 @@ fn test_partial_eval_traversal_advanced() {
         }),
         span.clone(),
     );
-    let folded_missing = partial_eval(&trav_missing_field, &ctx).unwrap();
+    let folded_missing = partial_eval(&trav_missing_field, &ctx)?;
     assert!(matches!(folded_missing, Expression::Traversal(..)));
     let trav_index = Expression::Traversal(
         Box::new(Traversal {
@@ -1049,18 +1064,14 @@ fn test_partial_eval_traversal_advanced() {
         }),
         span.clone(),
     );
-    let folded_index = partial_eval(&trav_index, &ctx).unwrap();
-    if let Expression::Traversal(t, _) = folded_index {
-        assert_eq!(
-            t.operators[0],
-            TraversalOperator::Index(
-                Expression::Number(Number::from(3), span.clone()),
-                span.clone()
-            )
-        );
-    } else {
-        panic!("expected traversal");
-    }
+    let folded_index = partial_eval(&trav_index, &ctx)?;
+    assert!(matches!(
+        folded_index,
+        Expression::Traversal(t, _) if t.operators[0] == TraversalOperator::Index(
+            Expression::Number(Number::from(3), span.clone()),
+            span.clone()
+        )
+    ));
     let trav_attr = Expression::Traversal(
         Box::new(Traversal {
             expr: Box::new(Expression::Variable("items".to_string(), span.clone())),
@@ -1068,18 +1079,15 @@ fn test_partial_eval_traversal_advanced() {
         }),
         span.clone(),
     );
-    let folded_attr = partial_eval(&trav_attr, &ctx).unwrap();
-    if let Expression::Traversal(t, _) = folded_attr {
-        assert_eq!(
-            t.operators[0],
-            TraversalOperator::GetAttr("foo".to_string(), span.clone())
-        );
-    } else {
-        panic!("expected traversal");
-    }
+    let folded_attr = partial_eval(&trav_attr, &ctx)?;
+    assert!(matches!(
+        folded_attr,
+        Expression::Traversal(t, _) if t.operators[0] == TraversalOperator::GetAttr("foo".to_string(), span)
+    ));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_for_expr_exhaustive() {
+fn test_partial_eval_for_expr_exhaustive() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let for_tuple = Expression::ForExpr(
@@ -1105,7 +1113,7 @@ fn test_partial_eval_for_expr_exhaustive() {
         }),
         span.clone(),
     );
-    let folded_tuple = partial_eval(&for_tuple, &ctx).unwrap();
+    let folded_tuple = partial_eval(&for_tuple, &ctx)?;
     assert_eq!(
         folded_tuple,
         Expression::Tuple(
@@ -1153,7 +1161,7 @@ fn test_partial_eval_for_expr_exhaustive() {
         }),
         span.clone(),
     );
-    let folded_obj = partial_eval(&for_obj, &ctx).unwrap();
+    let folded_obj = partial_eval(&for_obj, &ctx)?;
     assert_eq!(
         folded_obj,
         Expression::Object(
@@ -1161,9 +1169,15 @@ fn test_partial_eval_for_expr_exhaustive() {
                 Expression::String("b".to_string(), span.clone()),
                 Expression::Number(Number::from(102), span.clone()),
             )],
-            span.clone()
+            span
         )
     );
+    Ok(())
+}
+#[test]
+fn test_partial_eval_for_expr_grouping_and_unknown() -> Result<(), HclError> {
+    let ctx = Context::new();
+    let span = empty_span();
     let for_group = Expression::ForExpr(
         Box::new(ForExpr {
             key_var: None,
@@ -1182,7 +1196,7 @@ fn test_partial_eval_for_expr_exhaustive() {
         }),
         span.clone(),
     );
-    let folded_group = partial_eval(&for_group, &ctx).unwrap();
+    let folded_group = partial_eval(&for_group, &ctx)?;
     assert_eq!(
         folded_group,
         Expression::Object(
@@ -1212,13 +1226,14 @@ fn test_partial_eval_for_expr_exhaustive() {
             cond_expr: Some(Box::new(Expression::Bool(true, span.clone()))),
             grouping: false,
         }),
-        span.clone(),
+        span,
     );
-    let folded_unk_for = partial_eval(&for_unk, &ctx).unwrap();
+    let folded_unk_for = partial_eval(&for_unk, &ctx)?;
     assert!(matches!(folded_unk_for, Expression::ForExpr(..)));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_func_call_branches() {
+fn test_partial_eval_func_call_branches() -> Result<(), HclError> {
     let ctx = Context::with_stdlib();
     let span = empty_span();
     let call_uuid = Expression::FuncCall(
@@ -1229,7 +1244,7 @@ fn test_partial_eval_func_call_branches() {
         }),
         span.clone(),
     );
-    let folded_uuid = partial_eval(&call_uuid, &ctx).unwrap();
+    let folded_uuid = partial_eval(&call_uuid, &ctx)?;
     assert!(matches!(folded_uuid, Expression::FuncCall(..)));
     let call_expand = Expression::FuncCall(
         Box::new(FuncCall {
@@ -1239,7 +1254,7 @@ fn test_partial_eval_func_call_branches() {
         }),
         span.clone(),
     );
-    let folded_expand = partial_eval(&call_expand, &ctx).unwrap();
+    let folded_expand = partial_eval(&call_expand, &ctx)?;
     assert!(matches!(folded_expand, Expression::FuncCall(..)));
     let call_err = Expression::FuncCall(
         Box::new(FuncCall {
@@ -1249,7 +1264,7 @@ fn test_partial_eval_func_call_branches() {
         }),
         span.clone(),
     );
-    let folded_err = partial_eval(&call_err, &ctx).unwrap();
+    let folded_err = partial_eval(&call_err, &ctx)?;
     assert!(matches!(folded_err, Expression::FuncCall(..)));
     let call_unknown_fn = Expression::FuncCall(
         Box::new(FuncCall {
@@ -1257,13 +1272,14 @@ fn test_partial_eval_func_call_branches() {
             args: vec![Expression::String("hello".to_string(), span.clone())],
             expand_final: false,
         }),
-        span.clone(),
+        span,
     );
-    let folded_unknown_fn = partial_eval(&call_unknown_fn, &ctx).unwrap();
+    let folded_unknown_fn = partial_eval(&call_unknown_fn, &ctx)?;
     assert!(matches!(folded_unknown_fn, Expression::FuncCall(..)));
+    Ok(())
 }
 #[test]
-fn test_partial_eval_body_validations_and_lifecycle() {
+fn test_partial_eval_body_validations_and_lifecycle() -> Result<(), HclError> {
     let ctx = Context::new();
     let span = empty_span();
     let body = Body {
@@ -1303,7 +1319,7 @@ fn test_partial_eval_body_validations_and_lifecycle() {
         }],
         span: span.clone(),
     };
-    let reduced = partial_eval_body(&body, &ctx).unwrap();
+    let reduced = partial_eval_body(&body, &ctx)?;
     assert_eq!(
         reduced.validations[0].condition,
         Expression::Bool(true, span.clone())
@@ -1314,11 +1330,12 @@ fn test_partial_eval_body_validations_and_lifecycle() {
     );
     assert_eq!(
         reduced.postconditions[0].condition,
-        Expression::Bool(true, span.clone())
+        Expression::Bool(true, span)
     );
+    Ok(())
 }
 #[test]
-fn test_partial_eval_error_propagation() {
+fn test_partial_eval_error_propagation_ops_and_cond() {
     let ctx = Context::new();
     let span = empty_span();
     let div_zero = Expression::BinaryOp(
@@ -1331,189 +1348,208 @@ fn test_partial_eval_error_propagation() {
     assert!(partial_eval(&paren_err, &ctx).is_err());
     let unary_err = Expression::UnaryOp(UnaryOp::Neg, Box::new(div_zero.clone()), span.clone());
     assert!(partial_eval(&unary_err, &ctx).is_err());
-    {
-        let and_l = Expression::BinaryOp(
-            BinaryOp::And,
-            Box::new(div_zero.clone()),
-            Box::new(Expression::Bool(true, span.clone())),
-            span.clone(),
-        );
-        assert!(partial_eval(&and_l, &ctx).is_err());
-        let and_r = Expression::BinaryOp(
-            BinaryOp::And,
-            Box::new(Expression::Variable("unk".to_string(), span.clone())),
-            Box::new(div_zero.clone()),
-            span.clone(),
-        );
-        assert!(partial_eval(&and_r, &ctx).is_err());
-    }
-    {
-        let or_l = Expression::BinaryOp(
-            BinaryOp::Or,
-            Box::new(div_zero.clone()),
-            Box::new(Expression::Bool(false, span.clone())),
-            span.clone(),
-        );
-        assert!(partial_eval(&or_l, &ctx).is_err());
-        let or_r = Expression::BinaryOp(
-            BinaryOp::Or,
-            Box::new(Expression::Variable("unk".to_string(), span.clone())),
-            Box::new(div_zero.clone()),
-            span.clone(),
-        );
-        assert!(partial_eval(&or_r, &ctx).is_err());
-    }
-    {
-        let add_l = Expression::BinaryOp(
-            BinaryOp::Add,
-            Box::new(div_zero.clone()),
-            Box::new(Expression::Number(Number::from(1), span.clone())),
-            span.clone(),
-        );
-        assert!(partial_eval(&add_l, &ctx).is_err());
-        let add_r = Expression::BinaryOp(
-            BinaryOp::Add,
-            Box::new(Expression::Number(Number::from(1), span.clone())),
-            Box::new(div_zero.clone()),
-            span.clone(),
-        );
-        assert!(partial_eval(&add_r, &ctx).is_err());
-    }
-    {
-        let cond_c = Expression::Conditional(
-            Box::new(Conditional {
-                cond_expr: div_zero.clone(),
-                true_expr: Expression::Number(Number::from(1), span.clone()),
-                false_expr: Expression::Number(Number::from(2), span.clone()),
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&cond_c, &ctx).is_err());
-        let cond_t = Expression::Conditional(
-            Box::new(Conditional {
-                cond_expr: Expression::Variable("unk".to_string(), span.clone()),
-                true_expr: div_zero.clone(),
-                false_expr: Expression::Number(Number::from(2), span.clone()),
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&cond_t, &ctx).is_err());
-        let cond_f = Expression::Conditional(
-            Box::new(Conditional {
-                cond_expr: Expression::Variable("unk".to_string(), span.clone()),
-                true_expr: Expression::Number(Number::from(1), span.clone()),
-                false_expr: div_zero.clone(),
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&cond_f, &ctx).is_err());
-    }
+    let and_l = Expression::BinaryOp(
+        BinaryOp::And,
+        Box::new(div_zero.clone()),
+        Box::new(Expression::Bool(true, span.clone())),
+        span.clone(),
+    );
+    assert!(partial_eval(&and_l, &ctx).is_err());
+    let and_r = Expression::BinaryOp(
+        BinaryOp::And,
+        Box::new(Expression::Variable("unk".to_string(), span.clone())),
+        Box::new(div_zero.clone()),
+        span.clone(),
+    );
+    assert!(partial_eval(&and_r, &ctx).is_err());
+    let or_l = Expression::BinaryOp(
+        BinaryOp::Or,
+        Box::new(div_zero.clone()),
+        Box::new(Expression::Bool(false, span.clone())),
+        span.clone(),
+    );
+    assert!(partial_eval(&or_l, &ctx).is_err());
+    let or_r = Expression::BinaryOp(
+        BinaryOp::Or,
+        Box::new(Expression::Variable("unk".to_string(), span.clone())),
+        Box::new(div_zero.clone()),
+        span.clone(),
+    );
+    assert!(partial_eval(&or_r, &ctx).is_err());
+    let plus_lhs = Expression::BinaryOp(
+        BinaryOp::Add,
+        Box::new(div_zero.clone()),
+        Box::new(Expression::Number(Number::from(1), span.clone())),
+        span.clone(),
+    );
+    assert!(partial_eval(&plus_lhs, &ctx).is_err());
+    let plus_rhs = Expression::BinaryOp(
+        BinaryOp::Add,
+        Box::new(Expression::Number(Number::from(1), span.clone())),
+        Box::new(div_zero.clone()),
+        span.clone(),
+    );
+    assert!(partial_eval(&plus_rhs, &ctx).is_err());
+    let cond_c = Expression::Conditional(
+        Box::new(Conditional {
+            cond_expr: div_zero.clone(),
+            true_expr: Expression::Number(Number::from(1), span.clone()),
+            false_expr: Expression::Number(Number::from(2), span.clone()),
+        }),
+        span.clone(),
+    );
+    assert!(partial_eval(&cond_c, &ctx).is_err());
+    let cond_t = Expression::Conditional(
+        Box::new(Conditional {
+            cond_expr: Expression::Variable("unk".to_string(), span.clone()),
+            true_expr: div_zero.clone(),
+            false_expr: Expression::Number(Number::from(2), span.clone()),
+        }),
+        span.clone(),
+    );
+    assert!(partial_eval(&cond_t, &ctx).is_err());
+    let cond_f = Expression::Conditional(
+        Box::new(Conditional {
+            cond_expr: Expression::Variable("unk".to_string(), span.clone()),
+            true_expr: Expression::Number(Number::from(1), span.clone()),
+            false_expr: div_zero,
+        }),
+        span,
+    );
+    assert!(partial_eval(&cond_f, &ctx).is_err());
+}
+#[test]
+fn test_partial_eval_error_propagation_collections() {
+    let ctx = Context::new();
+    let span = empty_span();
+    let div_zero = Expression::BinaryOp(
+        BinaryOp::Div,
+        Box::new(Expression::Number(Number::from(1), span.clone())),
+        Box::new(Expression::Number(Number::from(0), span.clone())),
+        span.clone(),
+    );
     let tuple_err = Expression::Tuple(vec![div_zero.clone()], span.clone());
     assert!(partial_eval(&tuple_err, &ctx).is_err());
-    {
-        let obj_k = Expression::Object(
-            vec![(
-                div_zero.clone(),
-                Expression::Number(Number::from(1), span.clone()),
-            )],
-            span.clone(),
-        );
-        assert!(partial_eval(&obj_k, &ctx).is_err());
-        let obj_v = Expression::Object(
-            vec![(
-                Expression::String("k".to_string(), span.clone()),
-                div_zero.clone(),
-            )],
-            span.clone(),
-        );
-        assert!(partial_eval(&obj_v, &ctx).is_err());
-    }
+    let obj_k = Expression::Object(
+        vec![(
+            div_zero.clone(),
+            Expression::Number(Number::from(1), span.clone()),
+        )],
+        span.clone(),
+    );
+    assert!(partial_eval(&obj_k, &ctx).is_err());
+    let obj_v = Expression::Object(
+        vec![(
+            Expression::String("k".to_string(), span.clone()),
+            div_zero.clone(),
+        )],
+        span.clone(),
+    );
+    assert!(partial_eval(&obj_v, &ctx).is_err());
     let tmpl_err = Expression::Template(
         vec![TemplatePart::Interpolation(div_zero.clone(), span.clone())],
         span.clone(),
     );
     assert!(partial_eval(&tmpl_err, &ctx).is_err());
-    {
-        let trav_base = Expression::Traversal(
-            Box::new(Traversal {
-                expr: Box::new(div_zero.clone()),
-                operators: vec![TraversalOperator::GetAttr("a".to_string(), span.clone())],
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&trav_base, &ctx).is_err());
-        let trav_idx = Expression::Traversal(
-            Box::new(Traversal {
-                expr: Box::new(Expression::Variable("unk".to_string(), span.clone())),
-                operators: vec![TraversalOperator::Index(div_zero.clone(), span.clone())],
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&trav_idx, &ctx).is_err());
-    }
-    let fn_err = Expression::FuncCall(
-        Box::new(FuncCall {
-            name: NamespacedIdent::simple("upper", span.clone()),
-            args: vec![div_zero.clone()],
-            expand_final: false,
+    let trav_base = Expression::Traversal(
+        Box::new(Traversal {
+            expr: Box::new(div_zero.clone()),
+            operators: vec![TraversalOperator::GetAttr("a".to_string(), span.clone())],
         }),
         span.clone(),
     );
+    assert!(partial_eval(&trav_base, &ctx).is_err());
+    let trav_idx = Expression::Traversal(
+        Box::new(Traversal {
+            expr: Box::new(Expression::Variable("unk".to_string(), span.clone())),
+            operators: vec![TraversalOperator::Index(div_zero.clone(), span.clone())],
+        }),
+        span.clone(),
+    );
+    assert!(partial_eval(&trav_idx, &ctx).is_err());
+    let fn_err = Expression::FuncCall(
+        Box::new(FuncCall {
+            name: NamespacedIdent::simple("upper", span.clone()),
+            args: vec![div_zero],
+            expand_final: false,
+        }),
+        span,
+    );
     assert!(partial_eval(&fn_err, &ctx).is_err());
-    {
-        let for_coll = Expression::ForExpr(
-            Box::new(ForExpr {
-                key_var: None,
-                val_var: "x".to_string(),
-                collection: Box::new(div_zero.clone()),
-                key_expr: None,
-                val_expr: Box::new(Expression::Variable("x".to_string(), span.clone())),
-                cond_expr: None,
-                grouping: false,
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&for_coll, &ctx).is_err());
-        let for_val = Expression::ForExpr(
-            Box::new(ForExpr {
-                key_var: None,
-                val_var: "x".to_string(),
-                collection: Box::new(Expression::Tuple(vec![], span.clone())),
-                key_expr: None,
-                val_expr: Box::new(div_zero.clone()),
-                cond_expr: None,
-                grouping: false,
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&for_val, &ctx).is_err());
-        let for_key = Expression::ForExpr(
-            Box::new(ForExpr {
-                key_var: None,
-                val_var: "x".to_string(),
-                collection: Box::new(Expression::Tuple(vec![], span.clone())),
-                key_expr: Some(Box::new(div_zero.clone())),
-                val_expr: Box::new(Expression::Variable("x".to_string(), span.clone())),
-                cond_expr: None,
-                grouping: false,
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&for_key, &ctx).is_err());
-        let for_cond = Expression::ForExpr(
-            Box::new(ForExpr {
-                key_var: None,
-                val_var: "x".to_string(),
-                collection: Box::new(Expression::Tuple(vec![], span.clone())),
-                key_expr: None,
-                val_expr: Box::new(Expression::Variable("x".to_string(), span.clone())),
-                cond_expr: Some(Box::new(div_zero.clone())),
-                grouping: false,
-            }),
-            span.clone(),
-        );
-        assert!(partial_eval(&for_cond, &ctx).is_err());
-    }
+}
+#[test]
+fn test_partial_eval_error_propagation_for() {
+    let ctx = Context::new();
+    let span = empty_span();
+    let div_zero = Expression::BinaryOp(
+        BinaryOp::Div,
+        Box::new(Expression::Number(Number::from(1), span.clone())),
+        Box::new(Expression::Number(Number::from(0), span.clone())),
+        span.clone(),
+    );
+    let for_coll = Expression::ForExpr(
+        Box::new(ForExpr {
+            key_var: None,
+            val_var: "x".to_string(),
+            collection: Box::new(div_zero.clone()),
+            key_expr: None,
+            val_expr: Box::new(Expression::Variable("x".to_string(), span.clone())),
+            cond_expr: None,
+            grouping: false,
+        }),
+        span.clone(),
+    );
+    assert!(partial_eval(&for_coll, &ctx).is_err());
+    let for_val = Expression::ForExpr(
+        Box::new(ForExpr {
+            key_var: None,
+            val_var: "x".to_string(),
+            collection: Box::new(Expression::Tuple(vec![], span.clone())),
+            key_expr: None,
+            val_expr: Box::new(div_zero.clone()),
+            cond_expr: None,
+            grouping: false,
+        }),
+        span.clone(),
+    );
+    assert!(partial_eval(&for_val, &ctx).is_err());
+    let for_key = Expression::ForExpr(
+        Box::new(ForExpr {
+            key_var: None,
+            val_var: "x".to_string(),
+            collection: Box::new(Expression::Tuple(vec![], span.clone())),
+            key_expr: Some(Box::new(div_zero.clone())),
+            val_expr: Box::new(Expression::Variable("x".to_string(), span.clone())),
+            cond_expr: None,
+            grouping: false,
+        }),
+        span.clone(),
+    );
+    assert!(partial_eval(&for_key, &ctx).is_err());
+    let for_cond = Expression::ForExpr(
+        Box::new(ForExpr {
+            key_var: None,
+            val_var: "x".to_string(),
+            collection: Box::new(Expression::Tuple(vec![], span.clone())),
+            key_expr: None,
+            val_expr: Box::new(Expression::Variable("x".to_string(), span.clone())),
+            cond_expr: Some(Box::new(div_zero)),
+            grouping: false,
+        }),
+        span,
+    );
+    assert!(partial_eval(&for_cond, &ctx).is_err());
+}
+#[test]
+fn test_partial_eval_error_propagation_body_blocks() {
+    let ctx = Context::new();
+    let span = empty_span();
+    let div_zero = Expression::BinaryOp(
+        BinaryOp::Div,
+        Box::new(Expression::Number(Number::from(1), span.clone())),
+        Box::new(Expression::Number(Number::from(0), span.clone())),
+        span.clone(),
+    );
     let empty_body = Body {
         attributes: HashMap::new(),
         blocks: vec![],
@@ -1555,7 +1591,7 @@ fn test_partial_eval_error_propagation() {
     let mut body_dyn_err = empty_body.clone();
     body_dyn_err.dynamic_blocks.push(DynamicBlock {
         block_type: "d".to_string(),
-        for_each: div_zero.clone(),
+        for_each: div_zero,
         iterator: None,
         labels: None,
         content: empty_body.clone(),
@@ -1563,17 +1599,38 @@ fn test_partial_eval_error_propagation() {
         type_span: span.clone(),
     });
     assert!(partial_eval_body(&body_dyn_err, &ctx).is_err());
-    let mut body_dyn_content_err = empty_body.clone();
+    let mut body_dyn_content_err = empty_body;
     body_dyn_content_err.dynamic_blocks.push(DynamicBlock {
         block_type: "d".to_string(),
         for_each: Expression::Tuple(vec![], span.clone()),
         iterator: None,
         labels: None,
-        content: body_attr_err.clone(),
+        content: body_attr_err,
         span: span.clone(),
-        type_span: span.clone(),
+        type_span: span,
     });
     assert!(partial_eval_body(&body_dyn_content_err, &ctx).is_err());
+}
+#[test]
+fn test_partial_eval_error_propagation_body_conditions() {
+    let ctx = Context::new();
+    let span = empty_span();
+    let div_zero = Expression::BinaryOp(
+        BinaryOp::Div,
+        Box::new(Expression::Number(Number::from(1), span.clone())),
+        Box::new(Expression::Number(Number::from(0), span.clone())),
+        span.clone(),
+    );
+    let empty_body = Body {
+        attributes: HashMap::new(),
+        blocks: vec![],
+        functions: vec![],
+        dynamic_blocks: vec![],
+        validations: vec![],
+        preconditions: vec![],
+        postconditions: vec![],
+        span: span.clone(),
+    };
     let mut body_val_cond_err = empty_body.clone();
     body_val_cond_err.validations.push(ValidationBlock {
         condition: div_zero.clone(),
@@ -1609,16 +1666,16 @@ fn test_partial_eval_error_propagation() {
         span: span.clone(),
     });
     assert!(partial_eval_body(&body_post_cond_err, &ctx).is_err());
-    let mut body_post_msg_err = empty_body.clone();
+    let mut body_post_msg_err = empty_body;
     body_post_msg_err.postconditions.push(PostconditionBlock {
         condition: Expression::Bool(true, span.clone()),
         error_message: div_zero,
-        span: span.clone(),
+        span,
     });
     assert!(partial_eval_body(&body_post_msg_err, &ctx).is_err());
 }
 #[test]
-fn test_partial_eval_uncovered_branches() {
+fn test_partial_eval_uncovered_branches() -> Result<(), HclError> {
     use crate::eval::func::{Function, FunctionParamSpec, FunctionSignature};
     use std::sync::Arc;
     let span = empty_span();
@@ -1636,10 +1693,7 @@ fn test_partial_eval_uncovered_branches() {
         }),
         span.clone(),
     );
-    let folded_trav = match partial_eval(&trav_unk, &ctx) {
-        Ok(e) => e,
-        Err(e) => panic!("partial eval failed: {e:?}"),
-    };
+    let folded_trav = partial_eval(&trav_unk, &ctx)?;
     assert!(matches!(folded_trav, Expression::Traversal(..)));
     let func = Function::new("my_det", Arc::new(|args| Ok(args[0].clone()))).with_signature(
         FunctionSignature::with_static_return_type(
@@ -1660,10 +1714,7 @@ fn test_partial_eval_uncovered_branches() {
         }),
         span.clone(),
     );
-    let folded_fn_non_lit = match partial_eval(&fn_call_non_lit, &ctx) {
-        Ok(e) => e,
-        Err(e) => panic!("partial eval failed: {e:?}"),
-    };
+    let folded_fn_non_lit = partial_eval(&fn_call_non_lit, &ctx)?;
     assert!(matches!(folded_fn_non_lit, Expression::FuncCall(..)));
     let func_impure = Function::new("my_impure", Arc::new(|_| Ok(Value::null(Type::String))))
         .with_signature(
@@ -1679,10 +1730,7 @@ fn test_partial_eval_uncovered_branches() {
         }),
         span.clone(),
     );
-    let folded_impure = match partial_eval(&fn_call_impure, &ctx) {
-        Ok(e) => e,
-        Err(e) => panic!("partial eval failed: {e:?}"),
-    };
+    let folded_impure = partial_eval(&fn_call_impure, &ctx)?;
     assert!(matches!(folded_impure, Expression::FuncCall(..)));
     let func_returns_unk = Function::new("ret_unk", Arc::new(|_| Ok(Value::unknown(Type::String))))
         .with_signature(
@@ -1701,10 +1749,7 @@ fn test_partial_eval_uncovered_branches() {
         }),
         span.clone(),
     );
-    let folded_fn_ret_unk = match partial_eval(&fn_call_ret_unk, &ctx) {
-        Ok(e) => e,
-        Err(e) => panic!("partial eval failed: {e:?}"),
-    };
+    let folded_fn_ret_unk = partial_eval(&fn_call_ret_unk, &ctx)?;
     assert!(matches!(folded_fn_ret_unk, Expression::FuncCall(..)));
     ctx.set_variable(
         "unknown_list",
@@ -1725,9 +1770,7 @@ fn test_partial_eval_uncovered_branches() {
         }),
         span,
     );
-    let folded_for = match partial_eval(&for_unk, &ctx) {
-        Ok(e) => e,
-        Err(e) => panic!("partial eval failed: {e:?}"),
-    };
+    let folded_for = partial_eval(&for_unk, &ctx)?;
     assert!(matches!(folded_for, Expression::ForExpr(..)));
+    Ok(())
 }

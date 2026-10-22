@@ -225,95 +225,99 @@ impl<'a> TypeExprParser<'a> {
                     ))
                 }
             }
-            TokenKind::OBrack => {
-                self.advance();
-                let mut elems = Vec::new();
-                while let Some(t) = &self.current {
-                    if t.kind == TokenKind::CBrack {
-                        break;
-                    }
-                    let el = self.parse_default_expr()?;
-                    elems.push(el);
-                    if let Some(next) = &self.current {
-                        if next.kind == TokenKind::Comma {
-                            self.advance();
-                        } else if next.kind != TokenKind::CBrack {
-                            return Err(HclError::Parse(
-                                "Expected ',' or ']' in tuple default".to_string(),
-                            ));
-                        }
-                    }
-                }
-                let close_span = if let Some(tok) = self.current.take() {
-                    let s = tok.span;
-                    self.advance();
-                    s
-                } else {
-                    return Err(HclError::Parse("Expected ']' in tuple default".to_string()));
-                };
-                let tuple_span = Span::new(
-                    span.start_byte,
-                    close_span.end_byte,
-                    span.start_line,
-                    span.start_col,
-                    close_span.end_line,
-                    close_span.end_col,
-                );
-                Ok(Expression::Tuple(elems, tuple_span))
-            }
-            TokenKind::OBrace => {
-                self.advance();
-                let mut entries = Vec::new();
-                while let Some(t) = &self.current {
-                    if t.kind == TokenKind::CBrace {
-                        break;
-                    }
-                    let key = self.parse_default_expr()?;
-                    let sep = self.current.as_ref().ok_or_else(|| {
-                        HclError::Parse("Expected '=' or ':' in object default".to_string())
-                    })?;
-                    if sep.kind != TokenKind::Assign && sep.kind != TokenKind::Colon {
-                        return Err(HclError::Parse(
-                            "Expected '=' or ':' in object default".to_string(),
-                        ));
-                    }
-                    self.advance();
-                    let val = self.parse_default_expr()?;
-                    entries.push((key, val));
-                    if let Some(next) = &self.current {
-                        if next.kind == TokenKind::Comma {
-                            self.advance();
-                        } else if next.kind != TokenKind::CBrace {
-                            return Err(HclError::Parse(
-                                "Expected ',' or '}' in object default".to_string(),
-                            ));
-                        }
-                    }
-                }
-                let close_span = if let Some(tok) = self.current.take() {
-                    let s = tok.span;
-                    self.advance();
-                    s
-                } else {
-                    return Err(HclError::Parse(
-                        "Expected '}' in object default".to_string(),
-                    ));
-                };
-                let obj_span = Span::new(
-                    span.start_byte,
-                    close_span.end_byte,
-                    span.start_line,
-                    span.start_col,
-                    close_span.end_line,
-                    close_span.end_col,
-                );
-                Ok(Expression::Object(entries, obj_span))
-            }
+            TokenKind::OBrack => self.parse_default_tuple(&span),
+            TokenKind::OBrace => self.parse_default_object(&span),
             _ => Err(HclError::Parse(format!(
                 "Unsupported default expression token: {:?}",
                 tok.kind
             ))),
         }
+    }
+
+    fn parse_default_tuple(&mut self, span: &Span) -> Result<Expression, HclError> {
+        self.advance();
+        let mut elems = Vec::new();
+        while let Some(t) = &self.current {
+            if t.kind == TokenKind::CBrack {
+                break;
+            }
+            let el = self.parse_default_expr()?;
+            elems.push(el);
+            if let Some(next) = &self.current {
+                if next.kind == TokenKind::Comma {
+                    self.advance();
+                } else if next.kind != TokenKind::CBrack {
+                    return Err(HclError::Parse(
+                        "Expected ',' or ']' in tuple default".to_string(),
+                    ));
+                }
+            }
+        }
+        let close_span = if let Some(tok) = self.current.take() {
+            let s = tok.span;
+            self.advance();
+            s
+        } else {
+            return Err(HclError::Parse("Expected ']' in tuple default".to_string()));
+        };
+        let tuple_span = Span::new(
+            span.start_byte,
+            close_span.end_byte,
+            span.start_line,
+            span.start_col,
+            close_span.end_line,
+            close_span.end_col,
+        );
+        Ok(Expression::Tuple(elems, tuple_span))
+    }
+
+    fn parse_default_object(&mut self, span: &Span) -> Result<Expression, HclError> {
+        self.advance();
+        let mut entries = Vec::new();
+        while let Some(t) = &self.current {
+            if t.kind == TokenKind::CBrace {
+                break;
+            }
+            let key = self.parse_default_expr()?;
+            let sep = self.current.as_ref().ok_or_else(|| {
+                HclError::Parse("Expected '=' or ':' in object default".to_string())
+            })?;
+            if sep.kind != TokenKind::Assign && sep.kind != TokenKind::Colon {
+                return Err(HclError::Parse(
+                    "Expected '=' or ':' in object default".to_string(),
+                ));
+            }
+            self.advance();
+            let val = self.parse_default_expr()?;
+            entries.push((key, val));
+            if let Some(next) = &self.current {
+                if next.kind == TokenKind::Comma {
+                    self.advance();
+                } else if next.kind != TokenKind::CBrace {
+                    return Err(HclError::Parse(
+                        "Expected ',' or '}' in object default".to_string(),
+                    ));
+                }
+            }
+        }
+        let close_span = if let Some(tok) = self.current.take() {
+            let s = tok.span;
+            self.advance();
+            s
+        } else {
+            return Err(HclError::Parse(
+                "Expected '}' in object default".to_string(),
+            ));
+        };
+        let obj_span = Span::new(
+            span.start_byte,
+            close_span.end_byte,
+            span.start_line,
+            span.start_col,
+            close_span.end_line,
+            close_span.end_col,
+        );
+        Ok(Expression::Object(entries, obj_span))
     }
     fn parse_tuple(&mut self, mut span: Span) -> Result<TypeExpr, HclError> {
         self.expect(&TokenKind::OParen)?;
@@ -361,13 +365,6 @@ impl<'a> TypeExprParser<'a> {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
     fn test_parse_primitive() {
@@ -409,9 +406,9 @@ mod tests {
         );
     }
     #[test]
-    fn test_parse_collection() {
+    fn test_parse_collection() -> Result<(), HclError> {
         let mut parser = TypeExprParser::new("list(string)");
-        let expr = parser.parse().unwrap();
+        let expr = parser.parse()?;
         assert_eq!(
             expr,
             TypeExpr::Collection(
@@ -424,7 +421,7 @@ mod tests {
             )
         );
         let mut parser = TypeExprParser::new("set(number)");
-        let expr = parser.parse().unwrap();
+        let expr = parser.parse()?;
         assert_eq!(
             expr,
             TypeExpr::Collection(
@@ -437,7 +434,7 @@ mod tests {
             )
         );
         let mut parser = TypeExprParser::new("map(bool)");
-        let expr = parser.parse().unwrap();
+        let expr = parser.parse()?;
         assert_eq!(
             expr,
             TypeExpr::Collection(
@@ -446,11 +443,12 @@ mod tests {
                 Span::new(0, 9, 1, 1, 1, 10),
             )
         );
+        Ok(())
     }
     #[test]
-    fn test_parse_object() {
+    fn test_parse_object() -> Result<(), HclError> {
         let mut parser = TypeExprParser::new("object({ foo : string, bar = number })");
-        let expr = parser.parse().unwrap();
+        let expr = parser.parse()?;
         let mut expected_attrs = HashMap::new();
         expected_attrs.insert(
             "foo".to_string(),
@@ -471,7 +469,7 @@ mod tests {
             TypeExpr::Object(expected_attrs, Span::new(0, 38, 1, 1, 1, 39))
         );
         let mut parser = TypeExprParser::new("object({ foo : string, })");
-        let expr = parser.parse().unwrap();
+        let expr = parser.parse()?;
         let mut expected_attrs2 = HashMap::new();
         expected_attrs2.insert(
             "foo".to_string(),
@@ -484,9 +482,18 @@ mod tests {
             expr,
             TypeExpr::Object(expected_attrs2, Span::new(0, 25, 1, 1, 1, 26))
         );
+        Ok(())
     }
     #[test]
     fn test_parse_object_optional() {
+        fn get_attr_info(expr: &TypeExpr, name: &str) -> (bool, Option<Expression>) {
+            match expr {
+                TypeExpr::Object(attrs, _) => attrs
+                    .get(name)
+                    .map_or((false, None), |a| (a.optional, a.default_val.clone())),
+                _ => (false, None),
+            }
+        }
         let check_obj = |e: &TypeExpr| -> usize {
             if let TypeExpr::Object(attrs, _) = e {
                 attrs.len()
@@ -494,15 +501,6 @@ mod tests {
                 0
             }
         };
-        fn get_attr_info(expr: &TypeExpr, name: &str) -> (bool, Option<Expression>) {
-            match expr {
-                TypeExpr::Object(attrs, _) => match attrs.get(name) {
-                    Some(a) => (a.optional, a.default_val.clone()),
-                    None => (false, None),
-                },
-                _ => (false, None),
-            }
-        }
         let mut parser =
             TypeExprParser::new("object({ name = string, port = optional(number, 8080) })");
         let expr = parser.parse().unwrap_or(TypeExpr::Primitive(
@@ -567,9 +565,9 @@ mod tests {
         assert!(TypeExprParser::new("map(optional(bool))").parse().is_err());
     }
     #[test]
-    fn test_parse_tuple() {
+    fn test_parse_tuple() -> Result<(), HclError> {
         let mut parser = TypeExprParser::new("tuple([string, number, bool])");
-        let expr = parser.parse().unwrap();
+        let expr = parser.parse()?;
         let expected_elems = vec![
             TypeExpr::Primitive(Type::String, Span::new(7, 13, 1, 8, 1, 14)),
             TypeExpr::Primitive(Type::Number, Span::new(15, 21, 1, 16, 1, 22)),
@@ -580,7 +578,7 @@ mod tests {
             TypeExpr::Tuple(expected_elems, Span::new(0, 29, 1, 1, 1, 30))
         );
         let mut parser = TypeExprParser::new("tuple([string, ])");
-        let expr = parser.parse().unwrap();
+        let expr = parser.parse()?;
         let expected_elems2 = vec![TypeExpr::Primitive(
             Type::String,
             Span::new(7, 13, 1, 8, 1, 14),
@@ -589,6 +587,7 @@ mod tests {
             expr,
             TypeExpr::Tuple(expected_elems2, Span::new(0, 17, 1, 1, 1, 18))
         );
+        Ok(())
     }
     #[test]
     fn test_parse_errors() {
@@ -704,6 +703,9 @@ mod tests {
             .parse()
             .is_err()
         );
+    }
+    #[test]
+    fn test_type_expr_coverage_gaps_default_exprs() {
         assert!(
             TypeExprParser::new("object({ a = optional(string, ?) })")
                 .parse()

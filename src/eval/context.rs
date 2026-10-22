@@ -1,3 +1,4 @@
+//! Evaluation context and hierarchical variable/function scope management.
 use crate::types::Value;
 use std::collections::HashMap;
 /// A context or scope for evaluating HCL expressions.
@@ -53,7 +54,7 @@ impl<'a> Context<'a> {
     }
     /// Create a new Context with a parent, inheriting the parent's stdlib settings and filesystem.
     #[must_use]
-    pub fn new_child(parent: &'a Context<'a>) -> Self {
+    pub fn new_child(parent: &'a Self) -> Self {
         Self {
             parent: Some(parent),
             variables: HashMap::new(),
@@ -210,13 +211,9 @@ impl<'a> Context<'a> {
     /// Retrieve a variable by name from this context or its parents.
     #[must_use]
     pub fn get_variable(&self, name: &str) -> Option<&Value> {
-        if let Some(val) = self.variables.get(name) {
-            Some(val)
-        } else if let Some(parent) = self.parent {
-            parent.get_variable(name)
-        } else {
-            None
-        }
+        self.variables
+            .get(name)
+            .or_else(|| self.parent.and_then(|parent| parent.get_variable(name)))
     }
     /// Set a variable in the current context.
     pub fn set_variable(&mut self, name: impl Into<String>, value: Value) {
@@ -343,15 +340,16 @@ impl<'a> Context<'a> {
             );
             return self.get_namespaced_func(&ident);
         }
-        if let Some(func) = self.functions.get(name) {
-            Some(func)
-        } else if let Some(parent) = self.parent {
-            parent.get_function(name)
-        } else if self.stdlib_enabled {
-            crate::eval::stdlib::get_stdlib_function(name)
-        } else {
-            None
-        }
+        self.functions
+            .get(name)
+            .or_else(|| self.parent.and_then(|parent| parent.get_function(name)))
+            .or_else(|| {
+                if self.stdlib_enabled {
+                    crate::eval::stdlib::get_stdlib_function(name)
+                } else {
+                    None
+                }
+            })
     }
     /// Register a namespaced function within this context.
     ///
@@ -401,13 +399,9 @@ impl<'a> Context<'a> {
             return self.get_function(&ident.name);
         }
         let key = (ident.namespace.clone(), ident.name.clone());
-        if let Some(func) = self.namespaced_functions.get(&key) {
-            Some(func)
-        } else if let Some(parent) = self.parent {
-            parent.get_namespaced_func(ident)
-        } else {
-            None
-        }
+        self.namespaced_functions
+            .get(&key)
+            .or_else(|| self.parent.and_then(|p| p.get_namespaced_func(ident)))
     }
     /// Check whether a namespaced function is defined in this context or its parent scopes.
     ///
@@ -461,74 +455,81 @@ impl<'a> Context<'a> {
         let body_expr = fb.body.clone();
         let func = crate::eval::func::Function {
             name: name.clone(),
-            func: std::sync::Arc::new(move |args: &[Value]| -> Result<Value, String> {
-                let min_args = params.len();
-                if variadic_param.is_none() {
-                    if args.len() != min_args {
-                        return Err(format!(
-                            "Function '{name}' requires {min_args} arguments, got {}",
-                            args.len()
-                        ));
-                    }
-                } else if args.len() < min_args {
-                    return Err(format!(
-                        "Function '{name}' requires at least {min_args} arguments, got {}",
-                        args.len()
-                    ));
-                }
-                let mut sub_ctx = Context::with_stdlib();
-                for (i, param) in params.iter().enumerate() {
-                    let arg = &args[i];
-                    if let Some(ref te) = param.type_expr {
-                        let expected_ty = crate::eval::type_expr::eval_type_expr(te);
-                        if let Err(e) = arg.coerce(&expected_ty) {
-                            return Err(format!(
-                                "type mismatch for parameter '{}': expected {expected_ty}, got {}: {e}",
-                                param.name,
-                                arg.ty()
-                            ));
+            func: std::sync::Arc::new(
+                move |args: &[Value]| -> Result<Value, crate::error::HclError> {
+                    let min_args = params.len();
+                    if variadic_param.is_none() {
+                        if args.len() != min_args {
+                            return Err(crate::error::HclError::FunctionArgMismatch(format!(
+                                "Function '{name}' requires {min_args} arguments, got {}",
+                                args.len()
+                            )));
                         }
+                    } else if args.len() < min_args {
+                        return Err(crate::error::HclError::FunctionArgMismatch(format!(
+                            "Function '{name}' requires at least {min_args} arguments, got {}",
+                            args.len()
+                        )));
                     }
-                    sub_ctx.set_variable(&param.name, arg.clone());
-                }
-                if let Some(ref vp) = variadic_param {
-                    let rest_args = if args.len() > min_args {
-                        args[min_args..].to_vec()
-                    } else {
-                        Vec::new()
-                    };
-                    if let Some(ref te) = vp.type_expr {
-                        let expected_ty = crate::eval::type_expr::eval_type_expr(te);
-                        for arg in &rest_args {
+                    let mut sub_ctx = Context::with_stdlib();
+                    for (i, param) in params.iter().enumerate() {
+                        let arg = &args[i];
+                        if let Some(ref te) = param.type_expr {
+                            let expected_ty = crate::eval::type_expr::eval_type_expr(te);
                             if let Err(e) = arg.coerce(&expected_ty) {
-                                return Err(format!(
-                                    "type mismatch for variadic parameter '{}': expected {expected_ty}, got {}: {e}",
-                                    vp.name,
+                                return Err(crate::error::HclError::Type(format!(
+                                    "type mismatch for parameter '{}': expected {expected_ty}, got {}: {e}",
+                                    param.name,
                                     arg.ty()
-                                ));
+                                )));
                             }
                         }
+                        sub_ctx.set_variable(&param.name, arg.clone());
                     }
-                    let elem_types: Vec<crate::types::ty::Type> =
-                        rest_args.iter().map(|v| v.ty().clone()).collect();
-                    let variadic_val = Value::new(
-                        crate::types::ty::Type::Tuple(elem_types),
-                        crate::types::val::ValueData::Array(rest_args),
-                    );
-                    sub_ctx.set_variable(&vp.name, variadic_val);
-                }
-                let (result_val, _diags) = crate::eval::evaluator::Evaluator::new(&sub_ctx)
-                    .evaluate(&body_expr)
-                    .map_err(|d| format!("Evaluation failed: {:?}", d.errors()))?;
-                if let Some(ref rt) = return_type {
-                    let expected_return_ty = crate::eval::type_expr::eval_type_expr(rt);
-                    result_val
-                        .coerce(&expected_return_ty)
-                        .map_err(|e| format!("Return type mismatch: {e}"))
-                } else {
-                    Ok(result_val)
-                }
-            }),
+                    if let Some(ref vp) = variadic_param {
+                        let rest_args = if args.len() > min_args {
+                            args[min_args..].to_vec()
+                        } else {
+                            Vec::new()
+                        };
+                        if let Some(ref te) = vp.type_expr {
+                            let expected_ty = crate::eval::type_expr::eval_type_expr(te);
+                            for arg in &rest_args {
+                                if let Err(e) = arg.coerce(&expected_ty) {
+                                    return Err(crate::error::HclError::Type(format!(
+                                        "type mismatch for variadic parameter '{}': expected {expected_ty}, got {}: {e}",
+                                        vp.name,
+                                        arg.ty()
+                                    )));
+                                }
+                            }
+                        }
+                        let elem_types: Vec<crate::types::ty::Type> =
+                            rest_args.iter().map(|v| v.ty().clone()).collect();
+                        let variadic_val = Value::new(
+                            crate::types::ty::Type::Tuple(elem_types),
+                            crate::types::val::ValueData::Array(rest_args),
+                        );
+                        sub_ctx.set_variable(&vp.name, variadic_val);
+                    }
+                    let (result_val, _diags) = crate::eval::evaluator::Evaluator::new(&sub_ctx)
+                        .evaluate(&body_expr)
+                        .map_err(|d| {
+                            crate::error::HclError::Eval(format!(
+                                "Evaluation failed: {:?}",
+                                d.errors()
+                            ))
+                        })?;
+                    if let Some(ref rt) = return_type {
+                        let expected_return_ty = crate::eval::type_expr::eval_type_expr(rt);
+                        result_val.coerce(&expected_return_ty).map_err(|e| {
+                            crate::error::HclError::Type(format!("Return type mismatch: {e}"))
+                        })
+                    } else {
+                        Ok(result_val)
+                    }
+                },
+            ),
             signature: None,
         };
         self.set_function(fb.name.clone(), func);
@@ -550,18 +551,13 @@ fn merge_nested_values(dest: &mut Value, src: Value) {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::error::HclError;
     use crate::types::{Type, ValueData};
     #[test]
-    fn test_context_variables() {
+    fn test_context_variables() -> Result<(), HclError> {
         let mut ctx = Context::new();
         ctx.set_variable("foo", Value::new(Type::Bool, ValueData::Bool(true)));
         ctx.set_variable(
@@ -577,10 +573,15 @@ mod tests {
         assert!(child.get_variable("bar").is_some());
         assert!(ctx.get_variable("bar").is_none());
         child.set_variable("foo", Value::unknown(Type::String));
-        let shadowed = child.get_variable("foo").unwrap();
+        let shadowed = child
+            .get_variable("foo")
+            .ok_or_else(|| HclError::Eval("missing foo".to_string()))?;
         assert!(shadowed.is_unknown());
-        let original = ctx.get_variable("foo").unwrap();
+        let original = ctx
+            .get_variable("foo")
+            .ok_or_else(|| HclError::Eval("missing foo".to_string()))?;
         assert!(!original.is_unknown());
+        Ok(())
     }
     #[test]
     fn test_context_variables_fallback() {
@@ -598,7 +599,7 @@ mod tests {
         assert!(child2.get_variable("bar").is_some());
     }
     #[test]
-    fn test_context_scoped_namespaces() {
+    fn test_context_scoped_namespaces() -> Result<(), HclError> {
         let mut ctx = Context::new();
         ctx.set_var(
             "my_var",
@@ -610,12 +611,18 @@ mod tests {
             Value::new(Type::Number, ValueData::Number(42.into())),
         );
         ctx.set_path_scopes("/root/dir", "/cwd/dir");
-        let var_val = ctx.get_variable("var").unwrap();
+        let var_val = ctx
+            .get_variable("var")
+            .ok_or_else(|| HclError::Eval("missing var".to_string()))?;
         assert!(var_val.to_string().contains("my_var"));
         assert!(var_val.to_string().contains("second_var"));
-        let local_val = ctx.get_variable("local").unwrap();
+        let local_val = ctx
+            .get_variable("local")
+            .ok_or_else(|| HclError::Eval("missing local".to_string()))?;
         assert!(local_val.to_string().contains("my_local"));
-        let path_val = ctx.get_variable("path").unwrap();
+        let path_val = ctx
+            .get_variable("path")
+            .ok_or_else(|| HclError::Eval("missing path".to_string()))?;
         assert!(path_val.to_string().contains("/root/dir"));
         assert!(path_val.to_string().contains("/cwd/dir"));
         ctx.set_nested_scope(&[], Value::new(Type::Bool, ValueData::Bool(false)));
@@ -629,7 +636,9 @@ mod tests {
             &["source", "qemu", "arch"],
             Value::new(Type::String, ValueData::String("x86_64".into())),
         );
-        let source_val = ctx.get_variable("source").unwrap();
+        let source_val = ctx
+            .get_variable("source")
+            .ok_or_else(|| HclError::Eval("missing source".to_string()))?;
         assert!(source_val.to_string().contains("qemu_img"));
         assert!(source_val.to_string().contains("x86_64"));
         ctx.set_nested_scope(
@@ -640,7 +649,9 @@ mod tests {
             &["overwrite_prim", "child"],
             Value::new(Type::Bool, ValueData::Bool(true)),
         );
-        let prim_obj = ctx.get_variable("overwrite_prim").unwrap();
+        let prim_obj = ctx
+            .get_variable("overwrite_prim")
+            .ok_or_else(|| HclError::Eval("missing overwrite_prim".to_string()))?;
         assert!(prim_obj.to_string().contains("child"));
         ctx.set_variable("scalar_ns", Value::new(Type::Bool, ValueData::Bool(true)));
         ctx.set_namespace_variable(
@@ -648,11 +659,14 @@ mod tests {
             "key",
             Value::new(Type::String, ValueData::String("val".into())),
         );
-        let scalar_obj = ctx.get_variable("scalar_ns").unwrap();
+        let scalar_obj = ctx
+            .get_variable("scalar_ns")
+            .ok_or_else(|| HclError::Eval("missing scalar_ns".to_string()))?;
         assert!(scalar_obj.to_string().contains("key"));
+        Ok(())
     }
     #[test]
-    fn test_context_functions_fallback() {
+    fn test_context_functions_fallback() -> Result<(), HclError> {
         use crate::eval::func::Function;
         use std::sync::Arc;
         let mut ctx = Context::new();
@@ -664,7 +678,9 @@ mod tests {
         ctx.set_function("test_func", func);
         let child = Context::new_child(&ctx);
         let child2 = Context::new_child(&child);
-        let found = child2.get_function("test_func").unwrap();
+        let found = child2
+            .get_function("test_func")
+            .ok_or_else(|| HclError::Eval("missing test_func".to_string()))?;
         assert!((found.func)(&[]).is_ok());
         assert!(child2.get_function("missing_func").is_none());
         assert!(ctx.get_function("missing_func").is_none());
@@ -673,9 +689,10 @@ mod tests {
         let mut no_stdlib_ctx = Context::new();
         no_stdlib_ctx.stdlib_enabled = false;
         assert!(no_stdlib_ctx.get_function("missing_func").is_none());
+        Ok(())
     }
     #[test]
-    fn test_context_functions_call() {
+    fn test_context_functions_call() -> Result<(), HclError> {
         use crate::eval::func::Function;
         use std::sync::Arc;
         let mut ctx = Context::new();
@@ -685,19 +702,24 @@ mod tests {
             signature: None,
         };
         ctx.set_function("test_func", func);
-        let f = ctx.get_function("test_func").unwrap();
-        let _ = (f.func)(&[]);
+        let f = ctx
+            .get_function("test_func")
+            .ok_or_else(|| HclError::Eval("missing test_func".to_string()))?;
+        assert!((f.func)(&[]).is_ok());
         let func2 = Function {
             name: "other_func".to_string(),
             func: Arc::new(|_| Ok(Value::new(Type::String, ValueData::String("a".to_string())))),
             signature: None,
         };
         ctx.set_function("other_func", func2);
-        let f2 = ctx.get_function("other_func").unwrap();
-        let _ = (f2.func)(&[]);
+        let f2 = ctx
+            .get_function("other_func")
+            .ok_or_else(|| HclError::Eval("missing other_func".to_string()))?;
+        assert!((f2.func)(&[]).is_ok());
+        Ok(())
     }
     #[test]
-    fn test_context_functions() {
+    fn test_context_functions() -> Result<(), HclError> {
         use crate::eval::func::Function;
         use std::sync::Arc;
         let mut ctx = Context::new();
@@ -713,9 +735,13 @@ mod tests {
             signature: None,
         };
         ctx.set_function(String::from("test_func_str"), func_str);
-        let f = ctx.get_function("test_func").unwrap();
+        let f = ctx
+            .get_function("test_func")
+            .ok_or_else(|| HclError::Eval("missing test_func".to_string()))?;
         assert!((f.func)(&[]).is_ok());
-        let f_str = ctx.get_function("test_func_str").unwrap();
+        let f_str = ctx
+            .get_function("test_func_str")
+            .ok_or_else(|| HclError::Eval("missing test_func_str".to_string()))?;
         assert!((f_str.func)(&[]).is_ok());
         assert!(ctx.get_function("other_func").is_none());
         let mut child = Context::new_child(&ctx);
@@ -727,12 +753,17 @@ mod tests {
             signature: None,
         };
         child.set_function("other_func", func2);
-        let f2 = child.get_function("other_func").unwrap();
+        let f2 = child
+            .get_function("other_func")
+            .ok_or_else(|| HclError::Eval("missing other_func".to_string()))?;
         assert!((f2.func)(&[]).is_ok());
         assert!(ctx.get_function("other_func").is_none());
+        Ok(())
     }
     #[test]
-    fn test_context_with_stdlib() {
+    fn test_context_with_stdlib() -> Result<(), HclError> {
+        use crate::eval::func::Function;
+        use std::sync::Arc;
         let ctx = Context::with_stdlib();
         assert!(ctx.stdlib_enabled);
         assert!(ctx.has_function("upper"));
@@ -743,8 +774,6 @@ mod tests {
         assert!(child.stdlib_enabled);
         assert!(child.has_function("upper"));
         let mut child_shadow = Context::new_child(&ctx);
-        use crate::eval::func::Function;
-        use std::sync::Arc;
         child_shadow.set_function(
             "upper",
             Function {
@@ -755,9 +784,12 @@ mod tests {
                 signature: None,
             },
         );
-        let custom_fn = child_shadow.get_function("upper").unwrap();
-        let res = (custom_fn.func)(&[]).unwrap();
+        let custom_fn = child_shadow
+            .get_function("upper")
+            .ok_or_else(|| HclError::Eval("missing upper".to_string()))?;
+        let res = (custom_fn.func)(&[])?;
         assert_eq!(*res.data, ValueData::String("custom".into()));
+        Ok(())
     }
     #[test]
     fn test_context_enable_and_register_stdlib() {
@@ -828,11 +860,11 @@ mod tests {
         assert!(ctx.has_function("lower"));
     }
     #[test]
-    fn test_context_function_names() {
-        let mut ctx = Context::new();
-        assert_eq!(ctx.function_names(), Vec::<String>::new());
+    fn test_context_function_names() -> Result<(), HclError> {
         use crate::eval::func::Function;
         use std::sync::Arc;
+        let mut ctx = Context::new();
+        assert_eq!(ctx.function_names(), Vec::<String>::new());
         ctx.set_function(
             "my_fn",
             Function {
@@ -841,7 +873,9 @@ mod tests {
                 signature: None,
             },
         );
-        let f_my = ctx.get_function("my_fn").unwrap();
+        let f_my = ctx
+            .get_function("my_fn")
+            .ok_or_else(|| HclError::Eval("missing my_fn".to_string()))?;
         assert!((f_my.func)(&[]).is_ok());
         let names = ctx.function_names();
         assert_eq!(names, vec!["my_fn".to_string()]);
@@ -852,9 +886,10 @@ mod tests {
         let all_names = stdlib_ctx.function_names();
         assert!(all_names.len() >= 70);
         assert!(all_names.contains(&"upper".to_string()));
+        Ok(())
     }
     #[test]
-    fn test_register_function_block_coverage() {
+    fn test_register_function_block_coverage() -> Result<(), HclError> {
         use crate::ast::expr::Expression;
         use crate::span::Span;
         let span = Span::new(0, 0, 1, 1, 1, 1);
@@ -888,7 +923,9 @@ mod tests {
             span: span.clone(),
         };
         ctx.register_function_block(&fb_variadic);
-        let f = ctx.get_function("custom_var").unwrap();
+        let f = ctx
+            .get_function("custom_var")
+            .ok_or_else(|| HclError::Eval("missing custom_var".to_string()))?;
         assert!((f.func)(&[]).is_err());
         let res_min = (f.func)(&[Value::new(Type::String, ValueData::String("p".into()))]);
         assert_eq!(
@@ -913,7 +950,9 @@ mod tests {
             span: span.clone(),
         };
         ctx.register_function_block(&fb_ret_mismatch);
-        let f_mismatch = ctx.get_function("ret_mismatch").unwrap();
+        let f_mismatch = ctx
+            .get_function("ret_mismatch")
+            .ok_or_else(|| HclError::Eval("missing ret_mismatch".to_string()))?;
         assert!((f_mismatch.func)(&[]).is_err());
         assert!((f_mismatch.func)(&[Value::null(Type::Dynamic)]).is_err());
         let fb_eval_fail = crate::ast::user_func::FunctionBlock {
@@ -925,8 +964,11 @@ mod tests {
             span,
         };
         ctx.register_function_block(&fb_eval_fail);
-        let f_fail = ctx.get_function("eval_fail").unwrap();
+        let f_fail = ctx
+            .get_function("eval_fail")
+            .ok_or_else(|| HclError::Eval("missing eval_fail".to_string()))?;
         assert!((f_fail.func)(&[]).is_err());
+        Ok(())
     }
     #[test]
     fn test_context_coverage_gaps() {

@@ -23,7 +23,7 @@ pub type FileManager = HclParser;
 impl HclParser {
     /// Creates a new, empty [`HclParser`].
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             files: BTreeMap::new(),
             buffer_paths: BTreeMap::new(),
@@ -80,13 +80,13 @@ impl HclParser {
         filename: &str,
         content: &str,
     ) -> Result<&Body, Diagnostics> {
+        use std::collections::btree_map::Entry;
         let file_arc = Some(std::sync::Arc::from(filename));
         let mut parser = Parser::new_with_file(content, file_arc);
         let body = parser.parse_body();
         if parser.errors().has_errors() {
             return Err(parser.errors().clone());
         }
-        use std::collections::btree_map::Entry;
         let body_ref = match self.files.entry(filename.to_string()) {
             Entry::Vacant(v) => &v.insert((content.to_string(), body)).1,
             Entry::Occupied(mut o) => {
@@ -162,8 +162,8 @@ impl HclParser {
         content: &str,
         schema: &crate::ast::schema::BodySchema,
     ) -> Result<&Body, Diagnostics> {
-        let body = crate::parse::json::parse_json_with_schema(content, schema)?;
         use std::collections::btree_map::Entry;
+        let body = crate::parse::json::parse_json_with_schema(content, schema)?;
         let body_ref = match self.files.entry(filename.to_string()) {
             Entry::Vacant(v) => &v.insert((content.to_string(), body)).1,
             Entry::Occupied(mut o) => {
@@ -175,7 +175,7 @@ impl HclParser {
     }
     /// Returns a reference to all loaded files in sorted filename order.
     #[must_use]
-    pub fn files(&self) -> &BTreeMap<String, (String, Body)> {
+    pub const fn files(&self) -> &BTreeMap<String, (String, Body)> {
         &self.files
     }
     /// Returns the source content and parsed body for the given filename, if loaded.
@@ -341,20 +341,14 @@ impl HclParser {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::eval::context::Context;
     use crate::eval::evaluator::Evaluator;
     use std::io::Write;
     #[test]
-    fn test_file_manager_hcl_and_json_strings() {
+    fn test_file_manager_hcl_and_json_strings() -> Result<(), HclError> {
         let mut mgr = HclParser::new();
         assert!(mgr.is_empty());
         assert_eq!(mgr.file_count(), 0);
@@ -362,7 +356,7 @@ mod tests {
         let hcl_src = "foo = 10
 bar = 20
 ";
-        let body = mgr.parse_hcl_string("vars.hcl", hcl_src).unwrap();
+        let body = mgr.parse_hcl_string("vars.hcl", hcl_src)?;
         assert_eq!(body.attributes.len(), 2);
         assert_eq!(mgr.file_count(), 1);
         assert_eq!(mgr.filenames(), vec!["vars.hcl"]);
@@ -371,21 +365,19 @@ bar = 20
         assert!(mgr.get_file("vars.hcl").is_some());
         assert_eq!(mgr.get_file("nonexistent"), None);
         let json_src = r#"{"baz": 30}"#;
-        let json_body = mgr.parse_json_string("extra.json", json_src).unwrap();
+        let json_body = mgr.parse_json_string("extra.json", json_src)?;
         assert_eq!(json_body.attributes.len(), 1);
         assert_eq!(mgr.file_count(), 2);
         assert_eq!(mgr.filenames(), vec!["extra.json", "vars.hcl"]);
-        let merged = mgr.merge_all().unwrap();
+        let merged = mgr.merge_all()?;
         assert_eq!(merged.attributes.len(), 3);
-        let updated_body = mgr.parse_hcl_string("vars.hcl", "foo = 15\n").unwrap();
+        let updated_body = mgr.parse_hcl_string("vars.hcl", "foo = 15\n")?;
         assert_eq!(updated_body.attributes.len(), 1);
-        let updated_json = mgr
-            .parse_json_string("extra.json", r#"{"baz": 35}"#)
-            .unwrap();
+        let updated_json = mgr.parse_json_string("extra.json", r#"{"baz": 35}"#)?;
         assert_eq!(updated_json.attributes.len(), 1);
         let mut ctx = Context::new();
         for (k, attr) in &merged.attributes {
-            let (val, _) = Evaluator::new(&ctx).evaluate(&attr.expr).unwrap();
+            let (val, _) = Evaluator::new(&ctx).evaluate(&attr.expr)?;
             ctx.set_variable(k, val);
         }
         assert!(ctx.get_variable("foo").is_some());
@@ -403,58 +395,72 @@ bar = 20
         assert!(formatted_unk.contains("Test error"));
         mgr.clear();
         assert!(mgr.is_empty());
+        Ok(())
     }
     #[test]
-    fn test_file_manager_duplicate_collision() {
+    fn test_file_manager_duplicate_collision() -> Result<(), HclError> {
         let mut mgr = HclParser::new();
         mgr.parse_hcl_string(
             "a.hcl",
             "port = 80
 ",
-        )
-        .unwrap();
+        )?;
         mgr.parse_hcl_string(
             "b.hcl",
             "port = 8080
 ",
-        )
-        .unwrap();
-        let err = mgr.merge_all().err().unwrap();
+        )?;
+        let err = mgr
+            .merge_all()
+            .err()
+            .ok_or_else(|| HclError::Parse("expected collision error".to_string()))?;
         assert_eq!(err.errors().len(), 1);
         assert!(
             err.errors()[0]
                 .to_string()
                 .contains("defined multiple times")
         );
+        Ok(())
     }
     #[test]
-    fn test_file_manager_parse_errors() {
+    fn test_file_manager_parse_errors() -> Result<(), HclError> {
         let mut mgr = HclParser::new();
         let bad_hcl = "port = 
 ";
-        let err = mgr.parse_hcl_string("bad.hcl", bad_hcl).err().unwrap();
+        let err = mgr
+            .parse_hcl_string("bad.hcl", bad_hcl)
+            .err()
+            .ok_or_else(|| HclError::Parse("expected parse error".to_string()))?;
         assert!(err.has_errors());
         let bad_json = "{ invalid json }";
-        let err_json = mgr.parse_json_string("bad.json", bad_json).err().unwrap();
+        let err_json = mgr
+            .parse_json_string("bad.json", bad_json)
+            .err()
+            .ok_or_else(|| HclError::Parse("expected json parse error".to_string()))?;
         assert!(err_json.has_errors());
+        Ok(())
     }
     #[test]
-    fn test_file_manager_filesystem_operations() {
+    fn test_file_manager_filesystem_operations() -> Result<(), HclError> {
         let temp_dir = std::env::temp_dir();
         let hcl_path_buf = temp_dir.join(format!("test_mgr_{}.hcl", std::process::id()));
         let json_path_buf = temp_dir.join(format!("test_mgr_{}.json", std::process::id()));
-        let hcl_path = hcl_path_buf.to_str().unwrap();
-        let json_path = json_path_buf.to_str().unwrap();
-        let mut f_hcl = fs::File::create(hcl_path).unwrap();
-        writeln!(f_hcl, "enabled = true").unwrap();
+        let hcl_path = hcl_path_buf
+            .to_str()
+            .ok_or_else(|| HclError::Parse("invalid utf8 path".to_string()))?;
+        let json_path = json_path_buf
+            .to_str()
+            .ok_or_else(|| HclError::Parse("invalid utf8 path".to_string()))?;
+        let mut f_hcl = fs::File::create(hcl_path)?;
+        writeln!(f_hcl, "enabled = true")?;
         drop(f_hcl);
-        let mut f_json = fs::File::create(json_path).unwrap();
-        writeln!(f_json, r#"{{"count": 5}}"#).unwrap();
+        let mut f_json = fs::File::create(json_path)?;
+        writeln!(f_json, r#"{{"count": 5}}"#)?;
         drop(f_json);
         let mut mgr = FileManager::new();
-        let body_hcl = mgr.parse_hcl_file(hcl_path).unwrap();
+        let body_hcl = mgr.parse_hcl_file(hcl_path)?;
         assert_eq!(body_hcl.attributes.len(), 1);
-        let body_json = mgr.parse_json_file(json_path).unwrap();
+        let body_json = mgr.parse_json_file(json_path)?;
         assert_eq!(body_json.attributes.len(), 1);
         assert_eq!(mgr.files().len(), 2);
         let _ = fs::remove_file(hcl_path);
@@ -467,6 +473,7 @@ bar = 20
         assert!(non_exist_json.is_err());
         let json_err_str = format!("{non_exist_json:?}");
         assert!(json_err_str.contains("Failed to read file"));
+        Ok(())
     }
     #[test]
     fn test_file_manager_buffer_paths() {
@@ -477,34 +484,40 @@ bar = 20
         assert_eq!(mgr.get_buffer_path(2), None);
     }
     #[test]
-    fn test_file_manager_parse_directory_and_format_all_diagnostics() {
+    fn test_file_manager_parse_directory_and_format_all_diagnostics() -> Result<(), HclError> {
         let temp_dir = std::env::temp_dir().join(format!("test_fm_dir_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
-        fs::create_dir_all(&temp_dir).unwrap();
+        fs::create_dir_all(&temp_dir)?;
         let p1 = temp_dir.join("a.hcl");
         let p2 = temp_dir.join("b.hcl");
         let sub_dir = temp_dir.join("sub_dir");
         let hidden = temp_dir.join(".hidden.hcl");
         let non_matching = temp_dir.join("ignored.txt");
-        fs::create_dir(&sub_dir).unwrap();
-        fs::write(&p1, "val_a = \"hello\"\n").unwrap();
-        fs::write(&p2, "val_b = \"world\"\n").unwrap();
-        fs::write(&hidden, "hidden = 1\n").unwrap();
-        fs::write(&non_matching, "attr_txt = 1\n").unwrap();
+        fs::create_dir(&sub_dir)?;
+        fs::write(&p1, "val_a = \"hello\"\n")?;
+        fs::write(&p2, "val_b = \"world\"\n")?;
+        fs::write(&hidden, "hidden = 1\n")?;
+        fs::write(&non_matching, "attr_txt = 1\n")?;
         let mut mgr = FileManager::new();
-        let body = mgr.parse_directory(&temp_dir, &["hcl"]).unwrap();
+        let body = mgr.parse_directory(&temp_dir, &["hcl"])?;
         assert_eq!(body.attributes.len(), 2);
         assert_eq!(mgr.file_count(), 2);
         let mut mgr_dot = FileManager::new();
-        let body_dot = mgr_dot.parse_directory(&temp_dir, &[".hcl"]).unwrap();
+        let body_dot = mgr_dot.parse_directory(&temp_dir, &[".hcl"])?;
         assert_eq!(body_dot.attributes.len(), 2);
         let mut mgr_all = FileManager::new();
-        let body_all = mgr_all.parse_directory(&temp_dir, &[]).unwrap();
+        let body_all = mgr_all.parse_directory(&temp_dir, &[])?;
         assert_eq!(body_all.attributes.len(), 3);
         let mut diags = Diagnostics::new();
-        let span_a = Span::new(0, 5, 1, 1, 1, 6).with_file(p1.to_str().unwrap());
+        let p1_str = p1
+            .to_str()
+            .ok_or_else(|| HclError::Parse("invalid utf8 path".to_string()))?;
+        let p2_str = p2
+            .to_str()
+            .ok_or_else(|| HclError::Parse("invalid utf8 path".to_string()))?;
+        let span_a = Span::new(0, 5, 1, 1, 1, 6).with_file(p1_str);
         diags.push(Diagnostic::error("Test error A", "Detail A", span_a));
-        let span_b = Span::new(0, 5, 1, 1, 1, 6).with_file(p2.to_str().unwrap());
+        let span_b = Span::new(0, 5, 1, 1, 1, 6).with_file(p2_str);
         diags.push(Diagnostic::warning("Test warning B", "Detail B", span_b));
         let writer = DiagnosticWriter::plain();
         let formatted = mgr.format_all_diagnostics(&diags, &writer);
@@ -513,15 +526,22 @@ bar = 20
         assert!(formatted.contains("val_a = \"hello\""));
         assert!(formatted.contains("val_b = \"world\""));
         let bad_hcl = temp_dir.join("c_bad.hcl");
-        fs::write(&bad_hcl, "bad = = parse error").unwrap();
+        fs::write(&bad_hcl, "bad = = parse error")?;
         let mut mgr_err = FileManager::new();
-        let err_parse = mgr_err.parse_directory(&temp_dir, &["hcl"]).err().unwrap();
+        let err_parse = mgr_err
+            .parse_directory(&temp_dir, &["hcl"])
+            .err()
+            .ok_or_else(|| HclError::Parse("expected parse error".to_string()))?;
         assert!(err_parse.has_errors());
         let _ = fs::remove_file(&bad_hcl);
         let bad_dir = temp_dir.join("missing");
         let mut bad_mgr = FileManager::new();
-        let err = bad_mgr.parse_directory(bad_dir, &["hcl"]).err().unwrap();
+        let err = bad_mgr
+            .parse_directory(bad_dir, &["hcl"])
+            .err()
+            .ok_or_else(|| HclError::Parse("expected missing dir error".to_string()))?;
         assert!(err.has_errors());
         let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
     }
 }

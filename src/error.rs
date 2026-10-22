@@ -1,49 +1,70 @@
 //! Error types for the HCL-RS crate.
-use derive_more::derive::{Display, Error};
-/// A strongly-typed error enum representing all possible failure states.
-#[derive(Debug, Clone, PartialEq, Eq, Display, Error)]
+//!
+//! Provides [`HclError`], the single strongly-typed error enum used across all crates,
+//! binaries, evaluators, serializers, and language server components in this workspace.
+#![deny(missing_docs)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use derive_more::derive::{Display, Error, From};
+
+/// A strongly-typed error enum representing all possible failure states across the workspace.
+#[derive(Debug, Clone, PartialEq, Eq, Display, Error, From)]
 pub enum HclError {
     /// An error that occurs during lexical analysis.
     #[display("Lexical error: {_0}")]
+    #[from(ignore)]
     Lex(#[error(ignore)] String),
     /// An error that occurs during parsing.
     #[display("Parse error: {_0}")]
+    #[from(ignore)]
     Parse(#[error(ignore)] String),
     /// An error that occurs during evaluation.
     #[display("Evaluation error: {_0}")]
+    #[from(ignore)]
     Eval(#[error(ignore)] String),
     /// An error that occurs during decoding.
     #[display("Decode error: {_0}")]
+    #[from(ignore)]
     Decode(#[error(ignore)] String),
     /// An error that occurs during formatting or serialization.
     #[display("Format error: {_0}")]
+    #[from(ignore)]
     Format(#[error(ignore)] String),
     /// An error that occurs due to unexpected or invalid types.
     #[display("Type error: {_0}")]
+    #[from(ignore)]
     Type(#[error(ignore)] String),
     /// An error that occurs due to missing fields.
     #[display("Missing field: {_0}")]
+    #[from(ignore)]
     MissingField(#[error(ignore)] String),
     /// An error that occurs when a function argument does not match the expected type.
     #[display("Function argument mismatch: {_0}")]
+    #[from(ignore)]
     FunctionArgMismatch(#[error(ignore)] String),
     /// An error that occurs during dynamic block processing.
     #[display("Dynamic block error: {_0}")]
+    #[from(ignore)]
     DynamicBlock(#[error(ignore)] String),
     /// An error that occurs during schema validation.
     #[display("Schema error: {_0}")]
+    #[from(ignore)]
     Schema(#[error(ignore)] String),
     /// An error that occurs during traversal analysis or conversion.
     #[display("Traversal error: {_0}")]
+    #[from(ignore)]
     Traversal(#[error(ignore)] String),
     /// An error that occurs when a dependency cycle is detected.
     #[display("Cyclic dependency detected: {_0}")]
+    #[from(ignore)]
     CyclicDependency(#[error(ignore)] String),
     /// An error that occurs during condition assertion or declarative validation.
     #[display("Validation error: {_0}")]
+    #[from(ignore)]
     Validation(#[error(ignore)] String),
     /// An error that occurs when failing to downcast an encapsulated value.
     #[display("Capsule downcast error: expected {expected}, got {actual}")]
+    #[from(ignore)]
     CapsuleDowncast {
         /// The expected type description.
         expected: &'static str,
@@ -52,36 +73,47 @@ pub enum HclError {
     },
     /// A general error that occurs during capsule operations.
     #[display("Capsule error: {_0}")]
+    #[from(ignore)]
     Capsule(#[error(ignore)] String),
-    /// An I/O error that occurs when reading or writing files.
+    /// An I/O error that occurs when reading or writing files or streams.
     #[display("I/O error: {_0}")]
+    #[from(ignore)]
     Io(#[error(ignore)] String),
     /// A virtual filesystem error.
     #[display("Filesystem error: {_0}")]
+    #[from(ignore)]
     FileSystem(#[error(ignore)] String),
     /// An error that occurs during template parsing or directive evaluation.
     #[display("Template error: {_0}")]
+    #[from(ignore)]
     Template(#[error(ignore)] String),
     /// An error that occurs during heredoc processing or indentation normalization.
     #[display("Heredoc error: {_0}")]
+    #[from(ignore)]
     Heredoc(#[error(ignore)] String),
     /// An error that occurs during `MessagePack` encoding.
     #[display("MessagePack encode error: {_0}")]
+    #[from(ignore)]
     MsgPackEncode(#[error(ignore)] String),
     /// An error that occurs during `MessagePack` decoding.
     #[display("MessagePack decode error: {_0}")]
+    #[from(ignore)]
     MsgPackDecode(#[error(ignore)] String),
     /// An error that occurs during namespace resolution or invocation.
     #[display("Namespace error: {_0}")]
+    #[from(ignore)]
     NamespaceError(#[error(ignore)] String),
     /// An error that occurs during partial expression evaluation.
     #[display("Partial evaluation error: {_0}")]
+    #[from(ignore)]
     PartialEval(#[error(ignore)] String),
     /// An error that occurs during payload encoding or decoding.
     #[display("Encoding error: {_0}")]
+    #[from(ignore)]
     Encoding(#[error(ignore)] String),
     /// An error that occurs during nested path traversal.
     #[display("Path error at {path}: {message}")]
+    #[from(ignore)]
     PathError {
         /// The path where the error occurred.
         path: String,
@@ -90,15 +122,19 @@ pub enum HclError {
     },
     /// An error that occurs during cty JSON serialization or deserialization.
     #[display("cty JSON error: {_0}")]
+    #[from(ignore)]
     CtyJson(#[error(ignore)] String),
     /// An error that occurs during Unicode processing or grapheme cluster segmentation.
     #[display("Unicode error: {_0}")]
+    #[from(ignore)]
     Unicode(#[error(ignore)] String),
     /// An error that occurs when an unsupported character encoding is requested.
     #[display("Unsupported encoding: {_0}")]
+    #[from(ignore)]
     UnsupportedEncoding(#[error(ignore)] String),
     /// An error that occurs when character encoding conversion fails.
     #[display("Encoding conversion error from {from} to {to}: {reason}")]
+    #[from(ignore)]
     EncodingConversion {
         /// The source encoding.
         from: String,
@@ -109,12 +145,15 @@ pub enum HclError {
     },
     /// An error that occurs when a referenced CST node is not found.
     #[display("CST node not found: {_0}")]
+    #[from(ignore)]
     CstNodeNotFound(#[error(ignore)] String),
     /// An error that occurs when attempting an invalid CST positioning or insertion.
     #[display("CST invalid position: {_0}")]
+    #[from(ignore)]
     CstInvalidPosition(#[error(ignore)] String),
     /// An error that occurs when a requested capsule method does not exist.
     #[display("Capsule method '{method}' not found on capsule type '{capsule_type}'")]
+    #[from(ignore)]
     CapsuleMethodNotFound {
         /// The capsule type name.
         capsule_type: &'static str,
@@ -123,6 +162,7 @@ pub enum HclError {
     },
     /// An error that occurs when a capsule method execution fails.
     #[display("Capsule method '{method}' on capsule type '{capsule_type}' failed: {reason}")]
+    #[from(ignore)]
     CapsuleMethodError {
         /// The capsule type name.
         capsule_type: &'static str,
@@ -133,20 +173,168 @@ pub enum HclError {
     },
     /// A linting diagnostic or rule violation.
     #[display("Lint warning: {_0}")]
+    #[from(ignore)]
     Lint(#[error(ignore)] String),
+    /// An error that occurs during command-line argument parsing or CLI execution.
+    #[display("CLI error: {_0}")]
+    #[from(ignore)]
+    CliArgs(#[error(ignore)] String),
+    /// An LSP framing or JSON-RPC protocol validation error.
+    #[display("Protocol error: {_0}")]
+    #[from(ignore)]
+    LspProtocol(#[error(ignore)] String),
+    /// The requested document URI was not found in the LSP virtual cache.
+    #[display("Document not found: {_0}")]
+    #[from(ignore)]
+    LspDocumentNotFound(#[error(ignore)] String),
+    /// A general LSP server state or lifecycle error.
+    #[display("Server error: {_0}")]
+    #[from(ignore)]
+    LspServer(#[error(ignore)] String),
+    /// A JSON serialization or deserialization error.
+    #[display("JSON error: {_0}")]
+    #[from(ignore)]
+    Json(#[error(ignore)] String),
+    /// A Serde serialization error.
+    #[display("Serialize error: {_0}")]
+    #[from(ignore)]
+    SerdeSerialize(#[error(ignore)] String),
+    /// A Serde deserialization error.
+    #[display("Deserialize error: {_0}")]
+    #[from(ignore)]
+    SerdeDeserialize(#[error(ignore)] String),
+    /// A null pointer was passed across the C FFI boundary.
+    #[display("FFI null pointer error in {_0}")]
+    #[from(ignore)]
+    FfiNullPointer(#[error(ignore)] &'static str),
+    /// An invalid UTF-8 string was encountered across the C FFI boundary.
+    #[display("FFI UTF-8 error: {_0}")]
+    #[from(ignore)]
+    FfiUtf8(#[error(ignore)] String),
+    /// A WebAssembly boundary conversion or execution error.
+    #[display("Wasm interop error: {_0}")]
+    #[from(ignore)]
+    WasmInterop(#[error(ignore)] String),
+    /// A collection of structured HCL diagnostics wrapped as an error.
+    #[display("{_0}")]
+    Diagnostics(#[error(not(source))] Box<crate::diagnostic::Diagnostics>),
 }
+
+impl From<crate::diagnostic::Diagnostics> for HclError {
+    fn from(diags: crate::diagnostic::Diagnostics) -> Self {
+        Self::Diagnostics(Box::new(diags))
+    }
+}
+
+impl From<HclError> for crate::diagnostic::Diagnostics {
+    fn from(err: HclError) -> Self {
+        match err {
+            HclError::Diagnostics(diags) => *diags,
+            other => Self::from(crate::diagnostic::Diagnostic::error(
+                "Error",
+                other.to_string(),
+                crate::span::Span::default(),
+            )),
+        }
+    }
+}
+
+impl From<std::io::Error> for HclError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(err.to_string())
+    }
+}
+
+impl From<std::fmt::Error> for HclError {
+    fn from(err: std::fmt::Error) -> Self {
+        Self::Format(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for HclError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::Json(err.to_string())
+    }
+}
+
+impl From<serde_yaml::Error> for HclError {
+    fn from(err: serde_yaml::Error) -> Self {
+        Self::Encoding(err.to_string())
+    }
+}
+
+impl From<csv::Error> for HclError {
+    fn from(err: csv::Error) -> Self {
+        Self::Encoding(err.to_string())
+    }
+}
+
+impl From<regex::Error> for HclError {
+    fn from(err: regex::Error) -> Self {
+        Self::Eval(err.to_string())
+    }
+}
+
+impl From<uuid::Error> for HclError {
+    fn from(err: uuid::Error) -> Self {
+        Self::Eval(err.to_string())
+    }
+}
+
+impl From<ipnet::AddrParseError> for HclError {
+    fn from(err: ipnet::AddrParseError) -> Self {
+        Self::Eval(err.to_string())
+    }
+}
+
+impl From<base64::DecodeError> for HclError {
+    fn from(err: base64::DecodeError) -> Self {
+        Self::Encoding(err.to_string())
+    }
+}
+
+impl From<bigdecimal::ParseBigDecimalError> for HclError {
+    fn from(err: bigdecimal::ParseBigDecimalError) -> Self {
+        Self::Parse(err.to_string())
+    }
+}
+
+impl From<std::str::Utf8Error> for HclError {
+    fn from(err: std::str::Utf8Error) -> Self {
+        Self::Unicode(err.to_string())
+    }
+}
+
+impl From<std::string::FromUtf8Error> for HclError {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Self::Unicode(err.to_string())
+    }
+}
+
+impl serde::ser::Error for HclError {
+    fn custom<T: std::fmt::Display>(msg: T) -> Self {
+        Self::SerdeSerialize(msg.to_string())
+    }
+}
+
+impl serde::de::Error for HclError {
+    fn custom<T: std::fmt::Display>(msg: T) -> Self {
+        Self::SerdeDeserialize(msg.to_string())
+    }
+}
+
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::diagnostic::{Diagnostic, Diagnostics};
+    use crate::span::Span;
+    use serde::de::Error as DeError;
+    use serde::ser::Error as SerError;
+    use std::str::FromStr;
+
     #[test]
-    fn test_hcl_error_display() {
+    fn test_hcl_error_display_core() {
         let err_cm_nf = HclError::CapsuleMethodNotFound {
             capsule_type: "matrix",
             method: "invert".to_string(),
@@ -238,6 +426,16 @@ mod tests {
         assert!(err.to_string().contains("Capsule error: operation failed"));
         let err = HclError::Io("file not found".to_string());
         assert!(err.to_string().contains("I/O error: file not found"));
+        let err_fs = HclError::FileSystem("permission denied".to_string());
+        assert!(
+            err_fs
+                .to_string()
+                .contains("Filesystem error: permission denied")
+        );
+    }
+
+    #[test]
+    fn test_hcl_error_display_extended() {
         let err = HclError::Parse("unexpected token".to_string());
         assert!(err.to_string().contains("Parse error: unexpected token"));
         let err = HclError::Eval("undefined variable".to_string());
@@ -290,15 +488,15 @@ mod tests {
                 .to_string()
                 .contains("cty JSON error: invalid type signature")
         );
-        let err_ns = HclError::NamespaceError("unknown namespace provider".to_string());
+        let err_namespace = HclError::NamespaceError("unknown namespace provider".to_string());
         assert!(
-            err_ns
+            err_namespace
                 .to_string()
                 .contains("Namespace error: unknown namespace provider")
         );
-        let err_pe = HclError::PartialEval("unresolvable variable".to_string());
+        let err_partial = HclError::PartialEval("unresolvable variable".to_string());
         assert!(
-            err_pe
+            err_partial
                 .to_string()
                 .contains("Partial evaluation error: unresolvable variable")
         );
@@ -315,17 +513,177 @@ mod tests {
                 .contains("Lint warning: unused variable")
         );
     }
+
     #[test]
-    fn test_hcl_error_traits() {
+    fn test_hcl_error_display_cli_lsp_ffi_wasm() {
+        let err_cli = HclError::CliArgs("invalid flag".to_string());
+        assert!(err_cli.to_string().contains("CLI error: invalid flag"));
+        let err_lsp_proto = HclError::LspProtocol("missing content-length".to_string());
+        assert!(
+            err_lsp_proto
+                .to_string()
+                .contains("Protocol error: missing content-length")
+        );
+        let err_lsp_doc = HclError::LspDocumentNotFound("file:///a.hcl".to_string());
+        assert!(
+            err_lsp_doc
+                .to_string()
+                .contains("Document not found: file:///a.hcl")
+        );
+        let err_lsp_srv = HclError::LspServer("not initialized".to_string());
+        assert!(
+            err_lsp_srv
+                .to_string()
+                .contains("Server error: not initialized")
+        );
+        let err_json = HclError::Json("bad json".to_string());
+        assert!(err_json.to_string().contains("JSON error: bad json"));
+        let err_ser = <HclError as SerError>::custom("ser fail");
+        assert_eq!(err_ser, HclError::SerdeSerialize("ser fail".to_string()));
+        assert!(err_ser.to_string().contains("Serialize error: ser fail"));
+        let err_deser = <HclError as DeError>::custom("de fail");
+        assert_eq!(err_deser, HclError::SerdeDeserialize("de fail".to_string()));
+        assert!(err_deser.to_string().contains("Deserialize error: de fail"));
+        let err_ffi_null = HclError::FfiNullPointer("hcl_parse");
+        assert!(
+            err_ffi_null
+                .to_string()
+                .contains("FFI null pointer error in hcl_parse")
+        );
+        let err_ffi_utf8 = HclError::FfiUtf8("invalid utf8".to_string());
+        assert!(
+            err_ffi_utf8
+                .to_string()
+                .contains("FFI UTF-8 error: invalid utf8")
+        );
+        let err_wasm = HclError::WasmInterop("js err".to_string());
+        assert!(err_wasm.to_string().contains("Wasm interop error: js err"));
+    }
+
+    #[test]
+    fn test_hcl_error_traits_and_conversions() -> Result<(), HclError> {
         let err = HclError::Lex("test".to_string());
-        let err_clone = err.clone();
+        let err_clone = Clone::clone(&err);
         assert_eq!(err, err_clone);
         let err_hd = HclError::Heredoc("test".to_string());
-        let err_hd_clone = err_hd.clone();
+        let err_hd_clone = Clone::clone(&err_hd);
         assert_eq!(err_hd, err_hd_clone);
         let err_mp = HclError::MsgPackEncode("test".to_string());
-        assert_eq!(err_mp, err_mp.clone());
+        assert_eq!(err_mp, Clone::clone(&err_mp));
         let std_err: &dyn std::error::Error = &err;
         assert!(std_err.to_string().contains("Lexical error: test"));
+
+        let mut diags = Diagnostics::new();
+        diags.push(Diagnostic::error("diag err", "detail", Span::default()));
+        let from_diags = HclError::from(diags.clone());
+        assert!(from_diags.to_string().contains("diag err"));
+        let from_box_diags = HclError::from(Box::new(diags.clone()));
+        assert_eq!(from_diags, from_box_diags);
+        let roundtrip_diags = Diagnostics::from(from_diags);
+        assert_eq!(roundtrip_diags, diags);
+        let single_diag = Diagnostics::from(HclError::Eval("eval fail".to_string()));
+        assert!(single_diag.has_errors());
+
+        let io_err = std::io::Error::other("disk full");
+        assert!(HclError::from(io_err).to_string().contains("disk full"));
+
+        let fmt_err = std::fmt::Error;
+        assert!(HclError::from(fmt_err).to_string().contains("Format error"));
+
+        let json_err = serde_json::from_str::<serde_json::Value>("[invalid")
+            .err()
+            .ok_or_else(|| HclError::Eval("expected json error".to_string()))?;
+        assert!(HclError::from(json_err).to_string().contains("JSON error"));
+
+        let yaml_err = serde_yaml::from_str::<serde_yaml::Value>(":\n  - [\n")
+            .err()
+            .ok_or_else(|| HclError::Eval("expected yaml error".to_string()))?;
+        assert!(
+            HclError::from(yaml_err)
+                .to_string()
+                .contains("Encoding error")
+        );
+
+        let mut csv_rdr = csv::ReaderBuilder::new().from_reader(&b"a,b\n\"unclosed"[..]);
+        let csv_err = csv_rdr
+            .records()
+            .next()
+            .and_then(Result::err)
+            .ok_or_else(|| HclError::Eval("expected csv error".to_string()))?;
+        assert!(
+            HclError::from(csv_err)
+                .to_string()
+                .contains("Encoding error")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_hcl_error_conversions_stdlib() -> Result<(), HclError> {
+        let bad_regex_pattern = String::from("[unclosed");
+        let re_err = regex::Regex::new(&bad_regex_pattern)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected regex error".to_string()))?;
+        assert!(
+            HclError::from(re_err)
+                .to_string()
+                .contains("Evaluation error")
+        );
+
+        let uuid_err = uuid::Uuid::parse_str("not-a-uuid")
+            .err()
+            .ok_or_else(|| HclError::Eval("expected uuid error".to_string()))?;
+        assert!(
+            HclError::from(uuid_err)
+                .to_string()
+                .contains("Evaluation error")
+        );
+
+        let ip_err = ipnet::IpNet::from_str("not-an-ip")
+            .err()
+            .ok_or_else(|| HclError::Eval("expected ip error".to_string()))?;
+        assert!(
+            HclError::from(ip_err)
+                .to_string()
+                .contains("Evaluation error")
+        );
+
+        let base64_err = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, "!!!")
+            .err()
+            .ok_or_else(|| HclError::Eval("expected base64 error".to_string()))?;
+        assert!(
+            HclError::from(base64_err)
+                .to_string()
+                .contains("Encoding error")
+        );
+
+        let decimal_err = bigdecimal::BigDecimal::from_str("not-a-number")
+            .err()
+            .ok_or_else(|| HclError::Eval("expected bigdecimal error".to_string()))?;
+        assert!(
+            HclError::from(decimal_err)
+                .to_string()
+                .contains("Parse error")
+        );
+
+        let bad_bytes = vec![0xFF_u8, 0xFF_u8];
+        let utf8_err = std::str::from_utf8(&bad_bytes)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected utf8 error".to_string()))?;
+        assert!(
+            HclError::from(utf8_err)
+                .to_string()
+                .contains("Unicode error")
+        );
+
+        let string_utf8_err = String::from_utf8(vec![0xFF, 0xFF])
+            .err()
+            .ok_or_else(|| HclError::Eval("expected from_utf8 error".to_string()))?;
+        assert!(
+            HclError::from(string_utf8_err)
+                .to_string()
+                .contains("Unicode error")
+        );
+        Ok(())
     }
 }

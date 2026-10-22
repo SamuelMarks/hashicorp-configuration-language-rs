@@ -46,18 +46,22 @@ pub fn eval_type_expr(expr: &TypeExpr) -> Type {
 /// * `ctx` - The evaluation context for evaluating default expressions.
 ///
 /// # Errors
-/// Returns an error message if `val` is not an object, if `schema` is not an object type expression,
-/// or if a required attribute is missing.
+/// Returns [`crate::error::HclError`] if `val` is not an object, if `schema` is not an object type expression,
+/// if default expression evaluation fails, or if a required attribute is missing.
 pub fn coerce_object_with_schema(
     val: &Value,
     schema: &TypeExpr,
     ctx: &crate::eval::context::Context,
-) -> Result<Value, String> {
+) -> Result<Value, crate::error::HclError> {
     let TypeExpr::Object(schema_attrs, _) = schema else {
-        return Err("Schema is not an object type expression".to_string());
+        return Err(crate::error::HclError::Type(
+            "Schema is not an object type expression".to_string(),
+        ));
     };
     let ValueData::Object(map) = &*val.data else {
-        return Err("Expected object value".to_string());
+        return Err(crate::error::HclError::Type(
+            "Expected object value".to_string(),
+        ));
     };
     let mut new_map = BTreeMap::new();
     for (attr_name, attr_spec) in schema_attrs {
@@ -66,8 +70,8 @@ pub fn coerce_object_with_schema(
                 existing.is_null() && attr_spec.optional,
                 &attr_spec.default_val,
             ) {
-                let mut evaluator = crate::eval::evaluator::Evaluator::new(ctx);
-                let evaluated = evaluator.eval_expr(def_expr);
+                let evaluator = crate::eval::evaluator::Evaluator::new(ctx);
+                let (evaluated, _) = evaluator.evaluate(def_expr)?;
                 new_map.insert(attr_name.clone(), evaluated);
             } else if let TypeExpr::Object(..) = &attr_spec.ty {
                 let nested = coerce_object_with_schema(existing, &attr_spec.ty, ctx)?;
@@ -79,15 +83,17 @@ pub fn coerce_object_with_schema(
             }
         } else if attr_spec.optional {
             if let Some(ref def_expr) = attr_spec.default_val {
-                let mut evaluator = crate::eval::evaluator::Evaluator::new(ctx);
-                let evaluated = evaluator.eval_expr(def_expr);
+                let evaluator = crate::eval::evaluator::Evaluator::new(ctx);
+                let (evaluated, _) = evaluator.evaluate(def_expr)?;
                 new_map.insert(attr_name.clone(), evaluated);
             } else {
                 let target_ty = eval_type_expr(&attr_spec.ty);
                 new_map.insert(attr_name.clone(), Value::null(target_ty));
             }
         } else {
-            return Err(format!("Missing required attribute: {attr_name}"));
+            return Err(crate::error::HclError::MissingField(format!(
+                "Missing required attribute: {attr_name}"
+            )));
         }
     }
     let out_ty = eval_type_expr(schema);
@@ -95,17 +101,11 @@ pub fn coerce_object_with_schema(
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::error::HclError;
     use crate::span::Span;
     use std::collections::HashMap;
-    fn empty_span() -> Span {
+    const fn empty_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
     #[test]
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(ty, Type::object_with_optional(expected, expected_opts));
     }
     #[test]
-    fn test_coerce_object_with_schema() {
+    fn test_coerce_object_with_schema() -> Result<(), HclError> {
         use crate::ast::expr::Expression;
         use crate::ast::type_expr::ObjectAttrType;
         use crate::eval::context::Context;
@@ -201,7 +201,7 @@ mod tests {
             Value::new(Type::String, ValueData::String("srv".into())),
         );
         let in_val = Value::new(Type::Dynamic, ValueData::Object(in_map));
-        let coerced = coerce_object_with_schema(&in_val, &schema, &ctx).unwrap();
+        let coerced = coerce_object_with_schema(&in_val, &schema, &ctx)?;
         let mut expected_map = BTreeMap::new();
         expected_map.insert(
             "name".to_string(),
@@ -221,7 +221,7 @@ mod tests {
         );
         in_map2.insert("port".to_string(), Value::null(Type::Number));
         let in_val2 = Value::new(Type::Dynamic, ValueData::Object(in_map2));
-        let coerced2 = coerce_object_with_schema(&in_val2, &schema, &ctx).unwrap();
+        let coerced2 = coerce_object_with_schema(&in_val2, &schema, &ctx)?;
         let mut expected_map2 = BTreeMap::new();
         expected_map2.insert(
             "name".to_string(),
@@ -236,6 +236,35 @@ mod tests {
         assert_eq!(coerced2, expected_val2);
         let empty_obj = Value::new(Type::Dynamic, ValueData::Object(BTreeMap::new()));
         assert!(coerce_object_with_schema(&empty_obj, &schema, &ctx).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_coerce_object_with_schema_nested_and_errors() {
+        use crate::ast::expr::Expression;
+        use crate::ast::type_expr::ObjectAttrType;
+        use crate::eval::context::Context;
+        let ctx = Context::new();
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "name".to_string(),
+            ObjectAttrType::required(TypeExpr::Primitive(Type::String, empty_span())),
+        );
+        attrs.insert(
+            "port".to_string(),
+            ObjectAttrType::optional(
+                TypeExpr::Primitive(Type::Number, empty_span()),
+                Some(Expression::Number(8080_i32.into(), empty_span())),
+            ),
+        );
+        let schema = TypeExpr::Object(attrs, empty_span());
+        let empty_obj = Value::new(Type::Dynamic, ValueData::Object(BTreeMap::new()));
+        let mut in_map = BTreeMap::new();
+        in_map.insert(
+            "name".to_string(),
+            Value::new(Type::String, ValueData::String("srv".into())),
+        );
+        let in_val = Value::new(Type::Dynamic, ValueData::Object(in_map));
         let mut inner_attrs = HashMap::new();
         inner_attrs.insert(
             "a".to_string(),
@@ -287,6 +316,21 @@ mod tests {
             )
             .is_err()
         );
+        let bad_def_expr = Expression::Variable("nonexistent_var".into(), empty_span());
+        let mut bad_def_attrs = HashMap::new();
+        bad_def_attrs.insert(
+            "opt".to_string(),
+            ObjectAttrType::optional(
+                TypeExpr::Primitive(Type::String, empty_span()),
+                Some(bad_def_expr),
+            ),
+        );
+        let bad_def_schema = TypeExpr::Object(bad_def_attrs, empty_span());
+        assert!(coerce_object_with_schema(&empty_obj, &bad_def_schema, &ctx).is_err());
+        let mut null_opt_map = BTreeMap::new();
+        null_opt_map.insert("opt".to_string(), Value::null(Type::String));
+        let null_opt_val = Value::new(Type::Dynamic, ValueData::Object(null_opt_map));
+        assert!(coerce_object_with_schema(&null_opt_val, &bad_def_schema, &ctx).is_err());
     }
     #[test]
     fn test_eval_type_expr_tuple() {

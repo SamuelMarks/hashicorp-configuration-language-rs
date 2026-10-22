@@ -1,4 +1,5 @@
 //! Collection standard library functions.
+use crate::error::HclError;
 use crate::eval::func::Function;
 use crate::number::Number;
 use crate::types::unify::unify;
@@ -49,9 +50,11 @@ pub fn functions() -> Vec<Function> {
 fn alltrue_func() -> Function {
     Function {
         name: "alltrue".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("alltrue expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "alltrue expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
@@ -59,19 +62,24 @@ fn alltrue_func() -> Function {
             let list = match &*args[0].data {
                 ValueData::Array(arr) => arr,
                 ValueData::Set(_set) => {
-                    return Err("alltrue requires a list, got set".to_string());
+                    return Err(HclError::FunctionArgMismatch(
+                        "alltrue requires a list, got set".to_string(),
+                    ));
                 }
-                _ => return Err("alltrue requires a list".to_string()),
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "alltrue requires a list".to_string(),
+                    ));
+                }
             };
             for item in list {
                 if item.is_unknown() {
                     return Ok(Value::unknown(Type::Bool));
                 }
-                let b = item
-                    .clone()
-                    .coerce(&Type::Bool)
-                    .map_err(|_| "alltrue requires a list of booleans".to_string())?;
-                if let ValueData::Bool(false) = *b.data {
+                let b = item.clone().coerce(&Type::Bool).map_err(|_| {
+                    HclError::FunctionArgMismatch("alltrue requires a list of booleans".to_string())
+                })?;
+                if *b.data == ValueData::Bool(false) {
                     return Ok(Value::new(Type::Bool, ValueData::Bool(false)));
                 }
             }
@@ -83,25 +91,28 @@ fn alltrue_func() -> Function {
 fn anytrue_func() -> Function {
     Function {
         name: "anytrue".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("anytrue expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "anytrue expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("anytrue requires a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "anytrue requires a list".to_string(),
+                ));
             };
             for item in list {
                 if item.is_unknown() {
                     return Ok(Value::unknown(Type::Bool));
                 }
-                let b = item
-                    .clone()
-                    .coerce(&Type::Bool)
-                    .map_err(|_| "anytrue requires a list of booleans".to_string())?;
-                if let ValueData::Bool(true) = *b.data {
+                let b = item.clone().coerce(&Type::Bool).map_err(|_| {
+                    HclError::FunctionArgMismatch("anytrue requires a list of booleans".to_string())
+                })?;
+                if *b.data == ValueData::Bool(true) {
                     return Ok(Value::new(Type::Bool, ValueData::Bool(true)));
                 }
             }
@@ -113,26 +124,38 @@ fn anytrue_func() -> Function {
 fn chunklist_func() -> Function {
     Function {
         name: "chunklist".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("chunklist expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "chunklist expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(args[0].ty().clone()))));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("chunklist requires a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "chunklist requires a list".to_string(),
+                ));
             };
-            let size_val = args[1]
-                .clone()
-                .coerce(&Type::Number)
-                .map_err(|_| "chunklist size must be number".to_string())?;
+            let size_val = args[1].clone().coerce(&Type::Number).map_err(|_| {
+                HclError::FunctionArgMismatch("chunklist size must be number".to_string())
+            })?;
             let size = match *size_val.data {
-                ValueData::Number(n) => n.0.to_usize().ok_or("chunklist size too large")?,
-                _ => return Err("chunklist size must be number".to_string()),
+                ValueData::Number(n) => {
+                    n.0.to_usize()
+                        .ok_or_else(|| HclError::Eval("chunklist size too large".to_string()))?
+                }
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "chunklist size must be number".to_string(),
+                    ));
+                }
             };
             if size == 0 {
-                return Err("chunklist size must be greater than 0".to_string());
+                return Err(HclError::Eval(
+                    "chunklist size must be greater than 0".to_string(),
+                ));
             }
             let mut result = Vec::new();
             for chunk in list.chunks(size) {
@@ -159,9 +182,11 @@ fn chunklist_func() -> Function {
 fn coalesce_func() -> Function {
     Function {
         name: "coalesce".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() {
-                return Err("coalesce expects at least 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "coalesce expects at least 1 argument".to_string(),
+                ));
             }
             for arg in args {
                 if arg.is_null() {
@@ -177,7 +202,9 @@ fn coalesce_func() -> Function {
                 }
                 return Ok(arg.clone());
             }
-            Err("no non-null, non-empty-string arguments".to_string())
+            Err(HclError::Eval(
+                "no non-null, non-empty-string arguments".to_string(),
+            ))
         }),
         signature: None,
     }
@@ -185,9 +212,11 @@ fn coalesce_func() -> Function {
 fn coalescelist_func() -> Function {
     Function {
         name: "coalescelist".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() {
-                return Err("coalescelist expects at least 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "coalescelist expects at least 1 argument".to_string(),
+                ));
             }
             for arg in args {
                 if arg.is_unknown() {
@@ -199,7 +228,7 @@ fn coalescelist_func() -> Function {
                     }
                 }
             }
-            Err("no non-empty list arguments".to_string())
+            Err(HclError::Eval("no non-empty list arguments".to_string()))
         }),
         signature: None,
     }
@@ -207,25 +236,28 @@ fn coalescelist_func() -> Function {
 fn compact_func() -> Function {
     Function {
         name: "compact".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("compact expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "compact expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("compact requires a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "compact requires a list".to_string(),
+                ));
             };
             let mut result = Vec::new();
             for item in list {
                 if item.is_null() {
                     continue;
                 }
-                let s = item
-                    .clone()
-                    .coerce(&Type::String)
-                    .map_err(|_| "compact requires list of strings".to_string())?;
+                let s = item.clone().coerce(&Type::String).map_err(|_| {
+                    HclError::FunctionArgMismatch("compact requires list of strings".to_string())
+                })?;
                 match &*s.data {
                     ValueData::String(str_val) if !str_val.is_empty() => {
                         result.push(s);
@@ -244,9 +276,11 @@ fn compact_func() -> Function {
 fn concat_func() -> Function {
     Function {
         name: "concat".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() {
-                return Err("concat expects at least 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "concat expects at least 1 argument".to_string(),
+                ));
             }
             let mut res_ty = None;
             let mut result = Vec::new();
@@ -263,7 +297,9 @@ fn concat_func() -> Function {
                         }
                     }
                 } else {
-                    return Err("concat arguments must be lists".to_string());
+                    return Err(HclError::FunctionArgMismatch(
+                        "concat arguments must be lists".to_string(),
+                    ));
                 }
             }
             let t = res_ty.unwrap_or(Type::Dynamic);
@@ -278,9 +314,11 @@ fn concat_func() -> Function {
 fn contains_func() -> Function {
     Function {
         name: "contains".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("contains expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "contains expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
@@ -298,7 +336,9 @@ fn contains_func() -> Function {
                     Type::Bool,
                     ValueData::Bool(set.contains(&args[1])),
                 )),
-                _ => Err("contains requires a list or set".to_string()),
+                _ => Err(HclError::FunctionArgMismatch(
+                    "contains requires a list or set".to_string(),
+                )),
             }
         }),
         signature: None,
@@ -307,15 +347,19 @@ fn contains_func() -> Function {
 fn distinct_func() -> Function {
     Function {
         name: "distinct".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("distinct expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "distinct expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(args[0].ty().clone()));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("distinct requires a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "distinct requires a list".to_string(),
+                ));
             };
             let mut result = Vec::new();
             for item in list {
@@ -331,9 +375,11 @@ fn distinct_func() -> Function {
 fn element_func() -> Function {
     Function {
         name: "element".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("element expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "element expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 let inner_ty = if let Type::List(inner) = args[0].ty() {
@@ -344,54 +390,65 @@ fn element_func() -> Function {
                 return Ok(Value::unknown(inner_ty));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("element requires a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "element requires a list".to_string(),
+                ));
             };
             if list.is_empty() {
-                return Err("element cannot be used on an empty list".to_string());
+                return Err(HclError::Eval(
+                    "element cannot be used on an empty list".to_string(),
+                ));
             }
-            let idx_val = args[1]
-                .clone()
-                .coerce(&Type::Number)
-                .map_err(|_| "element index must be number".to_string())?;
+            let idx_val = args[1].clone().coerce(&Type::Number).map_err(|_| {
+                HclError::FunctionArgMismatch("element index must be number".to_string())
+            })?;
             let idx = match *idx_val.data {
-                ValueData::Number(n) => n.0.to_isize().ok_or("index too large")?,
-                _ => return Err("element index must be number".to_string()),
+                ValueData::Number(n) => {
+                    n.0.to_isize()
+                        .ok_or_else(|| HclError::Eval("index too large".to_string()))?
+                }
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "element index must be number".to_string(),
+                    ));
+                }
             };
-            let len = list.len() as isize;
-            let mut mod_idx = idx % len;
-            if mod_idx < 0 {
-                mod_idx += len;
-            }
-            Ok(list[mod_idx as usize].clone())
+            let len = isize::try_from(list.len()).unwrap_or(isize::MAX);
+            let mod_idx = usize::try_from(idx.rem_euclid(len)).unwrap_or(0);
+            Ok(list[mod_idx].clone())
         }),
         signature: None,
     }
 }
 fn flatten_func() -> Function {
+    fn flatten_recurse(arr: &[Value], result: &mut Vec<Value>) {
+        for item in arr {
+            if let ValueData::Array(inner) = &*item.data {
+                flatten_recurse(inner, result);
+            } else if let ValueData::Set(inner) = &*item.data {
+                let inner_arr: Vec<Value> = inner.iter().cloned().collect();
+                flatten_recurse(&inner_arr, result);
+            } else {
+                result.push(item.clone());
+            }
+        }
+    }
     Function {
         name: "flatten".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("flatten expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "flatten expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("flatten requires a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "flatten requires a list".to_string(),
+                ));
             };
-            fn flatten_recurse(arr: &[Value], result: &mut Vec<Value>) {
-                for item in arr {
-                    if let ValueData::Array(inner) = &*item.data {
-                        flatten_recurse(inner, result);
-                    } else if let ValueData::Set(inner) = &*item.data {
-                        let inner_arr: Vec<Value> = inner.iter().cloned().collect();
-                        flatten_recurse(&inner_arr, result);
-                    } else {
-                        result.push(item.clone());
-                    }
-                }
-            }
             let mut result = Vec::new();
             flatten_recurse(list, &mut result);
             let mut res_ty = None;
@@ -413,9 +470,11 @@ fn flatten_func() -> Function {
 fn index_func() -> Function {
     Function {
         name: "index".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("index expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "index expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Number));
@@ -430,13 +489,15 @@ fn index_func() -> Function {
                             ));
                         }
                     }
-                    Err("item not found".to_string())
+                    Err(HclError::Eval("item not found".to_string()))
                 }
                 ValueData::Object(map) => {
                     let key = match &*args[1].data {
                         ValueData::String(s) => s.as_str(),
                         _ => {
-                            return Err("index with a map requires a string key".to_string());
+                            return Err(HclError::FunctionArgMismatch(
+                                "index with a map requires a string key".to_string(),
+                            ));
                         }
                     };
                     for (i, k) in map.keys().enumerate() {
@@ -447,9 +508,11 @@ fn index_func() -> Function {
                             ));
                         }
                     }
-                    Err(format!("key {key:?} not found in map"))
+                    Err(HclError::Eval(format!("key {key:?} not found in map")))
                 }
-                _ => Err("index requires a list, tuple, or map".to_string()),
+                _ => Err(HclError::FunctionArgMismatch(
+                    "index requires a list, tuple, or map".to_string(),
+                )),
             }
         }),
         signature: None,
@@ -458,9 +521,12 @@ fn index_func() -> Function {
 fn one_func() -> Function {
     Function {
         name: "one".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err(format!("one expects 1 argument, got {}", args.len()));
+                return Err(HclError::FunctionArgMismatch(format!(
+                    "one expects 1 argument, got {}",
+                    args.len()
+                )));
             }
             if args[0].is_unknown() {
                 let inner_ty = match args[0].ty() {
@@ -484,10 +550,10 @@ fn one_func() -> Function {
                     } else if arr.len() == 1 {
                         Ok(arr[0].clone())
                     } else {
-                        Err(
+                        Err(HclError::Eval(
                             "one() cannot be applied to a collection with more than one element"
                                 .to_string(),
-                        )
+                        ))
                     }
                 }
                 ValueData::Set(set) => {
@@ -503,13 +569,15 @@ fn one_func() -> Function {
                             .fold(Value::null(Type::Dynamic), |_, v| v.clone());
                         Ok(first)
                     } else {
-                        Err(
+                        Err(HclError::Eval(
                             "one() cannot be applied to a collection with more than one element"
                                 .to_string(),
-                        )
+                        ))
                     }
                 }
-                _ => Err("one() requires a list, set, or tuple".to_string()),
+                _ => Err(HclError::FunctionArgMismatch(
+                    "one() requires a list, set, or tuple".to_string(),
+                )),
             }
         }),
         signature: None,
@@ -518,15 +586,19 @@ fn one_func() -> Function {
 fn keys_func() -> Function {
     Function {
         name: "keys".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("keys expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "keys expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
             let ValueData::Object(map) = &*args[0].data else {
-                return Err("keys requires a map".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "keys requires a map".to_string(),
+                ));
             };
             let mut result = Vec::new();
             for k in map.keys() {
@@ -543,9 +615,11 @@ fn keys_func() -> Function {
 fn length_func() -> Function {
     Function {
         name: "length".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("length expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "length expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 if let Some(r) = args[0].refinement() {
@@ -584,7 +658,9 @@ fn length_func() -> Function {
                 ValueData::Set(set) => set.len(),
                 ValueData::Object(obj) => obj.len(),
                 _ => {
-                    return Err("length requires a string, list, set, or map".to_string());
+                    return Err(HclError::FunctionArgMismatch(
+                        "length requires a string, list, set, or map".to_string(),
+                    ));
                 }
             };
             Ok(Value::new(
@@ -598,7 +674,7 @@ fn length_func() -> Function {
 fn list_func() -> Function {
     Function {
         name: "list".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             let mut result = Vec::new();
             let mut res_ty = None;
             for arg in args {
@@ -620,33 +696,45 @@ fn list_func() -> Function {
 fn lookup_func() -> Function {
     Function {
         name: "lookup".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 && args.len() != 3 {
-                return Err("lookup expects 2 or 3 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "lookup expects 2 or 3 arguments".to_string(),
+                ));
             }
             let map = match &*args[0].data {
                 ValueData::Object(obj) => obj,
                 ValueData::Unknown(_) => return Ok(Value::unknown(Type::Dynamic)),
-                _ => return Err("lookup requires a map as first argument".to_string()),
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "lookup requires a map as first argument".to_string(),
+                    ));
+                }
             };
             if args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Dynamic));
             }
-            let key = args[1]
-                .clone()
-                .coerce(&Type::String)
-                .map_err(|_| "lookup key must be string".to_string())?;
+            let key = args[1].clone().coerce(&Type::String).map_err(|_| {
+                HclError::FunctionArgMismatch("lookup key must be string".to_string())
+            })?;
             let key_str = match &*key.data {
                 ValueData::String(s) => s.as_str(),
-                _ => return Err("lookup key must be string".to_string()),
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "lookup key must be string".to_string(),
+                    ));
+                }
             };
-            if let Some(val) = map.get(key_str) {
-                Ok(val.clone())
-            } else if args.len() == 3 {
-                Ok(args[2].clone())
-            } else {
-                Err(format!("key '{key_str}' not found in map"))
-            }
+            map.get(key_str).map_or_else(
+                || {
+                    if args.len() == 3 {
+                        Ok(args[2].clone())
+                    } else {
+                        Err(HclError::Eval(format!("key '{key_str}' not found in map")))
+                    }
+                },
+                |val| Ok(val.clone()),
+            )
         }),
         signature: None,
     }
@@ -654,20 +742,25 @@ fn lookup_func() -> Function {
 fn map_func() -> Function {
     Function {
         name: "map".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if !args.len() % 2 == 0 {
-                return Err("map expects an even number of arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "map expects an even number of arguments".to_string(),
+                ));
             }
             let mut map = BTreeMap::new();
             let mut res_ty = None;
             for i in (0..args.len()).step_by(2) {
-                let key = args[i]
-                    .clone()
-                    .coerce(&Type::String)
-                    .map_err(|_| "map keys must be strings".to_string())?;
+                let key = args[i].clone().coerce(&Type::String).map_err(|_| {
+                    HclError::FunctionArgMismatch("map keys must be strings".to_string())
+                })?;
                 let key_str = match &*key.data {
                     ValueData::String(s) => s.clone(),
-                    _ => return Err("map keys must be strings".to_string()),
+                    _ => {
+                        return Err(HclError::FunctionArgMismatch(
+                            "map keys must be strings".to_string(),
+                        ));
+                    }
                 };
                 let val = args[i + 1].clone();
                 match &res_ty {
@@ -685,24 +778,34 @@ fn map_func() -> Function {
 fn matchkeys_func() -> Function {
     Function {
         name: "matchkeys".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 3 {
-                return Err("matchkeys expects 3 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "matchkeys expects 3 arguments".to_string(),
+                ));
             }
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
             let ValueData::Array(values) = &*args[0].data else {
-                return Err("matchkeys values must be list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "matchkeys values must be list".to_string(),
+                ));
             };
             let ValueData::Array(keys) = &*args[1].data else {
-                return Err("matchkeys keys must be list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "matchkeys keys must be list".to_string(),
+                ));
             };
             let ValueData::Array(searchset) = &*args[2].data else {
-                return Err("matchkeys searchset must be list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "matchkeys searchset must be list".to_string(),
+                ));
             };
             if values.len() != keys.len() {
-                return Err("matchkeys values and keys must have same length".to_string());
+                return Err(HclError::Eval(
+                    "matchkeys values and keys must have same length".to_string(),
+                ));
             }
             let mut result = Vec::new();
             for (i, key) in keys.iter().enumerate() {
@@ -726,9 +829,11 @@ fn matchkeys_func() -> Function {
 fn merge_func() -> Function {
     Function {
         name: "merge".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() {
-                return Err("merge expects at least 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "merge expects at least 1 argument".to_string(),
+                ));
             }
             let mut res_map = BTreeMap::new();
             let mut res_ty = None;
@@ -745,7 +850,9 @@ fn merge_func() -> Function {
                         }
                     }
                 } else {
-                    return Err("merge arguments must be maps".to_string());
+                    return Err(HclError::FunctionArgMismatch(
+                        "merge arguments must be maps".to_string(),
+                    ));
                 }
             }
             let t = res_ty.unwrap_or(Type::Dynamic);
@@ -760,9 +867,11 @@ fn merge_func() -> Function {
 fn reverse_func() -> Function {
     Function {
         name: "reverse".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("reverse expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "reverse expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(args[0].ty().clone()));
@@ -777,7 +886,9 @@ fn reverse_func() -> Function {
                     let res: String = s.chars().rev().collect();
                     Ok(Value::new(Type::String, ValueData::String(res)))
                 }
-                _ => Err("reverse requires a list or string".to_string()),
+                _ => Err(HclError::FunctionArgMismatch(
+                    "reverse requires a list or string".to_string(),
+                )),
             }
         }),
         signature: None,
@@ -786,9 +897,11 @@ fn reverse_func() -> Function {
 fn setintersection_func() -> Function {
     Function {
         name: "setintersection".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() {
-                return Err("setintersection expects at least 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "setintersection expects at least 1 argument".to_string(),
+                ));
             }
             let mut sets = Vec::new();
             for arg in args {
@@ -805,7 +918,9 @@ fn setintersection_func() -> Function {
                         sets.push(set);
                     }
                     _ => {
-                        return Err("setintersection arguments must be sets or lists".to_string());
+                        return Err(HclError::FunctionArgMismatch(
+                            "setintersection arguments must be sets or lists".to_string(),
+                        ));
                     }
                 }
             }
@@ -831,9 +946,11 @@ fn setintersection_func() -> Function {
 fn setproduct_func() -> Function {
     Function {
         name: "setproduct".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() < 2 {
-                return Err("setproduct expects at least 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "setproduct expects at least 2 arguments".to_string(),
+                ));
             }
             let mut lists = Vec::new();
             for arg in args {
@@ -846,7 +963,9 @@ fn setproduct_func() -> Function {
                     }
                     ValueData::Array(arr) => lists.push(arr.clone()),
                     _ => {
-                        return Err("setproduct arguments must be sets or lists".to_string());
+                        return Err(HclError::FunctionArgMismatch(
+                            "setproduct arguments must be sets or lists".to_string(),
+                        ));
                     }
                 }
             }
@@ -861,16 +980,16 @@ fn setproduct_func() -> Function {
                         ty_els.push(lists[i][indices[i]].ty().clone());
                     }
                     result.push(Value::new(Type::Tuple(ty_els), ValueData::Array(tuple_els)));
-                    let mut pos = (lists.len() - 1) as isize;
-                    while pos >= 0 {
-                        indices[pos as usize] += 1;
-                        if indices[pos as usize] < lists[pos as usize].len() {
+                    let mut advanced = false;
+                    for pos in (0..lists.len()).rev() {
+                        indices[pos] += 1;
+                        if indices[pos] < lists[pos].len() {
+                            advanced = true;
                             break;
                         }
-                        indices[pos as usize] = 0;
-                        pos -= 1;
+                        indices[pos] = 0;
                     }
-                    if pos < 0 {
+                    if !advanced {
                         break;
                     }
                 }
@@ -896,9 +1015,11 @@ fn setproduct_func() -> Function {
 fn setsubtract_func() -> Function {
     Function {
         name: "setsubtract".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("setsubtract expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "setsubtract expects 2 arguments".to_string(),
+                ));
             }
             let mut sets = Vec::new();
             for arg in args {
@@ -915,7 +1036,9 @@ fn setsubtract_func() -> Function {
                         sets.push(set);
                     }
                     _ => {
-                        return Err("setsubtract arguments must be sets or lists".to_string());
+                        return Err(HclError::FunctionArgMismatch(
+                            "setsubtract arguments must be sets or lists".to_string(),
+                        ));
                     }
                 }
             }
@@ -939,9 +1062,11 @@ fn setsubtract_func() -> Function {
 fn setsymmetricdifference_func() -> Function {
     Function {
         name: "setsymmetricdifference".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("setsymmetricdifference expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "setsymmetricdifference expects 2 arguments".to_string(),
+                ));
             }
             let mut combined_marks = BTreeSet::new();
             for arg in args {
@@ -981,9 +1106,9 @@ fn setsymmetricdifference_func() -> Function {
                         sets.push(set);
                     }
                     _ => {
-                        return Err(
-                            "setsymmetricdifference arguments must be sets or lists".to_string()
-                        );
+                        return Err(HclError::FunctionArgMismatch(
+                            "setsymmetricdifference arguments must be sets or lists".to_string(),
+                        ));
                     }
                 }
             }
@@ -1000,9 +1125,11 @@ fn setsymmetricdifference_func() -> Function {
 fn setunion_func() -> Function {
     Function {
         name: "setunion".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() {
-                return Err("setunion expects at least 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "setunion expects at least 1 argument".to_string(),
+                ));
             }
             let mut sets = Vec::new();
             for arg in args {
@@ -1019,7 +1146,9 @@ fn setunion_func() -> Function {
                         sets.push(set);
                     }
                     _ => {
-                        return Err("setunion arguments must be sets or lists".to_string());
+                        return Err(HclError::FunctionArgMismatch(
+                            "setunion arguments must be sets or lists".to_string(),
+                        ));
                     }
                 }
             }
@@ -1053,39 +1182,65 @@ fn setunion_func() -> Function {
 fn slice_func() -> Function {
     Function {
         name: "slice".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 3 {
-                return Err("slice expects 3 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "slice expects 3 arguments".to_string(),
+                ));
             }
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("slice first argument must be a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "slice first argument must be a list".to_string(),
+                ));
             };
-            let start_val = args[1]
-                .clone()
-                .coerce(&Type::Number)
-                .map_err(|_| "slice start index must be number".to_string())?;
+            let start_val = args[1].clone().coerce(&Type::Number).map_err(|_| {
+                HclError::FunctionArgMismatch("slice start index must be number".to_string())
+            })?;
             let start = match *start_val.data {
-                ValueData::Number(n) => n.0.to_isize().ok_or("start index too large")?,
-                _ => return Err("slice start index must be number".to_string()),
+                ValueData::Number(n) => {
+                    n.0.to_isize()
+                        .ok_or_else(|| HclError::Eval("start index too large".to_string()))?
+                }
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "slice start index must be number".to_string(),
+                    ));
+                }
             };
-            let end_val = args[2]
-                .clone()
-                .coerce(&Type::Number)
-                .map_err(|_| "slice end index must be number".to_string())?;
+            let end_val = args[2].clone().coerce(&Type::Number).map_err(|_| {
+                HclError::FunctionArgMismatch("slice end index must be number".to_string())
+            })?;
             let end = match *end_val.data {
-                ValueData::Number(n) => n.0.to_isize().ok_or("end index too large")?,
-                _ => return Err("slice end index must be number".to_string()),
+                ValueData::Number(n) => {
+                    n.0.to_isize()
+                        .ok_or_else(|| HclError::Eval("end index too large".to_string()))?
+                }
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "slice end index must be number".to_string(),
+                    ));
+                }
             };
-            if start < 0 || start > list.len() as isize {
-                return Err("slice start index out of bounds".to_string());
-            }
-            if end < start || end > list.len() as isize {
-                return Err("slice end index out of bounds".to_string());
-            }
-            let res = list[start as usize..end as usize].to_vec();
+            let Ok(start_idx) = usize::try_from(start)
+                .ok()
+                .filter(|&s| s <= list.len())
+                .ok_or(())
+            else {
+                return Err(HclError::Eval(
+                    "slice start index out of bounds".to_string(),
+                ));
+            };
+            let Ok(end_idx) = usize::try_from(end)
+                .ok()
+                .filter(|&e| e >= start_idx && e <= list.len())
+                .ok_or(())
+            else {
+                return Err(HclError::Eval("slice end index out of bounds".to_string()));
+            };
+            let res = list[start_idx..end_idx].to_vec();
             Ok(Value::new(args[0].ty().clone(), ValueData::Array(res)))
         }),
         signature: None,
@@ -1094,25 +1249,32 @@ fn slice_func() -> Function {
 fn sort_func() -> Function {
     Function {
         name: "sort".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("sort expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "sort expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
             }
             let ValueData::Array(list) = &*args[0].data else {
-                return Err("sort requires a list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "sort requires a list".to_string(),
+                ));
             };
             let mut strings = Vec::new();
             for item in list {
-                let s = item
-                    .clone()
-                    .coerce(&Type::String)
-                    .map_err(|_| "sort requires list of strings".to_string())?;
+                let s = item.clone().coerce(&Type::String).map_err(|_| {
+                    HclError::FunctionArgMismatch("sort requires list of strings".to_string())
+                })?;
                 match &*s.data {
                     ValueData::String(str_val) => strings.push(str_val.clone()),
-                    _ => return Err("sort requires list of strings".to_string()),
+                    _ => {
+                        return Err(HclError::FunctionArgMismatch(
+                            "sort requires list of strings".to_string(),
+                        ));
+                    }
                 }
             }
             strings.sort();
@@ -1131,9 +1293,11 @@ fn sort_func() -> Function {
 fn sum_func() -> Function {
     Function {
         name: "sum".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("sum expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "sum expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Number));
@@ -1141,16 +1305,24 @@ fn sum_func() -> Function {
             let items: Vec<Value> = match &*args[0].data {
                 ValueData::Array(arr) => arr.clone(),
                 ValueData::Set(set) => set.iter().cloned().collect(),
-                _ => return Err("sum requires a list or set".to_string()),
+                _ => {
+                    return Err(HclError::FunctionArgMismatch(
+                        "sum requires a list or set".to_string(),
+                    ));
+                }
             };
             let mut total = BigDecimal::from(0);
             for item in items {
-                let num_val = item
-                    .coerce(&Type::Number)
-                    .map_err(|_| "sum requires list/set of numbers".to_string())?;
+                let num_val = item.coerce(&Type::Number).map_err(|_| {
+                    HclError::FunctionArgMismatch("sum requires list/set of numbers".to_string())
+                })?;
                 match *num_val.data {
                     ValueData::Number(n) => total += n.0,
-                    _ => return Err("sum requires list/set of numbers".to_string()),
+                    _ => {
+                        return Err(HclError::FunctionArgMismatch(
+                            "sum requires list/set of numbers".to_string(),
+                        ));
+                    }
                 }
             }
             Ok(Value::new(
@@ -1164,9 +1336,11 @@ fn sum_func() -> Function {
 fn transpose_func() -> Function {
     Function {
         name: "transpose".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("transpose expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "transpose expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Map(Box::new(Type::List(Box::new(
@@ -1174,14 +1348,18 @@ fn transpose_func() -> Function {
                 ))))));
             }
             let ValueData::Object(map) = &*args[0].data else {
-                return Err("transpose requires a map".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "transpose requires a map".to_string(),
+                ));
             };
             let mut trans_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
             for (key, val) in map {
                 if let ValueData::Array(arr) = &*val.data {
                     for item in arr {
                         let s = item.clone().coerce(&Type::String).map_err(|_| {
-                            "transpose requires map of lists of strings".to_string()
+                            HclError::FunctionArgMismatch(
+                                "transpose requires map of lists of strings".to_string(),
+                            )
                         })?;
                         if let ValueData::String(str_val) = &*s.data {
                             trans_map
@@ -1191,7 +1369,9 @@ fn transpose_func() -> Function {
                         }
                     }
                 } else {
-                    return Err("transpose requires map of lists".to_string());
+                    return Err(HclError::FunctionArgMismatch(
+                        "transpose requires map of lists".to_string(),
+                    ));
                 }
             }
             let mut res_map = BTreeMap::new();
@@ -1220,15 +1400,19 @@ fn transpose_func() -> Function {
 fn values_func() -> Function {
     Function {
         name: "values".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("values expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "values expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::List(Box::new(Type::Dynamic))));
             }
             let ValueData::Object(map) = &*args[0].data else {
-                return Err("values requires a map".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "values requires a map".to_string(),
+                ));
             };
             let mut result = Vec::new();
             let mut res_ty = None;
@@ -1251,29 +1435,36 @@ fn values_func() -> Function {
 fn zipmap_func() -> Function {
     Function {
         name: "zipmap".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("zipmap expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "zipmap expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Map(Box::new(Type::Dynamic))));
             }
             let ValueData::Array(keys) = &*args[0].data else {
-                return Err("zipmap keys must be list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "zipmap keys must be list".to_string(),
+                ));
             };
             let ValueData::Array(values) = &*args[1].data else {
-                return Err("zipmap values must be list".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "zipmap values must be list".to_string(),
+                ));
             };
             if keys.len() != values.len() {
-                return Err("zipmap keys and values must have same length".to_string());
+                return Err(HclError::Eval(
+                    "zipmap keys and values must have same length".to_string(),
+                ));
             }
             let mut map = BTreeMap::new();
             let mut res_ty = None;
             for (i, key) in keys.iter().enumerate() {
-                let key_val = key
-                    .clone()
-                    .coerce(&Type::String)
-                    .map_err(|_| "zipmap keys must be strings".to_string())?;
+                let key_val = key.clone().coerce(&Type::String).map_err(|_| {
+                    HclError::FunctionArgMismatch("zipmap keys must be strings".to_string())
+                })?;
                 match &*key_val.data {
                     ValueData::String(key_str) => {
                         map.insert(key_str.clone(), values[i].clone());
@@ -1282,7 +1473,11 @@ fn zipmap_func() -> Function {
                             Some(current) => res_ty = unify(current, values[i].ty()),
                         }
                     }
-                    _ => return Err("zipmap keys must be strings".to_string()),
+                    _ => {
+                        return Err(HclError::FunctionArgMismatch(
+                            "zipmap keys must be strings".to_string(),
+                        ));
+                    }
                 }
             }
             let t = res_ty.unwrap_or(Type::Dynamic);
@@ -1292,23 +1487,20 @@ fn zipmap_func() -> Function {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::number::Number;
     use bigdecimal::BigDecimal;
     use std::str::FromStr;
-    fn get_func(name: &str) -> Function {
-        functions().into_iter().find(|f| f.name == name).unwrap()
+    fn get_func(name: &str) -> Result<Function, HclError> {
+        functions()
+            .into_iter()
+            .find(|f| f.name == name)
+            .ok_or_else(|| HclError::Eval(format!("function {name} not found")))
     }
-    fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
-        let f = get_func(name);
+    fn eval_func(name: &str, args: &[Value]) -> Result<Value, HclError> {
+        let f = get_func(name)?;
         (f.func)(args)
     }
     fn str_val(s: &str) -> Value {
@@ -1320,7 +1512,7 @@ mod tests {
     fn num_val(s: &str) -> Value {
         Value::new(
             Type::Number,
-            ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
+            ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap_or_default())),
         )
     }
     fn unk_val() -> Value {
@@ -1359,10 +1551,9 @@ mod tests {
         }
     }
     #[test]
-    fn test_alltrue_anytrue() {
+    fn test_alltrue_anytrue() -> Result<(), HclError> {
         assert_eq!(
-            eval_func("alltrue", &[list_val(vec![bool_val(true), bool_val(true)])])
-                .unwrap()
+            eval_func("alltrue", &[list_val(vec![bool_val(true), bool_val(true)])])?
                 .data
                 .as_ref(),
             &ValueData::Bool(true)
@@ -1371,8 +1562,7 @@ mod tests {
             eval_func(
                 "alltrue",
                 &[list_val(vec![bool_val(true), bool_val(false)])]
-            )
-            .unwrap()
+            )?
             .data
             .as_ref(),
             &ValueData::Bool(false)
@@ -1381,8 +1571,7 @@ mod tests {
             eval_func(
                 "anytrue",
                 &[list_val(vec![bool_val(true), bool_val(false)])]
-            )
-            .unwrap()
+            )?
             .data
             .as_ref(),
             &ValueData::Bool(true)
@@ -1391,80 +1580,65 @@ mod tests {
             eval_func(
                 "anytrue",
                 &[list_val(vec![bool_val(false), bool_val(false)])]
-            )
-            .unwrap()
+            )?
             .data
             .as_ref(),
             &ValueData::Bool(false)
         );
         assert!(eval_func("alltrue", &[]).is_err());
-        assert!(eval_func("alltrue", &[unk_val()]).unwrap().is_unknown());
-        assert!(
-            eval_func("alltrue", &[list_val(vec![unk_val()])])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("alltrue", &[unk_val()])?.is_unknown());
+        assert!(eval_func("alltrue", &[list_val(vec![unk_val()])])?.is_unknown());
         assert!(eval_func("alltrue", &[list_val(vec![str_val("bad")])]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_anytrue_errors() {
+    fn test_anytrue_errors() -> Result<(), HclError> {
         assert!(eval_func("anytrue", &[]).is_err());
-        assert!(eval_func("anytrue", &[unk_val()]).unwrap().is_unknown());
-        assert!(
-            eval_func("anytrue", &[list_val(vec![unk_val()])])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("anytrue", &[unk_val()])?.is_unknown());
+        assert!(eval_func("anytrue", &[list_val(vec![unk_val()])])?.is_unknown());
         assert!(eval_func("anytrue", &[list_val(vec![str_val("bad")])]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_contains_set() {
+    fn test_contains_set() -> Result<(), HclError> {
         let mut set = std::collections::BTreeSet::new();
         set.insert(str_val("a"));
         let set_val = Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set));
         assert_eq!(
-            eval_func("contains", &[set_val, str_val("a")])
-                .unwrap()
+            eval_func("contains", &[set_val, str_val("a")])?
                 .data
                 .as_ref(),
             &ValueData::Bool(true)
         );
+        Ok(())
     }
     #[test]
-    fn test_chunklist_errors() {
+    fn test_chunklist_errors() -> Result<(), HclError> {
         assert!(eval_func("chunklist", &[str_val("a"), num_val("2")]).is_err());
-        assert!(
-            eval_func("chunklist", &[list_val(vec![]), unk_val()])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("chunklist", &[list_val(vec![]), unk_val()])?.is_unknown());
         assert!(eval_func("chunklist", &[list_val(vec![]), str_val("bad")]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_chunklist() {
+    fn test_chunklist() -> Result<(), HclError> {
         let res = eval_func(
             "chunklist",
             &[
                 list_val(vec![str_val("a"), str_val("b"), str_val("c")]),
                 num_val("2"),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_arr_len(&res), 2);
         assert!(eval_func("chunklist", &[]).is_err());
         assert!(eval_func("chunklist", &[list_val(vec![]), num_val("2")]).is_ok());
         assert!(eval_func("chunklist", &[list_val(vec![str_val("a")]), num_val("-1")]).is_err());
-        assert!(
-            eval_func("chunklist", &[unk_val(), num_val("2")])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("chunklist", &[unk_val(), num_val("2")])?.is_unknown());
+        Ok(())
     }
     #[test]
-    fn test_coalesce_coalescelist() {
+    fn test_coalesce_coalescelist() -> Result<(), HclError> {
         assert_eq!(
-            eval_func("coalesce", &[null_val(), str_val("a")])
-                .unwrap()
+            eval_func("coalesce", &[null_val(), str_val("a")])?
                 .data
                 .as_ref(),
             &ValueData::String("a".to_string())
@@ -1475,127 +1649,126 @@ mod tests {
             eval_func(
                 "coalescelist",
                 &[list_val(vec![]), list_val(vec![str_val("a")])]
-            )
-            .unwrap()
+            )?
             .data
             .as_ref(),
             &ValueData::Array(vec![str_val("a")])
         );
         assert!(eval_func("coalescelist", &[list_val(vec![]), list_val(vec![])]).is_err());
         assert!(eval_func("coalescelist", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_compact() {
-        let res = eval_func("compact", &[list_val(vec![null_val(), str_val("a")])]).unwrap();
+    fn test_compact() -> Result<(), HclError> {
+        let res = eval_func("compact", &[list_val(vec![null_val(), str_val("a")])])?;
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("compact", &[]).is_err());
         assert!(eval_func("compact", &[str_val("bad")]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_concat() {
+    fn test_concat() -> Result<(), HclError> {
         let res = eval_func(
             "concat",
             &[list_val(vec![str_val("a")]), list_val(vec![str_val("b")])],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_arr_len(&res), 2);
         assert!(eval_func("concat", &[list_val(vec![str_val("a")]), str_val("bad")]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_contains() {
+    fn test_contains() -> Result<(), HclError> {
         assert_eq!(
-            eval_func("contains", &[list_val(vec![str_val("a")]), str_val("a")])
-                .unwrap()
+            eval_func("contains", &[list_val(vec![str_val("a")]), str_val("a")])?
                 .data
                 .as_ref(),
             &ValueData::Bool(true)
         );
         assert_eq!(
-            eval_func("contains", &[list_val(vec![str_val("a")]), str_val("b")])
-                .unwrap()
+            eval_func("contains", &[list_val(vec![str_val("a")]), str_val("b")])?
                 .data
                 .as_ref(),
             &ValueData::Bool(false)
         );
         assert!(eval_func("contains", &[]).is_err());
         assert!(eval_func("contains", &[str_val("bad"), str_val("a")]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_distinct() {
-        let res = eval_func("distinct", &[list_val(vec![str_val("a"), str_val("a")])]).unwrap();
+    fn test_distinct() -> Result<(), HclError> {
+        let res = eval_func("distinct", &[list_val(vec![str_val("a"), str_val("a")])])?;
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("distinct", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_element() {
+    fn test_element() -> Result<(), HclError> {
         assert_eq!(
             eval_func(
                 "element",
                 &[list_val(vec![str_val("a"), str_val("b")]), num_val("1")]
-            )
-            .unwrap()
+            )?
             .data
             .as_ref(),
             &ValueData::String("b".to_string())
         );
         assert_eq!(
-            eval_func("element", &[list_val(vec![str_val("a")]), num_val("1")])
-                .unwrap()
+            eval_func("element", &[list_val(vec![str_val("a")]), num_val("1")])?
                 .data
                 .as_ref(),
             &ValueData::String("a".to_string())
         );
         assert!(eval_func("element", &[]).is_err());
         assert!(eval_func("element", &[list_val(vec![]), num_val("0")]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_flatten() {
-        let res = eval_func("flatten", &[list_val(vec![list_val(vec![str_val("a")])])]).unwrap();
+    fn test_flatten() -> Result<(), HclError> {
+        let res = eval_func("flatten", &[list_val(vec![list_val(vec![str_val("a")])])])?;
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("flatten", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_index() {
+    fn test_index() -> Result<(), HclError> {
         assert_eq!(
             eval_func(
                 "index",
                 &[list_val(vec![str_val("a"), str_val("b")]), str_val("b")]
-            )
-            .unwrap()
+            )?
             .data
             .as_ref(),
-            &ValueData::Number(Number::new(BigDecimal::from_str("1").unwrap()))
+            num_val("1").data.as_ref()
         );
         assert!(eval_func("index", &[list_val(vec![str_val("a")]), str_val("b")]).is_err());
         assert!(eval_func("index", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_keys_values() {
+    fn test_keys_values() -> Result<(), HclError> {
         let map = map_val(vec![("a", str_val("1")), ("b", str_val("2"))]);
-        let k = eval_func("keys", std::slice::from_ref(&map)).unwrap();
+        let k = eval_func("keys", std::slice::from_ref(&map))?;
         assert_eq!(get_arr_len(&k), 2);
-        let v = eval_func("values", &[map]).unwrap();
+        let v = eval_func("values", &[map])?;
         assert_eq!(get_arr_len(&v), 2);
         assert!(eval_func("keys", &[]).is_err());
         assert!(eval_func("values", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_length() {
+    fn test_length() -> Result<(), HclError> {
         assert_eq!(
-            eval_func("length", &[list_val(vec![str_val("a"), str_val("b")])])
-                .unwrap()
+            eval_func("length", &[list_val(vec![str_val("a"), str_val("b")])])?
                 .data
                 .as_ref(),
-            &ValueData::Number(Number::new(BigDecimal::from_str("2").unwrap()))
+            num_val("2").data.as_ref()
         );
         assert_eq!(
-            eval_func("length", &[str_val("abc")])
-                .unwrap()
-                .data
-                .as_ref(),
+            eval_func("length", &[str_val("abc")])?.data.as_ref(),
             num_val("3").data.as_ref()
         );
         assert!(eval_func("length", &[]).is_err());
+        Ok(())
     }
     #[test]
     fn test_list_map() {
@@ -1604,27 +1777,26 @@ mod tests {
         assert!(eval_func("map", &[str_val("k1")]).is_err());
     }
     #[test]
-    fn test_lookup() {
+    fn test_lookup() -> Result<(), HclError> {
         let map = map_val(vec![("a", str_val("1"))]);
         assert_eq!(
-            eval_func("lookup", &[map.clone(), str_val("a")])
-                .unwrap()
+            eval_func("lookup", &[map.clone(), str_val("a")])?
                 .data
                 .as_ref(),
             &ValueData::String("1".to_string())
         );
         assert_eq!(
-            eval_func("lookup", &[map.clone(), str_val("b"), str_val("def")])
-                .unwrap()
+            eval_func("lookup", &[map.clone(), str_val("b"), str_val("def")])?
                 .data
                 .as_ref(),
             &ValueData::String("def".to_string())
         );
         assert!(eval_func("lookup", &[map, str_val("b")]).is_err());
         assert!(eval_func("lookup", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_matchkeys() {
+    fn test_matchkeys() -> Result<(), HclError> {
         let res = eval_func(
             "matchkeys",
             &[
@@ -1632,105 +1804,111 @@ mod tests {
                 list_val(vec![str_val("k1"), str_val("k2")]),
                 list_val(vec![str_val("k1")]),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_arr_len(&res), 1);
         assert!(eval_func("matchkeys", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_merge() {
+    fn test_merge() -> Result<(), HclError> {
         let m1 = map_val(vec![("a", str_val("1"))]);
         let m2 = map_val(vec![("b", str_val("2"))]);
-        let res = eval_func("merge", &[m1, m2]).unwrap();
+        let res = eval_func("merge", &[m1, m2])?;
         assert_eq!(get_obj_len(&res), 2);
         assert!(eval_func("merge", &[str_val("bad")]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_reverse() {
-        let res = eval_func("reverse", &[list_val(vec![str_val("a"), str_val("b")])]).unwrap();
+    fn test_reverse() -> Result<(), HclError> {
+        let res = eval_func("reverse", &[list_val(vec![str_val("a"), str_val("b")])])?;
         assert_eq!(
             *res.data,
             ValueData::Array(vec![str_val("b"), str_val("a")])
         );
         assert!(eval_func("reverse", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_set_math() {
+    fn test_set_math() -> Result<(), HclError> {
         let s1 = set_val(vec![str_val("a"), str_val("b")]);
         let s2 = set_val(vec![str_val("b"), str_val("c")]);
-        let union = eval_func("setunion", &[s1.clone(), s2.clone()]).unwrap();
+        let union = eval_func("setunion", &[s1.clone(), s2.clone()])?;
         assert_eq!(
             std::mem::discriminant(&*union.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-        let int = eval_func("setintersection", &[s1.clone(), s2.clone()]).unwrap();
+        let int = eval_func("setintersection", &[s1.clone(), s2.clone()])?;
         assert_eq!(
             std::mem::discriminant(&*int.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-        let sub = eval_func("setsubtract", &[s1.clone(), s2.clone()]).unwrap();
+        let sub = eval_func("setsubtract", &[s1.clone(), s2.clone()])?;
         assert_eq!(
             std::mem::discriminant(&*sub.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-        let sym_diff = eval_func("setsymmetricdifference", &[s1.clone(), s2.clone()]).unwrap();
+        let sym_diff = eval_func("setsymmetricdifference", &[s1.clone(), s2.clone()])?;
         assert_eq!(
             std::mem::discriminant(&*sym_diff.data),
             std::mem::discriminant(&ValueData::Set(BTreeSet::new()))
         );
-        let prod = eval_func("setproduct", &[s1, s2]).unwrap();
+        let prod = eval_func("setproduct", &[s1, s2])?;
         assert_eq!(
             std::mem::discriminant(&*prod.data),
             std::mem::discriminant(&ValueData::Array(vec![]))
         );
+        Ok(())
     }
     #[test]
-    fn test_slice() {
+    fn test_slice() -> Result<(), HclError> {
         let arr = list_val(vec![str_val("a"), str_val("b"), str_val("c")]);
-        let sl = eval_func("slice", &[arr, num_val("1"), num_val("2")]).unwrap();
+        let sl = eval_func("slice", &[arr, num_val("1"), num_val("2")])?;
         assert_eq!(get_arr_len(&sl), 1);
         assert!(eval_func("slice", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_sort() {
-        let res = eval_func("sort", &[list_val(vec![str_val("b"), str_val("a")])]).unwrap();
+    fn test_sort() -> Result<(), HclError> {
+        let res = eval_func("sort", &[list_val(vec![str_val("b"), str_val("a")])])?;
         assert_eq!(
             *res.data,
             ValueData::Array(vec![str_val("a"), str_val("b")])
         );
         assert!(eval_func("sort", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_sum() {
+    fn test_sum() -> Result<(), HclError> {
         assert_eq!(
-            eval_func("sum", &[list_val(vec![num_val("1"), num_val("2")])])
-                .unwrap()
+            eval_func("sum", &[list_val(vec![num_val("1"), num_val("2")])])?
                 .data
                 .as_ref(),
             num_val("3").data.as_ref()
         );
         assert!(eval_func("sum", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_transpose() {
+    fn test_transpose() -> Result<(), HclError> {
         let map = map_val(vec![("a", list_val(vec![str_val("1")]))]);
-        let res = eval_func("transpose", &[map]).unwrap();
+        let res = eval_func("transpose", &[map])?;
         assert_eq!(get_obj_len(&res), 1);
         assert!(eval_func("transpose", &[]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_zipmap() {
+    fn test_zipmap() -> Result<(), HclError> {
         let res = eval_func(
             "zipmap",
             &[list_val(vec![str_val("a")]), list_val(vec![str_val("1")])],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_obj_len(&res), 1);
         assert!(eval_func("zipmap", &[]).is_err());
         assert!(eval_func("zipmap", &[list_val(vec![str_val("a")]), list_val(vec![])]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_coverage_gaps_collection() {
+    fn test_coverage_gaps_collection_bool_and_list() {
         let unk = unk_val();
         let unk_bool = Value::unknown(Type::Bool);
         let unk_list = Value::unknown(Type::List(Box::new(Type::Bool)));
@@ -1753,24 +1931,25 @@ mod tests {
         assert!(
             eval_func("anytrue", std::slice::from_ref(&unk_bool)).is_ok_and(|v| v.is_unknown())
         );
-        assert!(
-            eval_func("anytrue", &[list_val(vec![unk_bool.clone()])]).is_ok_and(|v| v.is_unknown())
-        );
+        assert!(eval_func("anytrue", &[list_val(vec![unk_bool])]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("anytrue", &[str_val("notlist")]).is_err());
-        assert!(
-            eval_func("chunklist", &[unk_list.clone(), num_val("2")]).is_ok_and(|v| v.is_unknown())
-        );
+        assert!(eval_func("chunklist", &[unk_list, num_val("2")]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("chunklist", &[list_val(vec![]), num_val("0")]).is_err());
         assert!(eval_func("chunklist", &[unk.clone(), num_val("2")]).is_ok_and(|v| v.is_unknown()));
         assert!(
-            eval_func("chunklist", & [list_val(vec![]), num_val("2")]).is_ok_and(| v | v
-            .ty() == & Type::List(Box::new(Type::List(Box::new(Type::Dynamic)))))
+            eval_func("chunklist", &[list_val(vec![]), num_val("2")]).is_ok_and(|v| v.ty()
+                == &Type::List(Box::new(Type::List(Box::new(Type::Dynamic)))))
         );
         assert!(eval_func("coalesce", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("coalesce", &[str_val("")]).is_err());
         assert!(
             eval_func("coalescelist", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown())
         );
+    }
+    #[test]
+    fn test_coverage_gaps_collection_compact_to_element() {
+        let unk = unk_val();
+        let unk_list = Value::unknown(Type::List(Box::new(Type::Bool)));
         assert!(eval_func("compact", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("concat", &[]).is_err());
         assert!(eval_func("concat", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
@@ -1784,15 +1963,17 @@ mod tests {
         assert!(eval_func("contains", &[unk.clone(), str_val("a")]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("distinct", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("distinct", &[str_val("a")]).is_err());
-        assert!(
-            eval_func("element", &[unk_list.clone(), num_val("0")]).is_ok_and(|v| v.is_unknown())
-        );
-        assert!(eval_func("element", &[unk.clone(), num_val("0")]).is_ok_and(|v| v.is_unknown()));
+        assert!(eval_func("element", &[unk_list, num_val("0")]).is_ok_and(|v| v.is_unknown()));
+        assert!(eval_func("element", &[unk, num_val("0")]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("element", &[str_val("a"), num_val("0")]).is_err());
         assert!(
             eval_func("element", &[list_val(vec![str_val("a")]), num_val("-1")])
                 .is_ok_and(|v| v.data.as_ref() == &ValueData::String("a".to_string()))
         );
+    }
+    #[test]
+    fn test_coverage_gaps_collection_flatten_to_merge() {
+        let unk = unk_val();
         assert!(eval_func("flatten", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("flatten", &[str_val("a")]).is_err());
         assert!(eval_func("flatten", &[list_val(vec![set_val(vec![str_val("a")])])]).is_ok());
@@ -1868,6 +2049,10 @@ mod tests {
         );
         assert!(eval_func("merge", &[]).is_err());
         assert!(eval_func("merge", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
+    }
+    #[test]
+    fn test_coverage_gaps_collection_reverse_and_sets() {
+        let unk = unk_val();
         assert!(eval_func("reverse", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(
             eval_func("reverse", &[str_val("abc")])
@@ -1923,7 +2108,7 @@ mod tests {
             .is_ok()
         );
         assert!(eval_func("setunion", &[]).is_err());
-        assert!(eval_func("setunion", &[unk.clone(), unk.clone()]).is_ok_and(|v| v.is_unknown()));
+        assert!(eval_func("setunion", &[unk.clone(), unk]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("setunion", &[str_val("a"), str_val("b")]).is_err());
         assert!(
             eval_func(
@@ -1942,6 +2127,10 @@ mod tests {
             )
             .is_ok()
         );
+    }
+    #[test]
+    fn test_coverage_gaps_collection_slice_to_zipmap() {
+        let unk = unk_val();
         assert!(
             eval_func("slice", &[unk.clone(), num_val("0"), num_val("1")])
                 .is_ok_and(|v| v.is_unknown())
@@ -1976,7 +2165,7 @@ mod tests {
         );
         assert!(eval_func("values", std::slice::from_ref(&unk)).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("values", &[str_val("a")]).is_err());
-        assert!(eval_func("zipmap", &[unk.clone(), unk.clone()]).is_ok_and(|v| v.is_unknown()));
+        assert!(eval_func("zipmap", &[unk.clone(), unk]).is_ok_and(|v| v.is_unknown()));
         assert!(eval_func("zipmap", &[str_val("a"), list_val(vec![])]).is_err());
         assert!(eval_func("zipmap", &[list_val(vec![]), str_val("a")]).is_err());
         assert!(
@@ -1995,9 +2184,9 @@ mod tests {
         Value::new(Type::Tuple(tys), ValueData::Array(vals))
     }
     #[test]
-    fn test_collection_comprehensive_coverage() {
+    fn test_collection_comprehensive_tuples_and_bad_types() -> Result<(), HclError> {
         let tup = tuple_val(vec![num_val("1"), num_val("2"), num_val("3")]);
-        let cl = eval_func("chunklist", &[tup.clone(), num_val("2")]).unwrap();
+        let cl = eval_func("chunklist", &[tup.clone(), num_val("2")])?;
         assert_eq!(
             cl.ty(),
             &Type::List(Box::new(Type::List(Box::new(Type::Dynamic))))
@@ -2008,8 +2197,7 @@ mod tests {
                 list_val(vec![str_val("a"), str_val("b"), str_val("c")]),
                 num_val("-1"),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(*el.data, ValueData::String("c".to_string()));
         let mk = eval_func(
             "matchkeys",
@@ -2018,14 +2206,12 @@ mod tests {
                 list_val(vec![str_val("k1"), str_val("k2"), str_val("k3")]),
                 list_val(vec![str_val("k2")]),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(mk.ty(), &Type::List(Box::new(Type::Dynamic)));
         let si = eval_func(
             "setintersection",
             &[tup, list_val(vec![num_val("2"), num_val("4")])],
-        )
-        .unwrap();
+        )?;
         assert_eq!(si.ty(), &Type::Set(Box::new(Type::Dynamic)));
         let sp = eval_func(
             "setproduct",
@@ -2033,10 +2219,9 @@ mod tests {
                 list_val(vec![str_val("a"), str_val("b")]),
                 list_val(vec![num_val("1"), num_val("2")]),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_arr_len(&sp), 4);
-        let rev = eval_func("reverse", &[list_val(vec![])]).unwrap();
+        let rev = eval_func("reverse", &[list_val(vec![])])?;
         assert_eq!(get_arr_len(&rev), 0);
         let lk = eval_func(
             "lookup",
@@ -2045,9 +2230,12 @@ mod tests {
                 str_val("missing"),
                 str_val("default_val"),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(*lk.data, ValueData::String("default_val".to_string()));
+        Ok(())
+    }
+    #[test]
+    fn test_collection_comprehensive_bad_types() {
         let bad_type = tuple_val(vec![]);
         assert!(
             eval_func(
@@ -2110,6 +2298,9 @@ mod tests {
             .is_err()
         );
         assert!(eval_func("slice", &[list_val(vec![num_val("1")]), num_val("0"), huge]).is_err());
+    }
+    #[test]
+    fn test_collection_comprehensive_null_and_unknown() -> Result<(), HclError> {
         let null_num = Value::new(Type::Number, ValueData::Null);
         let null_str = Value::new(Type::String, ValueData::Null);
         assert!(
@@ -2147,24 +2338,19 @@ mod tests {
         assert!(
             eval_func(
                 "zipmap",
-                &[
-                    list_val(vec![null_str.clone()]),
-                    list_val(vec![num_val("1")])
-                ]
+                &[list_val(vec![null_str]), list_val(vec![num_val("1")])]
             )
             .is_err()
         );
         let cc = eval_func(
             "concat",
             &[list_val(vec![num_val("1")]), tuple_val(vec![num_val("2")])],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_arr_len(&cc), 2);
         let spe = eval_func(
             "setproduct",
             &[list_val(vec![num_val("1")]), list_val(vec![])],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_arr_len(&spe), 0);
         assert!(eval_func("contains", &[unk_val(), str_val("x")]).is_ok_and(|v| v.is_unknown()));
         assert!(
@@ -2189,22 +2375,26 @@ mod tests {
             eval_func("zipmap", &[list_val(vec![str_val("a")]), unk_val()])
                 .is_ok_and(|v| v.is_unknown())
         );
-        let coal_res = eval_func("coalesce", &[str_val(""), num_val("10")]).unwrap();
+        Ok(())
+    }
+    #[test]
+    fn test_collection_comprehensive_coalesce_compact_slice() -> Result<(), HclError> {
+        let null_str = Value::new(Type::String, ValueData::Null);
+        let coal_res = eval_func("coalesce", &[str_val(""), num_val("10")])?;
         assert_eq!(*coal_res.data, *num_val("10").data);
-        let coal_res2 = eval_func("coalesce", &[str_val(""), str_val("hello")]).unwrap();
+        let coal_res2 = eval_func("coalesce", &[str_val(""), str_val("hello")])?;
         assert_eq!(*coal_res2.data, *str_val("hello").data);
-        let coal_res3 = eval_func("coalesce", &[null_str.clone(), str_val("fallback")]).unwrap();
+        let coal_res3 = eval_func("coalesce", &[null_str.clone(), str_val("fallback")])?;
         assert_eq!(*coal_res3.data, *str_val("fallback").data);
         let cl_res = eval_func(
             "coalescelist",
             &[list_val(vec![]), list_val(vec![num_val("1")])],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_arr_len(&cl_res), 1);
         assert!(eval_func("coalescelist", &[num_val("10")]).is_err());
-        let comp_res = eval_func("compact", &[list_val(vec![str_val(""), str_val("a")])]).unwrap();
+        let comp_res = eval_func("compact", &[list_val(vec![str_val(""), str_val("a")])])?;
         assert_eq!(get_arr_len(&comp_res), 1);
-        let comp_null = eval_func("compact", &[list_val(vec![null_str.clone()])]).unwrap();
+        let comp_null = eval_func("compact", &[list_val(vec![null_str.clone()])])?;
         assert_eq!(get_arr_len(&comp_null), 0);
         assert!(
             eval_func(
@@ -2241,52 +2431,52 @@ mod tests {
         let trans_null = eval_func(
             "transpose",
             &[map_val(vec![("a", list_val(vec![null_str]))])],
-        )
-        .unwrap();
+        )?;
         assert_eq!(get_obj_len(&trans_null), 0);
         assert_eq!(get_arr_len(&num_val("1")), 0);
         assert_eq!(get_obj_len(&num_val("1")), 0);
+        Ok(())
+    }
+    #[test]
+    fn test_collection_comprehensive_one_and_index() -> Result<(), HclError> {
         let single_list = list_val(vec![str_val("solo")]);
-        assert_eq!(eval_func("one", &[single_list]).unwrap(), str_val("solo"));
+        assert_eq!(eval_func("one", &[single_list])?, str_val("solo"));
         let empty_list = Value::new(Type::List(Box::new(Type::String)), ValueData::Array(vec![]));
-        let empty_res = eval_func("one", &[empty_list]).unwrap();
+        let empty_res = eval_func("one", &[empty_list])?;
         assert!(empty_res.is_null());
         let multi_list = list_val(vec![str_val("a"), str_val("b")]);
         assert!(eval_func("one", &[multi_list]).is_err());
         let single_set = set_val(vec![str_val("single_set_item")]);
-        assert_eq!(
-            eval_func("one", &[single_set]).unwrap(),
-            str_val("single_set_item")
-        );
+        assert_eq!(eval_func("one", &[single_set])?, str_val("single_set_item"));
         let empty_set = Value::new(
             Type::Set(Box::new(Type::Number)),
             ValueData::Set(BTreeSet::new()),
         );
-        assert!(eval_func("one", &[empty_set]).unwrap().is_null());
+        assert!(eval_func("one", &[empty_set])?.is_null());
         let multi_set = set_val(vec![str_val("a"), str_val("b")]);
         assert!(eval_func("one", &[multi_set]).is_err());
         let unk_list = Value::unknown(Type::List(Box::new(Type::String)));
-        assert!(eval_func("one", &[unk_list]).unwrap().is_unknown());
+        assert!(eval_func("one", &[unk_list])?.is_unknown());
         let unk_set = Value::unknown(Type::Set(Box::new(Type::String)));
-        assert!(eval_func("one", &[unk_set]).unwrap().is_unknown());
+        assert!(eval_func("one", &[unk_set])?.is_unknown());
         let unk_tuple = Value::unknown(Type::Tuple(vec![Type::String]));
-        assert!(eval_func("one", &[unk_tuple]).unwrap().is_unknown());
+        assert!(eval_func("one", &[unk_tuple])?.is_unknown());
         let unk_empty_tuple = Value::unknown(Type::Tuple(vec![]));
-        assert!(eval_func("one", &[unk_empty_tuple]).unwrap().is_unknown());
+        assert!(eval_func("one", &[unk_empty_tuple])?.is_unknown());
         let unk_dyn = Value::unknown(Type::Dynamic);
-        assert!(eval_func("one", &[unk_dyn]).unwrap().is_unknown());
+        assert!(eval_func("one", &[unk_dyn])?.is_unknown());
         let empty_tup = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
-        assert!(eval_func("one", &[empty_tup]).unwrap().is_null());
+        assert!(eval_func("one", &[empty_tup])?.is_null());
         let empty_set_dyn = Value::new(Type::Dynamic, ValueData::Set(BTreeSet::new()));
-        assert!(eval_func("one", &[empty_set_dyn]).unwrap().is_null());
+        assert!(eval_func("one", &[empty_set_dyn])?.is_null());
         assert!(eval_func("one", &[str_val("not_a_collection")]).is_err());
-        assert!(
-            eval_func("one", &[Value::null(Type::Dynamic)])
-                .unwrap()
-                .is_null()
-        );
+        assert!(eval_func("one", &[Value::null(Type::Dynamic)])?.is_null());
         assert!(eval_func("one", &[]).is_err());
         assert!(eval_func("one", &[num_val("123")]).is_err());
+        Ok(())
+    }
+    #[test]
+    fn test_collection_comprehensive_index_and_coalesce() -> Result<(), HclError> {
         assert!(eval_func("index", &[num_val("42"), str_val("k")]).is_err());
         let test_map = map_val(vec![("k", str_val("v"))]);
         assert!(eval_func("index", &[test_map, num_val("123")]).is_err());
@@ -2294,53 +2484,50 @@ mod tests {
             Type::String,
             crate::types::refinement::Refinement::not_null(),
         );
-        assert!(eval_func("length", &[unk_ref]).unwrap().is_unknown());
+        assert!(eval_func("length", &[unk_ref])?.is_unknown());
         assert_eq!(
-            eval_func("coalesce", &[str_val(""), str_val("first")]).unwrap(),
+            eval_func("coalesce", &[str_val(""), str_val("first")])?,
             str_val("first")
         );
         let null_v = Value::null(Type::String);
         assert_eq!(
-            eval_func("coalesce", &[null_v.clone(), str_val(""), str_val("found")]).unwrap(),
+            eval_func("coalesce", &[null_v.clone(), str_val(""), str_val("found")])?,
             str_val("found")
         );
         let unk_v = Value::unknown(Type::String);
-        assert!(
-            eval_func("coalesce", &[null_v, str_val(""), unk_v])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("coalesce", &[null_v, str_val(""), unk_v])?.is_unknown());
         assert!(eval_func("coalesce", &[str_val(""), Value::null(Type::String)]).is_err());
         let sample_map = map_val(vec![("alpha", num_val("10")), ("beta", num_val("20"))]);
-        let idx_alpha = eval_func("index", &[sample_map.clone(), str_val("alpha")]).unwrap();
+        let idx_alpha = eval_func("index", &[sample_map.clone(), str_val("alpha")])?;
         assert_eq!(idx_alpha, num_val("0"));
-        let idx_beta = eval_func("index", &[sample_map.clone(), str_val("beta")]).unwrap();
+        let idx_beta = eval_func("index", &[sample_map.clone(), str_val("beta")])?;
         assert_eq!(idx_beta, num_val("1"));
         assert!(eval_func("index", &[sample_map, str_val("gamma")]).is_err());
         assert!(eval_func("index", &[num_val("1"), str_val("a")]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_set_functions_with_dynamic_type() {
+    fn test_set_functions_with_dynamic_type() -> Result<(), HclError> {
         let mut set1 = BTreeSet::new();
         set1.insert(str_val("a"));
         let dyn_set1 = Value::new(Type::Dynamic, ValueData::Set(set1));
         let mut set2 = BTreeSet::new();
         set2.insert(str_val("b"));
         let dyn_set2 = Value::new(Type::Dynamic, ValueData::Set(set2));
-        let si = eval_func("setintersection", &[dyn_set1.clone(), dyn_set2.clone()]).unwrap();
+        let si = eval_func("setintersection", &[dyn_set1.clone(), dyn_set2.clone()])?;
         assert_eq!(si.ty(), &Type::Set(Box::new(Type::Dynamic)));
-        let ss = eval_func("setsubtract", &[dyn_set1.clone(), dyn_set2.clone()]).unwrap();
+        let ss = eval_func("setsubtract", &[dyn_set1.clone(), dyn_set2.clone()])?;
         assert_eq!(ss.ty(), &Type::Set(Box::new(Type::Dynamic)));
         let sym = eval_func(
             "setsymmetricdifference",
             &[dyn_set1.clone(), dyn_set2.clone()],
-        )
-        .unwrap();
+        )?;
         assert_eq!(sym.ty(), &Type::Set(Box::new(Type::Dynamic)));
-        let sp = eval_func("setproduct", &[dyn_set1, dyn_set2]).unwrap();
+        let sp = eval_func("setproduct", &[dyn_set1, dyn_set2])?;
         assert_eq!(
             sp.ty(),
             &Type::List(Box::new(Type::Tuple(vec![Type::Dynamic, Type::Dynamic])))
         );
+        Ok(())
     }
 }

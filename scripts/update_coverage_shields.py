@@ -145,11 +145,13 @@ def compute_test_coverage(repo_root: Path) -> float:
     if shutil.which("cargo-llvm-cov"):
         cmd = [
             "cargo",
+            "+nightly",
             "llvm-cov",
             "--all-features",
             "--workspace",
             "--exclude",
             "hashicorp-configuration-language-rs-fuzz",
+            "--branch",
             "--json",
         ]
         result = subprocess.run(
@@ -163,13 +165,19 @@ def compute_test_coverage(repo_root: Path) -> float:
             try:
                 data = json.loads(result.stdout)
                 totals = data["data"][0]["totals"]
-                lines = totals["lines"]
-                count = lines.get("count", 0)
-                covered = lines.get("covered", 0)
-                if count > 0:
-                    return float(round((covered / count) * 100.0, 1))
-                percent = lines.get("percent", 0.0)
-                return float(round(float(percent), 1))
+                metrics: list[float] = []
+                for key in ("lines", "functions", "branches"):
+                    if key in totals and isinstance(totals[key], dict):
+                        metric = totals[key]
+                        count = metric.get("count", 0)
+                        covered = metric.get("covered", 0)
+                        if count > 0:
+                            metrics.append(float(round((covered / count) * 100.0, 1)))
+                        elif "percent" in metric:
+                            metrics.append(float(round(float(metric["percent"]), 1)))
+                if metrics:
+                    return min(metrics)
+                return 0.0
             except (
                 json.JSONDecodeError,
                 KeyError,

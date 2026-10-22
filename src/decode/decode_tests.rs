@@ -1,10 +1,4 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
+//! Unit tests for HCL structural and value decoding.
 #[cfg(test)]
 mod tests {
     use crate::decode::{DecodeBody, DecodeValue};
@@ -25,108 +19,104 @@ mod tests {
         count: i64,
     }
     #[test]
-    fn test_decode_body_macro() {
-        let src = "name = \"test_name\"\ncount = 100";
+    fn test_decode_body_macro() -> Result<(), Box<dyn std::error::Error>> {
+        let src = r#"name = "test_name"
+count = 100"#;
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let config: MyConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+        let config: MyConfig = DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert!(config.name.contains("test_name"));
         assert_eq!(config.count, 100);
+        Ok(())
     }
     #[test]
-    fn test_decode_body_for_body() {
-        let src = "name = \"test\"";
+    fn test_decode_body_for_body() -> Result<(), Box<dyn std::error::Error>> {
+        let src = r#"name = "test""#;
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let decoded =
-            <crate::ast::structure::Body as DecodeBody>::decode_body(&body, &[], &mut ctx).unwrap();
+            <crate::ast::structure::Body as DecodeBody>::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(decoded, body);
+        Ok(())
     }
-    fn dummy_span() -> Span {
+    const fn dummy_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
     fn make_val(data: ValueData) -> Value {
         Value::new(Type::Dynamic, data)
     }
     #[test]
-    fn test_decode_value_int() {
-        let val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("42").unwrap(),
-        )));
-        assert_eq!(i8::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(i16::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(i32::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(i64::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(i128::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(isize::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(u8::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(u16::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(u32::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(u64::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(u128::decode_value(&val, dummy_span()).unwrap(), 42);
-        assert_eq!(usize::decode_value(&val, dummy_span()).unwrap(), 42);
+    fn test_decode_value_int() -> Result<(), crate::error::HclError> {
+        let val = make_val(ValueData::Number(Number(BigDecimal::from_str("42")?)));
+        assert_eq!(i8::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(i16::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(i32::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(i64::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(i128::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(isize::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(u8::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(u16::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(u32::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(u64::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(u128::decode_value(&val, dummy_span())?, 42);
+        assert_eq!(usize::decode_value(&val, dummy_span())?, 42);
         let err_val = make_val(ValueData::String("42".to_string()));
         assert!(i32::decode_value(&err_val, dummy_span()).is_err());
         assert!(u32::decode_value(&err_val, dummy_span()).is_err());
-        let out_of_bounds = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("1e100").unwrap(),
-        )));
+        let out_of_bounds = make_val(ValueData::Number(Number(BigDecimal::from_str("1e100")?)));
         assert!(i32::decode_value(&out_of_bounds, dummy_span()).is_err());
+        Ok(())
     }
     #[test]
-    fn test_decode_value_float() {
-        let val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("42.5").unwrap(),
-        )));
-        assert_eq!(f32::decode_value(&val, dummy_span()).unwrap(), 42.5);
-        assert_eq!(f64::decode_value(&val, dummy_span()).unwrap(), 42.5);
+    fn test_decode_value_float() -> Result<(), crate::error::HclError> {
+        let val = make_val(ValueData::Number(Number(BigDecimal::from_str("42.5")?)));
+        assert!((f32::decode_value(&val, dummy_span())? - 42.5).abs() < f32::EPSILON);
+        assert!((f64::decode_value(&val, dummy_span())? - 42.5).abs() < f64::EPSILON);
         let err_val = make_val(ValueData::String("42.5".to_string()));
         assert!(f32::decode_value(&err_val, dummy_span()).is_err());
         assert!(f64::decode_value(&err_val, dummy_span()).is_err());
+        let overflow_val = make_val(ValueData::Number(Number(BigDecimal::from_str("1e1000")?)));
+        assert!(f32::decode_value(&overflow_val, dummy_span()).is_err());
+        assert!(f64::decode_value(&overflow_val, dummy_span()).is_err());
+        Ok(())
     }
     #[test]
-    fn test_decode_value_bool() {
+    fn test_decode_value_bool() -> Result<(), crate::error::HclError> {
         let val = make_val(ValueData::Bool(true));
-        assert!(bool::decode_value(&val, dummy_span()).unwrap());
-        let err_val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("1").unwrap(),
-        )));
+        assert!(bool::decode_value(&val, dummy_span())?);
+        let err_val = make_val(ValueData::Number(Number(BigDecimal::from_str("1")?)));
         assert!(bool::decode_value(&err_val, dummy_span()).is_err());
+        Ok(())
     }
     #[test]
-    fn test_decode_value_string() {
+    fn test_decode_value_string() -> Result<(), crate::error::HclError> {
         let val = make_val(ValueData::String("hello".to_string()));
-        assert_eq!(String::decode_value(&val, dummy_span()).unwrap(), "hello");
+        assert_eq!(String::decode_value(&val, dummy_span())?, "hello");
         let err_val = make_val(ValueData::Bool(true));
         assert!(String::decode_value(&err_val, dummy_span()).is_err());
+        Ok(())
     }
     #[test]
-    fn test_decode_value_vec() {
+    fn test_decode_value_vec() -> Result<(), crate::error::HclError> {
         let arr_val = make_val(ValueData::Array(vec![
-            make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").unwrap(),
-            ))),
-            make_val(ValueData::Number(Number(
-                BigDecimal::from_str("2").unwrap(),
-            ))),
+            make_val(ValueData::Number(Number(BigDecimal::from_str("1")?))),
+            make_val(ValueData::Number(Number(BigDecimal::from_str("2")?))),
         ]));
-        let vec: Vec<i32> = Vec::decode_value(&arr_val, dummy_span()).unwrap();
+        let vec: Vec<i32> = Vec::decode_value(&arr_val, dummy_span())?;
         assert_eq!(vec, vec![1, 2]);
         let mut set = BTreeSet::new();
-        set.insert(make_val(ValueData::Number(Number(
-            BigDecimal::from_str("3").unwrap(),
-        ))));
+        set.insert(make_val(ValueData::Number(Number(BigDecimal::from_str(
+            "3",
+        )?))));
         let set_val = make_val(ValueData::Set(set));
-        let vec_from_set: Vec<i32> = Vec::decode_value(&set_val, dummy_span()).unwrap();
+        let vec_from_set: Vec<i32> = Vec::decode_value(&set_val, dummy_span())?;
         assert_eq!(vec_from_set, vec![3]);
         let err_val = make_val(ValueData::Bool(true));
         assert!(Vec::<i32>::decode_value(&err_val, dummy_span()).is_err());
         let arr_err_val = make_val(ValueData::Array(vec![
-            make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").unwrap(),
-            ))),
+            make_val(ValueData::Number(Number(BigDecimal::from_str("1")?))),
             make_val(ValueData::String("error".to_string())),
         ]));
         assert!(Vec::<i32>::decode_value(&arr_err_val, dummy_span()).is_err());
@@ -134,27 +124,24 @@ mod tests {
         set_err.insert(make_val(ValueData::String("error".to_string())));
         let set_err_val = make_val(ValueData::Set(set_err));
         assert!(Vec::<i32>::decode_value(&set_err_val, dummy_span()).is_err());
+        Ok(())
     }
     #[test]
-    fn test_decode_value_hashmap() {
+    fn test_decode_value_hashmap() -> Result<(), crate::error::HclError> {
         let mut map = BTreeMap::new();
         map.insert(
             "a".to_string(),
-            make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").unwrap(),
-            ))),
+            make_val(ValueData::Number(Number(BigDecimal::from_str("1")?))),
         );
         let obj_val = make_val(ValueData::Object(map));
-        let hashmap: HashMap<String, i32> = HashMap::decode_value(&obj_val, dummy_span()).unwrap();
+        let hashmap: HashMap<String, i32> = HashMap::decode_value(&obj_val, dummy_span())?;
         assert_eq!(hashmap.get("a"), Some(&1));
         let err_val = make_val(ValueData::Bool(true));
         assert!(HashMap::<String, i32>::decode_value(&err_val, dummy_span()).is_err());
         let mut err_map = BTreeMap::new();
         err_map.insert(
             "a".to_string(),
-            make_val(ValueData::Number(Number(
-                BigDecimal::from_str("1").unwrap(),
-            ))),
+            make_val(ValueData::Number(Number(BigDecimal::from_str("1")?))),
         );
         err_map.insert(
             "b".to_string(),
@@ -162,44 +149,39 @@ mod tests {
         );
         let obj_err_val = make_val(ValueData::Object(err_map));
         assert!(HashMap::<String, i32>::decode_value(&obj_err_val, dummy_span()).is_err());
+        Ok(())
     }
     #[test]
-    fn test_decode_value_option() {
+    fn test_decode_value_option() -> Result<(), crate::error::HclError> {
         let null_val = make_val(ValueData::Null);
+        assert_eq!(Option::<i32>::decode_value(&null_val, dummy_span())?, None);
+        let num_val = make_val(ValueData::Number(Number(BigDecimal::from_str("42")?)));
         assert_eq!(
-            Option::<i32>::decode_value(&null_val, dummy_span()).unwrap(),
-            None
-        );
-        let num_val = make_val(ValueData::Number(Number(
-            BigDecimal::from_str("42").unwrap(),
-        )));
-        assert_eq!(
-            Option::<i32>::decode_value(&num_val, dummy_span()).unwrap(),
+            Option::<i32>::decode_value(&num_val, dummy_span())?,
             Some(42)
         );
         let unk_val = make_val(ValueData::Unknown(None));
         assert!(Option::<i32>::decode_value(&unk_val, dummy_span()).is_err());
-        let res_unk = Option::<Value>::decode_value(&unk_val, dummy_span()).unwrap();
+        let res_unk = Option::<Value>::decode_value(&unk_val, dummy_span())?;
         assert_eq!(res_unk, Some(unk_val));
+        Ok(())
     }
     #[test]
-    fn test_decode_value_raw_value() {
+    fn test_decode_value_raw_value() -> Result<(), crate::error::HclError> {
         let val = make_val(ValueData::Bool(true));
-        let decoded = Value::decode_value(&val, dummy_span()).unwrap();
+        let decoded = Value::decode_value(&val, dummy_span())?;
         assert_eq!(decoded, val);
+        Ok(())
     }
     #[test]
-    fn test_decode_value_btreemap() {
+    fn test_decode_value_btreemap() -> Result<(), crate::error::HclError> {
         let mut map = BTreeMap::new();
         map.insert(
             "key1".to_string(),
-            make_val(ValueData::Number(Number(
-                BigDecimal::from_str("100").unwrap(),
-            ))),
+            make_val(ValueData::Number(Number(BigDecimal::from_str("100")?))),
         );
         let obj_val = make_val(ValueData::Object(map));
-        let btreemap: BTreeMap<String, i32> =
-            BTreeMap::decode_value(&obj_val, dummy_span()).unwrap();
+        let btreemap: BTreeMap<String, i32> = BTreeMap::decode_value(&obj_val, dummy_span())?;
         assert_eq!(btreemap.get("key1"), Some(&100));
         let non_obj = make_val(ValueData::Bool(true));
         assert!(BTreeMap::<String, i32>::decode_value(&non_obj, dummy_span()).is_err());
@@ -210,6 +192,7 @@ mod tests {
         );
         let err_obj = make_val(ValueData::Object(err_map));
         assert!(BTreeMap::<String, i32>::decode_value(&err_obj, dummy_span()).is_err());
+        Ok(())
     }
     #[derive(Debug, DecodeBody)]
     struct ConfigWithRemainMap {
@@ -242,7 +225,8 @@ mod tests {
         enabled: bool,
     }
     #[test]
-    fn test_macro_remain_map_and_separated_attrs_blocks() {
+    fn test_macro_remain_map_and_separated_attrs_blocks() -> Result<(), Box<dyn std::error::Error>>
+    {
         let src = r#"
             name = "service"
             timeout = 30
@@ -255,20 +239,21 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let cfg_map: ConfigWithRemainMap = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+        let cfg_map: ConfigWithRemainMap = DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(cfg_map.name, "service");
         assert!(cfg_map.extra.contains_key("timeout"));
         assert!(cfg_map.extra.contains_key("retries"));
         let cfg_sep: ConfigWithRemainAttrsAndBlocks =
-            DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+            DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(cfg_sep.name, "service");
         assert!(cfg_sep.extra_attrs.contains_key("timeout"));
         assert!(cfg_sep.extra_attrs.contains_key("retries"));
         assert_eq!(cfg_sep.extra_blocks.len(), 1);
         assert_eq!(cfg_sep.extra_blocks[0].block_type, "nested");
+        Ok(())
     }
     #[test]
-    fn test_macro_unevaluated_expr() {
+    fn test_macro_unevaluated_expr() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             name = "dynamic_service"
             raw = var.cluster.endpoint + "/v1"
@@ -277,7 +262,7 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let cfg: ConfigWithUnevaluatedExpr = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+        let cfg: ConfigWithUnevaluatedExpr = DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(cfg.name, "dynamic_service");
         assert!(matches!(
             cfg.raw,
@@ -290,48 +275,38 @@ mod tests {
                 crate::ast::expr::Expression::Traversal(..)
             ));
         }
+        Ok(())
     }
     #[test]
-    fn test_macro_label_count_validation() {
+    fn test_macro_label_count_validation() -> Result<(), Box<dyn std::error::Error>> {
         let src = "enabled = true";
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let labels_ok = vec!["aws_instance".to_string(), "web".to_string()];
-        let res_ok: Result<LabeledResource, _> =
-            DecodeBody::decode_body(&body, &labels_ok, &mut ctx);
-        assert!(res_ok.is_ok());
-        if let Ok(res) = res_ok {
-            assert_eq!(res.type_name, "aws_instance");
-            assert_eq!(res.instance_name, "web");
-            assert!(res.enabled);
-        }
+        let res_ok: LabeledResource = DecodeBody::decode_body(&body, &labels_ok, &mut ctx)?;
+        assert_eq!(res_ok.type_name, "aws_instance");
+        assert_eq!(res_ok.instance_name, "web");
+        assert!(res_ok.enabled);
         let labels_few = vec!["aws_instance".to_string()];
         let res_few: Result<LabeledResource, _> =
             DecodeBody::decode_body(&body, &labels_few, &mut ctx);
-        match res_few {
-            Err(diags) => {
-                assert!(
-                    diags
-                        .to_string()
-                        .contains("Expected 2 block label(s), got 1")
-                );
-            }
-            Ok(_) => panic!("expected label count error"),
-        }
+        let diags_few = res_few.err().ok_or("expected label count error")?;
+        assert!(
+            diags_few
+                .to_string()
+                .contains("Expected 2 block label(s), got 1")
+        );
         let labels_many = vec!["a".to_string(), "b".to_string(), "c".to_string()];
         let res_many: Result<LabeledResource, _> =
             DecodeBody::decode_body(&body, &labels_many, &mut ctx);
-        match res_many {
-            Err(diags) => {
-                assert!(
-                    diags
-                        .to_string()
-                        .contains("Expected 2 block label(s), got 3")
-                );
-            }
-            Ok(_) => panic!("expected label count error"),
-        }
+        let diags_many = res_many.err().ok_or("expected label count error")?;
+        assert!(
+            diags_many
+                .to_string()
+                .contains("Expected 2 block label(s), got 3")
+        );
+        Ok(())
     }
     #[derive(Debug, PartialEq, crate::decode::DecodeValue)]
     enum ServerStatus {
@@ -355,7 +330,7 @@ mod tests {
         detail: NestedDetail,
     }
     #[test]
-    fn test_derive_decode_value_struct_and_enum() {
+    fn test_derive_decode_value_struct_and_enum() -> Result<(), Box<dyn std::error::Error>> {
         use crate::encode::EncodeValue;
         let mut detail_map = BTreeMap::new();
         detail_map.insert("info".to_string(), "active-cluster".encode_value());
@@ -368,8 +343,7 @@ mod tests {
             Value::new(Type::Dynamic, ValueData::Object(detail_map)),
         );
         let val = Value::new(Type::Dynamic, ValueData::Object(record_map));
-        let decoded: ComplexRecord =
-            crate::decode::DecodeValue::decode_value(&val, dummy_span()).unwrap();
+        let decoded: ComplexRecord = crate::decode::DecodeValue::decode_value(&val, dummy_span())?;
         assert_eq!(decoded.host, "prod.internal");
         assert_eq!(decoded.status, ServerStatus::Maintenance);
         assert_eq!(decoded.port, Some(8080));
@@ -383,26 +357,28 @@ mod tests {
         assert!(ServerStatus::decode_value(&unknown_variant, dummy_span()).is_err());
         let number_variant = 123_i64.encode_value();
         assert!(ServerStatus::decode_value(&number_variant, dummy_span()).is_err());
+        Ok(())
     }
     #[test]
-    fn test_decode_expression_and_context() {
+    fn test_decode_expression_and_context() -> Result<(), Box<dyn std::error::Error>> {
         use crate::encode::EncodeValue;
         let mut ctx = Context::new();
         ctx.set_variable("base_port", 9000_i64.encode_value());
         let mut parser = crate::parse::parser::Parser::new("base_port + 80");
-        let expr = parser.parse_expression().unwrap();
-        let decoded: i64 = crate::decode::decode_expression(&expr, &mut ctx).unwrap();
+        let expr = parser.parse_expression().ok_or("missing expr")?;
+        let decoded: i64 = crate::decode::decode_expression(&expr, &mut ctx)?;
         assert_eq!(decoded, 9080);
         let mut err_parser = crate::parse::parser::Parser::new("undefined_var + 1");
-        let err_expr = err_parser.parse_expression().unwrap();
+        let err_expr = err_parser.parse_expression().ok_or("missing expr")?;
         assert!(crate::decode::decode_expression::<i64>(&err_expr, &mut ctx).is_err());
-        let mut type_err_parser = crate::parse::parser::Parser::new("\"not_a_number\"");
-        let type_err_expr = type_err_parser.parse_expression().unwrap();
+        let mut type_err_parser = crate::parse::parser::Parser::new(r#""not_a_number""#);
+        let type_err_expr = type_err_parser.parse_expression().ok_or("missing expr")?;
         assert!(crate::decode::decode_expression::<i64>(&type_err_expr, &mut ctx).is_err());
         let val = "hello_world".encode_value();
         let decoded_str: String =
-            crate::decode::decode_value_with_context(&val, dummy_span(), &ctx).unwrap();
+            crate::decode::decode_value_with_context(&val, dummy_span(), &ctx)?;
         assert_eq!(decoded_str, "hello_world");
+        Ok(())
     }
     #[derive(DecodeBody)]
     struct ExplicitAttrConfig {
@@ -414,15 +390,16 @@ mod tests {
         retries: i64,
     }
     #[test]
-    fn test_explicit_hcl_attr_annotations() {
+    fn test_explicit_hcl_attr_annotations() -> Result<(), Box<dyn std::error::Error>> {
         let src = "timeout = 30";
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let config: ExplicitAttrConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+        let config: ExplicitAttrConfig = DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(config.timeout, 30);
         assert_eq!(config.description, None);
         assert_eq!(config.retries, 0);
+        Ok(())
     }
     #[derive(DecodeBody, crate::encode::EncodeBody, Debug, PartialEq)]
     struct ServerBlock {
@@ -437,7 +414,7 @@ mod tests {
         database: BTreeMap<String, ServerBlock>,
     }
     #[test]
-    fn test_decode_and_encode_single_level_label_maps() {
+    fn test_decode_and_encode_single_level_label_maps() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             server "web" {
                 port = 80
@@ -459,7 +436,7 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let config: ServerMapConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+        let config: ServerMapConfig = DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(config.server.len(), 2);
         assert_eq!(config.server["web"].port, 80);
         assert_eq!(config.server["web"].host, "10.0.0.1");
@@ -467,11 +444,12 @@ mod tests {
         assert_eq!(config.database.len(), 2);
         assert_eq!(config.database["primary"].port, 5432);
         assert_eq!(config.database["replica"].port, 5433);
-        let encoded_str = crate::encode::encode_to_string(&config).unwrap();
+        let encoded_str = crate::encode::encode_to_string(&config)?;
         let mut rep_parser = Parser::new(&encoded_str);
         let rep_body = rep_parser.parse_body();
-        let re_config: ServerMapConfig = DecodeBody::decode_body(&rep_body, &[], &mut ctx).unwrap();
+        let re_config: ServerMapConfig = DecodeBody::decode_body(&rep_body, &[], &mut ctx)?;
         assert_eq!(config, re_config);
+        Ok(())
     }
     #[derive(DecodeBody, crate::encode::EncodeBody, Debug, PartialEq)]
     struct RepeatedMapConfig {
@@ -481,7 +459,7 @@ mod tests {
         worker: BTreeMap<String, Vec<ServerBlock>>,
     }
     #[test]
-    fn test_decode_and_encode_repeated_blocks_by_label() {
+    fn test_decode_and_encode_repeated_blocks_by_label() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             listener "http" {
                 port = 80
@@ -507,20 +485,20 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let config: RepeatedMapConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+        let config: RepeatedMapConfig = DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(config.listener["http"].len(), 2);
         assert_eq!(config.listener["https"].len(), 1);
         assert_eq!(config.worker["queue"].len(), 2);
-        let encoded_str = crate::encode::encode_to_string(&config).unwrap();
+        let encoded_str = crate::encode::encode_to_string(&config)?;
         let mut rep_parser = Parser::new(&encoded_str);
         let rep_body = rep_parser.parse_body();
-        let re_config: RepeatedMapConfig =
-            DecodeBody::decode_body(&rep_body, &[], &mut ctx).unwrap();
+        let re_config: RepeatedMapConfig = DecodeBody::decode_body(&rep_body, &[], &mut ctx)?;
         assert_eq!(config.worker, re_config.worker);
         assert_eq!(
             config.listener["http"].len(),
             re_config.listener["http"].len()
         );
+        Ok(())
     }
     #[derive(DecodeBody, crate::encode::EncodeBody, Debug, PartialEq)]
     struct ResourceBlock {
@@ -537,7 +515,7 @@ mod tests {
         target: HashMap<String, HashMap<String, BTreeMap<String, ResourceBlock>>>,
     }
     #[test]
-    fn test_decode_and_encode_multi_level_label_maps() {
+    fn test_decode_and_encode_multi_level_label_maps() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             resource "aws_instance" "web" {
                 ami = "ami-web-123"
@@ -552,7 +530,7 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let config: NestedMultiLabelConfig = DecodeBody::decode_body(&body, &[], &mut ctx).unwrap();
+        let config: NestedMultiLabelConfig = DecodeBody::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(config.resource.len(), 2);
         assert_eq!(config.resource["aws_instance"]["web"].ami, "ami-web-123");
         assert_eq!(config.resource["aws_instance"]["api"].ami, "ami-api-456");
@@ -560,11 +538,10 @@ mod tests {
             config.resource["aws_security_group"]["firewall"].ami,
             "sec-789"
         );
-        let encoded_str = crate::encode::encode_to_string(&config).unwrap();
+        let encoded_str = crate::encode::encode_to_string(&config)?;
         let mut rep_parser = Parser::new(&encoded_str);
         let rep_body = rep_parser.parse_body();
-        let re_config: NestedMultiLabelConfig =
-            DecodeBody::decode_body(&rep_body, &[], &mut ctx).unwrap();
+        let re_config: NestedMultiLabelConfig = DecodeBody::decode_body(&rep_body, &[], &mut ctx)?;
         assert_eq!(config, re_config);
         let src_3 = r#"
             target "cloud" "aws" "prod" {
@@ -573,11 +550,12 @@ mod tests {
         "#;
         let mut p3 = Parser::new(src_3);
         let b3 = p3.parse_body();
-        let c3: ThreeLevelMultiLabelConfig = DecodeBody::decode_body(&b3, &[], &mut ctx).unwrap();
+        let c3: ThreeLevelMultiLabelConfig = DecodeBody::decode_body(&b3, &[], &mut ctx)?;
         assert_eq!(c3.target["cloud"]["aws"]["prod"].ami, "ami-prod");
+        Ok(())
     }
     #[test]
-    fn test_label_keyed_maps_error_diagnostics() {
+    fn test_label_keyed_maps_error_diagnostics() -> Result<(), Box<dyn std::error::Error>> {
         let mut ctx = Context::new();
         let src_missing_1 = r#"
             server {
@@ -587,7 +565,9 @@ mod tests {
         "#;
         let mut p1 = Parser::new(src_missing_1);
         let b1 = p1.parse_body();
-        let err1 = ServerMapConfig::decode_body(&b1, &[], &mut ctx).unwrap_err();
+        let err1 = ServerMapConfig::decode_body(&b1, &[], &mut ctx)
+            .err()
+            .ok_or("expected missing label error")?;
         assert!(err1.errors().iter().any(|e| {
             e.summary
                 .as_deref()
@@ -600,7 +580,9 @@ mod tests {
         "#;
         let mut p2 = Parser::new(src_missing_2);
         let b2 = p2.parse_body();
-        let err2 = NestedMultiLabelConfig::decode_body(&b2, &[], &mut ctx).unwrap_err();
+        let err2 = NestedMultiLabelConfig::decode_body(&b2, &[], &mut ctx)
+            .err()
+            .ok_or("expected missing label error")?;
         assert!(err2.errors().iter().any(|e| {
             e.summary
                 .as_deref()
@@ -618,7 +600,9 @@ mod tests {
         "#;
         let mut p3 = Parser::new(src_duplicate);
         let b3 = p3.parse_body();
-        let err3 = ServerMapConfig::decode_body(&b3, &[], &mut ctx).unwrap_err();
+        let err3 = ServerMapConfig::decode_body(&b3, &[], &mut ctx)
+            .err()
+            .ok_or("expected duplicate block error")?;
         assert!(err3.errors().iter().any(|e| {
             e.summary
                 .as_deref()
@@ -634,8 +618,9 @@ mod tests {
         let b4 = p4.parse_body();
         let err4 = ServerMapConfig::decode_body(&b4, &[], &mut ctx)
             .err()
-            .unwrap();
+            .ok_or("expected inner decode error")?;
         assert!(err4.has_errors());
+        Ok(())
     }
     /// Child database configuration struct.
     #[derive(
@@ -696,7 +681,7 @@ mod tests {
     }
     /// Tests multiple levels of flattened and squashed structs, empty structs, and remain capture.
     #[test]
-    fn test_flatten_multi_level_and_empty_and_remain() {
+    fn test_flatten_multi_level_and_empty_and_remain() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ast::schema::ImpliedBodySchema;
         let src = r#"
             env = "production"
@@ -712,7 +697,7 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx).unwrap();
+        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(decoded.env, "production");
         assert_eq!(decoded.core.name, "payment-gateway");
         assert_eq!(decoded.core.database.engine, "postgres");
@@ -731,13 +716,13 @@ mod tests {
         assert!(schema.attributes.contains_key("port"));
         assert!(schema.blocks.contains_key("servers"));
         let mut cst = crate::cst::builder::CstBody::new();
-        decoded.encode_into_body(&mut cst).unwrap();
+        decoded.encode_into_body(&mut cst)?;
         let mut rendered = String::new();
         cst.render(&mut rendered);
         let mut round_parser = Parser::new(&rendered);
         let round_body = round_parser.parse_body();
         let mut round_ctx = Context::new();
-        let round_decoded = FlatRootConfig::decode_body(&round_body, &[], &mut round_ctx).unwrap();
+        let round_decoded = FlatRootConfig::decode_body(&round_body, &[], &mut round_ctx)?;
         assert_eq!(decoded.env, round_decoded.env);
         assert_eq!(decoded.core.name, round_decoded.core.name);
         assert_eq!(
@@ -746,10 +731,11 @@ mod tests {
         );
         assert_eq!(decoded.core.database.port, round_decoded.core.database.port);
         assert_eq!(decoded.core.servers.len(), round_decoded.core.servers.len());
+        Ok(())
     }
     /// Tests optional flattened structs when inner attributes are present.
     #[test]
-    fn test_flatten_optional_present() {
+    fn test_flatten_optional_present() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             env = "staging"
             name = "auth-service"
@@ -760,7 +746,7 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx).unwrap();
+        let decoded = FlatRootConfig::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(decoded.env, "staging");
         assert_eq!(decoded.core.name, "auth-service");
         assert_eq!(decoded.core.database.engine, "mysql");
@@ -771,6 +757,7 @@ mod tests {
                 extra_tag: Some("auth-v2".to_string())
             })
         );
+        Ok(())
     }
     /// Struct colliding with child attribute.
     #[allow(dead_code)]
@@ -815,7 +802,7 @@ mod tests {
     }
     /// Tests runtime collision detection between parent and child attributes.
     #[test]
-    fn test_flatten_collision_parent_child_attr() {
+    fn test_flatten_collision_parent_child_attr() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             engine = "postgres"
             port = 5432
@@ -825,16 +812,17 @@ mod tests {
         let mut ctx = Context::new();
         let err = DupAttrParent::decode_body(&body, &[], &mut ctx)
             .err()
-            .unwrap();
+            .ok_or("expected duplicate attribute error")?;
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
                 .is_some_and(|s| s.contains("Duplicate Attribute"))
         }));
+        Ok(())
     }
     /// Tests runtime collision detection between parent and child blocks.
     #[test]
-    fn test_flatten_collision_parent_child_block() {
+    fn test_flatten_collision_parent_child_block() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             name = "service"
             engine = "postgres"
@@ -845,28 +833,30 @@ mod tests {
         let mut ctx = Context::new();
         let err = DupBlockParent::decode_body(&body, &[], &mut ctx)
             .err()
-            .unwrap();
+            .ok_or("expected duplicate block error")?;
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
                 .is_some_and(|s| s.contains("Duplicate Block"))
         }));
+        Ok(())
     }
     /// Tests runtime collision detection between two sibling flattened structs.
     #[test]
-    fn test_flatten_collision_sibling_children() {
+    fn test_flatten_collision_sibling_children() -> Result<(), Box<dyn std::error::Error>> {
         let src = "port = 8080";
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = SiblingConflictParent::decode_body(&body, &[], &mut ctx)
             .err()
-            .unwrap();
+            .ok_or("expected duplicate attribute error")?;
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
                 .is_some_and(|s| s.contains("Duplicate Attribute"))
         }));
+        Ok(())
     }
     /// Child with required attribute x.
     #[allow(dead_code)]
@@ -893,14 +883,14 @@ mod tests {
     }
     /// Tests partial failure recovery: both child structs report missing attributes in a single pass.
     #[test]
-    fn test_flatten_partial_failure_recovery() {
+    fn test_flatten_partial_failure_recovery() -> Result<(), Box<dyn std::error::Error>> {
         let src = "# Empty configuration";
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = MultiFailureParent::decode_body(&body, &[], &mut ctx)
             .err()
-            .unwrap();
+            .ok_or("expected missing attributes error")?;
         let diags = err.errors();
         assert!(
             diags.len() >= 2,
@@ -915,6 +905,7 @@ mod tests {
             .any(|e| e.detail.as_deref().is_some_and(|d| d.contains("attr_b")));
         assert!(has_err_a, "Expected missing attr_a diagnostic");
         assert!(has_err_b, "Expected missing attr_b diagnostic");
+        Ok(())
     }
     /// Inner value struct for object testing.
     #[derive(DecodeValue, EncodeValue, PartialEq, Debug)]
@@ -933,7 +924,7 @@ mod tests {
     }
     /// Tests `DecodeValue` and `EncodeValue` with flattened and squashed inner structs.
     #[test]
-    fn test_flatten_value_roundtrip() {
+    fn test_flatten_value_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let mut obj = BTreeMap::new();
         obj.insert(
             "name".to_string(),
@@ -948,19 +939,20 @@ mod tests {
             make_val(ValueData::Number(Number(BigDecimal::from(8080)))),
         );
         let val = make_val(ValueData::Object(obj));
-        let decoded = ValueOuter::decode_value(&val, dummy_span()).unwrap();
+        let decoded = ValueOuter::decode_value(&val, dummy_span())?;
         assert_eq!(decoded.name, "test-val");
         assert_eq!(decoded.inner.host, "localhost");
         assert_eq!(decoded.inner.port, 8080);
         assert!(decoded.opt_inner.is_some());
         let encoded = decoded.encode_value();
-        if let ValueData::Object(map) = &*encoded.data {
-            assert!(map.contains_key("name"));
-            assert!(map.contains_key("host"));
-            assert!(map.contains_key("port"));
-        } else {
-            panic!("Expected object data");
-        }
+        assert!(matches!(
+            &*encoded.data,
+            ValueData::Object(map)
+                if map.contains_key("name")
+                    && map.contains_key("host")
+                    && map.contains_key("port")
+        ));
+        Ok(())
     }
     /// Validated hex color wrapper type.
     #[derive(PartialEq, Debug, Clone)]
@@ -1017,7 +1009,7 @@ mod tests {
     }
     /// Tests successful raw body retention, custom decoder invocation, default expression evaluation, and default fn instantiation.
     #[test]
-    fn test_raw_body_retention_and_hooks_success() {
+    fn test_raw_body_retention_and_hooks_success() -> Result<(), Box<dyn std::error::Error>> {
         let src = r##"
             title = "Dashboard"
             bg_color = "#FF00AA"
@@ -1026,7 +1018,7 @@ mod tests {
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
-        let decoded = RawBodyAndHooksConfig::decode_body(&body, &[], &mut ctx).unwrap();
+        let decoded = RawBodyAndHooksConfig::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(decoded.title, "Dashboard");
         assert_eq!(decoded.bg_color, HexColor("#FF00AA".to_string()));
         assert_eq!(decoded.port, 1024);
@@ -1036,15 +1028,16 @@ mod tests {
         assert!(decoded.raw_body.attributes.contains_key("extra_metric"));
         assert!(decoded.remain.contains_key("extra_metric"));
         let mut cst = crate::cst::builder::CstBody::new();
-        decoded.encode_into_body(&mut cst).unwrap();
+        decoded.encode_into_body(&mut cst)?;
         let mut rendered = String::new();
         cst.render(&mut rendered);
         assert!(rendered.contains("title"));
         assert!(rendered.contains("extra_metric"));
+        Ok(())
     }
     /// Tests custom decoder failure diagnostic reporting.
     #[test]
-    fn test_custom_decoder_failure() {
+    fn test_custom_decoder_failure() -> Result<(), Box<dyn std::error::Error>> {
         let src = r#"
             title = "Bad Color"
             bg_color = "not-a-hex"
@@ -1054,12 +1047,13 @@ mod tests {
         let mut ctx = Context::new();
         let err = RawBodyAndHooksConfig::decode_body(&body, &[], &mut ctx)
             .err()
-            .unwrap();
+            .ok_or("expected custom decoder error")?;
         assert!(err.errors().iter().any(|e| {
             e.summary
                 .as_deref()
                 .is_some_and(|s| s.contains("Invalid Hex Color"))
         }));
+        Ok(())
     }
     /// Struct testing fallback `default_expr` evaluation failure.
     #[allow(dead_code)]
@@ -1070,14 +1064,15 @@ mod tests {
     }
     /// Tests that failure during fallback `default_expr` evaluation emits proper diagnostics.
     #[test]
-    fn test_default_expr_fallback_failure() {
+    fn test_default_expr_fallback_failure() -> Result<(), Box<dyn std::error::Error>> {
         let src = "# Missing num";
         let mut parser = Parser::new(src);
         let body = parser.parse_body();
         let mut ctx = Context::new();
         let err = FallbackFailureConfig::decode_body(&body, &[], &mut ctx)
             .err()
-            .unwrap();
+            .ok_or("expected fallback evaluation error")?;
         assert!(err.has_errors());
+        Ok(())
     }
 }

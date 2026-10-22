@@ -21,7 +21,7 @@ impl ObjectAttrType {
     /// # Arguments
     /// * `ty` - The type expression for the attribute.
     #[must_use]
-    pub fn required(ty: TypeExpr) -> Self {
+    pub const fn required(ty: TypeExpr) -> Self {
         Self {
             ty,
             optional: false,
@@ -34,7 +34,7 @@ impl ObjectAttrType {
     /// * `ty` - The type expression for the attribute.
     /// * `default_val` - The optional default expression.
     #[must_use]
-    pub fn optional(ty: TypeExpr, default_val: Option<Expression>) -> Self {
+    pub const fn optional(ty: TypeExpr, default_val: Option<Expression>) -> Self {
         Self {
             ty,
             optional: true,
@@ -71,22 +71,15 @@ impl TypeExpr {
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
-            TypeExpr::Primitive(_, span)
-            | TypeExpr::Collection(_, _, span)
-            | TypeExpr::Object(_, span)
-            | TypeExpr::Tuple(_, span) => span.clone(),
+            Self::Primitive(_, span)
+            | Self::Collection(_, _, span)
+            | Self::Object(_, span)
+            | Self::Tuple(_, span) => span.clone(),
         }
     }
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
     fn test_type_expr_span() {

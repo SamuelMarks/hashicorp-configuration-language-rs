@@ -2,12 +2,16 @@
 //!
 //! Enables jumping from variable/local references to declarations (`textDocument/definition`)
 //! and finding all occurrences across documents (`textDocument/references`).
+#![deny(missing_docs)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use crate::cache::{DocumentCache, VirtualDocument};
 use crate::protocol::{Location, Position};
 use crate::symbols::span_to_range;
 use hashicorp_configuration_language_rs::ast::deps::extract_static_references_from_body;
 use hashicorp_configuration_language_rs::ast::expr::{Expression, TemplatePart, TraversalOperator};
 use hashicorp_configuration_language_rs::ast::structure::Body;
+
 /// Computes the declaration location for a symbol at the given position.
 ///
 /// # Arguments
@@ -36,6 +40,7 @@ pub fn goto_definition(
         _ => None,
     }
 }
+
 /// Finds all references to a local or variable declared at the given position.
 ///
 /// # Arguments
@@ -82,6 +87,7 @@ pub fn find_references(
     }
     locations
 }
+
 /// Locates the declaration of a local value across cached documents.
 fn find_local_declaration(local_name: &str, cache: &DocumentCache) -> Option<Location> {
     for (uri, doc) in &cache.documents {
@@ -101,6 +107,7 @@ fn find_local_declaration(local_name: &str, cache: &DocumentCache) -> Option<Loc
     }
     None
 }
+
 /// Locates the declaration of an input variable across cached documents.
 fn find_variable_declaration(var_name: &str, cache: &DocumentCache) -> Option<Location> {
     for (uri, doc) in &cache.documents {
@@ -111,14 +118,10 @@ fn find_variable_declaration(var_name: &str, cache: &DocumentCache) -> Option<Lo
             if block.block_type == "variable" {
                 if let Some(name) = block.labels.first() {
                     if name == var_name {
-                        let span = block
-                            .label_spans
-                            .first()
-                            .cloned()
-                            .unwrap_or(block.type_span.clone());
+                        let span = block.label_spans.first().unwrap_or(&block.type_span);
                         return Some(Location {
                             uri: uri.clone(),
-                            range: span_to_range(&span),
+                            range: span_to_range(span),
                         });
                     }
                 }
@@ -127,6 +130,7 @@ fn find_variable_declaration(var_name: &str, cache: &DocumentCache) -> Option<Lo
     }
     None
 }
+
 /// A matched variable traversal expression.
 #[derive(Debug, Clone)]
 struct TraversalMatch {
@@ -135,6 +139,7 @@ struct TraversalMatch {
     /// The traversal operators applied to the root.
     operators: Vec<TraversalOperator>,
 }
+
 /// Finds the traversal expression at the specified byte offset.
 fn find_traversal_at_offset(
     doc: &VirtualDocument,
@@ -170,6 +175,7 @@ fn find_traversal_at_offset(
     }
     None
 }
+
 /// Recursively gathers traversal expressions from an expression tree.
 fn find_traversals_in_expr(expr: &Expression, out: &mut Vec<TraversalMatch>) {
     match expr {
@@ -219,6 +225,7 @@ fn find_traversals_in_expr(expr: &Expression, out: &mut Vec<TraversalMatch>) {
         _ => {}
     }
 }
+
 /// Identifies the symbol target (kind and name) under the cursor at `offset`.
 fn find_symbol_target_at_offset(
     doc: &VirtualDocument,
@@ -234,11 +241,7 @@ fn find_symbol_target_at_offset(
             }
         } else if block.block_type == "variable" {
             if let Some(var_name) = block.labels.first() {
-                let label_span = block
-                    .label_spans
-                    .first()
-                    .cloned()
-                    .unwrap_or(block.type_span.clone());
+                let label_span = block.label_spans.first().unwrap_or(&block.type_span);
                 if label_span.start_byte <= offset && offset <= label_span.end_byte {
                     return Some(("var".to_string(), var_name.clone()));
                 }
@@ -253,19 +256,14 @@ fn find_symbol_target_at_offset(
     }
     None
 }
+
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::protocol::TextDocumentItem;
     use hashicorp_configuration_language_rs::ast::expr::Traversal;
     use hashicorp_configuration_language_rs::span::Span;
+
     #[test]
     fn test_goto_definition_and_references() {
         let hcl = r#"
@@ -305,7 +303,7 @@ mod tests {
         let pos_decl = doc.offset_to_position(decl_offset);
         let refs = find_references(&doc, pos_decl, &cache);
         assert_ne!(refs.len(), 0);
-        let var_decl_offset = doc.text.find("\"env\"").unwrap_or(0);
+        let var_decl_offset = doc.text.find(r#""env""#).unwrap_or(0);
         let pos_var_decl = doc.offset_to_position(var_decl_offset + 1);
         let var_refs = find_references(&doc, pos_var_decl, &cache);
         assert_ne!(var_refs.len(), 0);
@@ -315,6 +313,7 @@ mod tests {
         assert_ne!(refs_from_var_trav.len(), 0);
         assert_eq!(find_references(&doc, Position::new(0, 0), &cache).len(), 0);
     }
+
     #[test]
     fn test_goto_definition_unparsed_and_misses() {
         let mut cache = DocumentCache::new();
@@ -332,7 +331,9 @@ mod tests {
             uri: "file:///valid.hcl".to_string(),
             language_id: "hcl".to_string(),
             version: 1,
-            text: "val = 42\n".to_string(),
+            text: "val = 42
+"
+            .to_string(),
         };
         let doc_valid = cache.open_document(item_valid, None).clone();
         assert!(goto_definition(&doc_valid, Position::new(0, 2), &cache).is_none());
@@ -341,6 +342,7 @@ mod tests {
             0
         );
     }
+
     #[test]
     fn test_goto_definition_undefined_and_other_roots() {
         let hcl = r#"
@@ -411,6 +413,7 @@ mod tests {
         let refs = find_references(&doc, doc.offset_to_position(off_empty_var + 1), &cache);
         assert_eq!(refs.len(), 0);
     }
+
     #[test]
     fn test_traversals_in_all_expr_types_and_nested_blocks() {
         let hcl = r#"
@@ -461,6 +464,7 @@ mod tests {
         let refs = find_references(&doc, doc.offset_to_position(k_decl), &cache);
         assert_ne!(refs.len(), 0);
     }
+
     #[test]
     fn test_non_variable_traversal_and_offset_boundaries() {
         let sp = Span::new(0, 10, 1, 1, 1, 11);
@@ -488,12 +492,13 @@ mod tests {
                     sp.clone(),
                 )],
             }),
-            sp.clone(),
+            sp,
         );
         let mut idx_matches = Vec::new();
         find_traversals_in_expr(&idx_trav, &mut idx_matches);
         assert_eq!(idx_matches.len(), 1);
-        let hcl = "val = local.x + 10\n";
+        let hcl = "val = local.x + 10
+";
         let item = TextDocumentItem {
             uri: "file:///bound.hcl".to_string(),
             language_id: "hcl".to_string(),

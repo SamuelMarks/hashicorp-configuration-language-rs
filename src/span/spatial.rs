@@ -33,7 +33,7 @@ impl Position {
     /// # Arguments
     /// * `span` - The source span to check against.
     #[must_use]
-    pub fn contains(&self, span: &Span) -> bool {
+    pub const fn contains(&self, span: &Span) -> bool {
         span.contains_position(self)
     }
 }
@@ -93,18 +93,15 @@ fn find_block_path_recursive(
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::api::parse;
+    use crate::error::HclError;
     #[test]
     fn test_position_span_containment() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
         let span = Span::new(10, 20, 2, 5, 2, 15);
         let pos_inside = Position::new(2, 10, 15);
         let pos_before = Position::new(2, 4, 9);
@@ -123,8 +120,6 @@ mod tests {
         assert_ne!(pos_inside, Position::new(3, 10, 15));
         assert_ne!(pos_inside, Position::new(2, 11, 15));
         assert_ne!(pos_inside, Position::new(2, 10, 16));
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
         let mut h1 = DefaultHasher::new();
         let mut h2 = DefaultHasher::new();
         pos_inside.hash(&mut h1);
@@ -134,43 +129,61 @@ mod tests {
         assert!(debug_str.contains("Position"));
     }
     #[test]
-    fn test_spatial_query_block_type_and_labels() {
+    fn test_spatial_query_block_type_and_labels() -> Result<(), HclError> {
         let src = "resource \"aws_s3_bucket\" \"my_bucket\" {\n  bucket = \"prod\"\n}\n";
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let pos_type = Position::new(1, 4, 3);
-        let node_type = body.node_at_position(&pos_type).unwrap();
-        let block_enc = body.enclosing_block_at(&pos_type).unwrap();
+        let node_type = body
+            .node_at_position(&pos_type)
+            .ok_or_else(|| HclError::Eval("missing node".into()))?;
+        let block_enc = body
+            .enclosing_block_at(&pos_type)
+            .ok_or_else(|| HclError::Eval("missing block".into()))?;
         assert_eq!(node_type, AstNodeRef::Block(block_enc));
         assert_eq!(block_enc.block_type, "resource");
         assert_eq!(node_type.span(), block_enc.span);
         let pos_label1 = Position::new(1, 16, 15);
-        let node_label1 = body.node_at_position(&pos_label1).unwrap();
+        let node_label1 = body
+            .node_at_position(&pos_label1)
+            .ok_or_else(|| HclError::Eval("missing label1".into()))?;
         assert_eq!(node_label1, AstNodeRef::Block(block_enc));
         let pos_label2 = Position::new(1, 31, 30);
-        let node_label2 = body.node_at_position(&pos_label2).unwrap();
+        let node_label2 = body
+            .node_at_position(&pos_label2)
+            .ok_or_else(|| HclError::Eval("missing label2".into()))?;
         assert_eq!(node_label2, AstNodeRef::Block(block_enc));
+        Ok(())
     }
     #[test]
-    fn test_spatial_query_attribute_name_and_value() {
+    fn test_spatial_query_attribute_name_and_value() -> Result<(), HclError> {
         let src = "service {\n  count = 42\n}\n";
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let pos_name = Position::new(2, 4, 14);
-        let node_name = body.node_at_position(&pos_name).unwrap();
-        let attr = body.attribute_at(&pos_name).unwrap();
+        let node_name = body
+            .node_at_position(&pos_name)
+            .ok_or_else(|| HclError::Eval("missing node".into()))?;
+        let attr = body
+            .attribute_at(&pos_name)
+            .ok_or_else(|| HclError::Eval("missing attr".into()))?;
         assert_eq!(node_name, AstNodeRef::Attribute(attr));
         assert_eq!(attr.name, "count");
         assert_eq!(node_name.span(), attr.span);
         let pos_val = Position::new(2, 11, 21);
-        let node_val = body.node_at_position(&pos_val).unwrap();
+        let node_val = body
+            .node_at_position(&pos_val)
+            .ok_or_else(|| HclError::Eval("missing val".into()))?;
         assert_eq!(node_val, AstNodeRef::Expression(&attr.expr));
         assert_eq!(node_val.span(), attr.expr.span());
+        Ok(())
     }
     #[test]
-    fn test_spatial_query_nested_template_interpolations() {
+    fn test_spatial_query_nested_template_interpolations() -> Result<(), HclError> {
         let src = "msg = \"hello ${var.target}!\"\n";
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let pos_interp = Position::new(1, 19, 18);
-        let node = body.node_at_position(&pos_interp).unwrap();
+        let node = body
+            .node_at_position(&pos_interp)
+            .ok_or_else(|| HclError::Eval("missing node".into()))?;
         assert!(
             matches!(node, AstNodeRef::Expression(expr) if matches!(expr, crate
             ::ast::expr::Expression::Traversal(_, _) | crate
@@ -182,11 +195,12 @@ mod tests {
         assert!(debug_node.contains("Expression"));
         let body_ref = AstNodeRef::Body(&body);
         assert_ne!(node, body_ref);
+        Ok(())
     }
     #[test]
-    fn test_spatial_query_whitespace_and_comments_return_none() {
+    fn test_spatial_query_whitespace_and_comments_return_none() -> Result<(), HclError> {
         let src = "a = 1\n\n// comment line\n\nb = 2\n";
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let pos_ws = Position::new(2, 1, 6);
         assert!(body.node_at_position(&pos_ws).is_none());
         assert!(body.attribute_at(&pos_ws).is_none());
@@ -197,14 +211,18 @@ mod tests {
         assert!(body.enclosing_block_at(&pos_comment).is_none());
         let node_body = AstNodeRef::Body(&body);
         assert_eq!(node_body.span(), body.span);
+        Ok(())
     }
     #[test]
-    fn test_spatial_query_nested_block() {
+    fn test_spatial_query_nested_block() -> Result<(), HclError> {
         let src = "outer {\n  inner {\n    val = 1\n  }\n}\n";
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let pos_inner = Position::new(3, 5, 22);
-        let enc = body.enclosing_block_at(&pos_inner).unwrap();
+        let enc = body
+            .enclosing_block_at(&pos_inner)
+            .ok_or_else(|| HclError::Eval("missing enc".into()))?;
         assert_eq!(enc.block_type, "inner");
+        Ok(())
     }
 
     #[test]
@@ -243,5 +261,7 @@ mod tests {
 
         let no_path = super::find_block_path_at_offset(&body, 5);
         assert_eq!(no_path, None);
+        let after_path = super::find_block_path_at_offset(&body, 75);
+        assert_eq!(after_path, None);
     }
 }

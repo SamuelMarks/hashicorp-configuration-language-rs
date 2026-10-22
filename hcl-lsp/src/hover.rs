@@ -2,6 +2,9 @@
 //!
 //! Generates Markdown hover documentation for block keywords, attribute keys,
 //! built-in standard library functions, and user-defined functions.
+#![deny(missing_docs)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use crate::cache::VirtualDocument;
 use crate::protocol::{Hover, MarkupContent, Position};
 use crate::symbols::span_to_range;
@@ -9,6 +12,8 @@ use hashicorp_configuration_language_rs::ast::expr::Expression;
 use hashicorp_configuration_language_rs::ast::schema::BodySchema;
 use hashicorp_configuration_language_rs::ast::structure::Body;
 use hashicorp_configuration_language_rs::eval::stdlib::get_stdlib_function;
+use std::fmt::Write as _;
+
 /// Computes hover documentation at a specific document position.
 ///
 /// # Arguments
@@ -28,36 +33,21 @@ pub fn hover_at_position(
     let body = doc.parsed_body.as_ref()?;
     find_hover_in_body(body, offset, schema)
 }
+
 /// Traverses a body looking for block keywords, attribute keys, or user functions matching offset.
 fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -> Option<Hover> {
     for (name, attr) in &body.attributes {
         if attr.name_span.start_byte <= offset && offset <= attr.name_span.end_byte {
             let attr_schema = schema.and_then(|s| s.attributes.get(name));
-            let mut md = format!(
-                "### Attribute `{name}`
-
-        "
-            );
+            let mut md = format!("### Attribute `{name}`\n\n");
             if let Some(aschem) = attr_schema {
                 if let Some(ref ty) = aschem.expected_type {
-                    md.push_str(&format!(
-                        "**Type:** `{ty}`
-
-        "
-                    ));
+                    let _ = write!(md, "**Type:** `{ty}`\n\n");
                 }
                 if aschem.required {
-                    md.push_str(
-                        "**Required:** `true`
-
-        ",
-                    );
+                    md.push_str("**Required:** `true`\n\n");
                 } else {
-                    md.push_str(
-                        "**Required:** `false` (optional)
-
-        ",
-                    );
+                    md.push_str("**Required:** `false` (optional)\n\n");
                 }
                 if let Some(ref desc) = aschem.description {
                     md.push_str(desc);
@@ -77,26 +67,14 @@ fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -
     for block in &body.blocks {
         if block.type_span.start_byte <= offset && offset <= block.type_span.end_byte {
             let block_schema = schema.and_then(|s| s.blocks.get(&block.block_type));
-            let mut md = format!(
-                "### Block `{}`
-
-        ",
-                block.block_type
-            );
+            let mut md = format!("### Block `{}`\n\n", block.block_type);
             if let Some(bschem) = block_schema {
                 if let Some(ref desc) = bschem.description {
                     md.push_str(desc);
-                    md.push_str(
-                        "
-
-        ",
-                    );
+                    md.push_str("\n\n");
                 }
                 if !bschem.label_names.is_empty() {
-                    md.push_str(&format!(
-                        "**Labels:** `{}`",
-                        bschem.label_names.join("`, `")
-                    ));
+                    let _ = write!(md, "**Labels:** `{}`", bschem.label_names.join("`, `"));
                 }
             } else {
                 md.push_str("Configuration block.");
@@ -122,10 +100,7 @@ fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -
                 .map(|p| p.name.clone())
                 .collect::<Vec<_>>()
                 .join(", ");
-            md.push_str(&format!(
-                "`{}({})`\n\nUser-defined function.",
-                func.name, params
-            ));
+            let _ = write!(md, "`{}({params})`\n\nUser-defined function.", func.name);
             return Some(Hover {
                 contents: MarkupContent::markdown(md),
                 range: Some(span_to_range(&func.span)),
@@ -134,6 +109,7 @@ fn find_hover_in_body(body: &Body, offset: usize, schema: Option<&BodySchema>) -
     }
     None
 }
+
 /// Recursively inspects expressions to find function calls or symbols matching cursor offset.
 fn find_hover_in_expr(expr: &Expression, offset: usize) -> Option<Hover> {
     match expr {
@@ -141,11 +117,19 @@ fn find_hover_in_expr(expr: &Expression, offset: usize) -> Option<Hover> {
             if fc.name.span.start_byte <= offset && offset <= fc.name.span.end_byte {
                 let func_name = fc.name.to_string();
                 if let Some(stdlib_fn) = get_stdlib_function(&func_name) {
-                    let mut md = format!("### Built-in Function `{func_name}`\n\n");
+                    let mut md = format!(
+                        "### Built-in Function `{func_name}`
+
+"
+                    );
                     if let Some(sig) = &stdlib_fn.signature {
                         if let Some(ref desc) = sig.description {
                             md.push_str(desc);
-                            md.push_str("\n\n");
+                            md.push_str(
+                                "
+
+",
+                            );
                         }
                         let params = sig
                             .params
@@ -153,7 +137,12 @@ fn find_hover_in_expr(expr: &Expression, offset: usize) -> Option<Hover> {
                             .map(|p| format!("{}: {}", p.name, p.param_type))
                             .collect::<Vec<_>>()
                             .join(", ");
-                        md.push_str(&format!("```hcl\n{func_name}({params})\n```\n"));
+                        let _ = writeln!(
+                            md,
+                            "```hcl
+{func_name}({params})
+```"
+                        );
                     }
                     return Some(Hover {
                         contents: MarkupContent::markdown(md),
@@ -219,21 +208,16 @@ fn find_hover_in_expr(expr: &Expression, offset: usize) -> Option<Hover> {
     }
     None
 }
+
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::protocol::TextDocumentItem;
     use hashicorp_configuration_language_rs::ast::schema::{AttributeSchema, BlockHeaderSchema};
     use hashicorp_configuration_language_rs::ast::user_func::{FunctionBlock, FunctionParam};
     use hashicorp_configuration_language_rs::span::Span;
     use hashicorp_configuration_language_rs::types::Type;
+
     #[test]
     fn test_hover_on_attribute_and_function() {
         let hcl = r#"
@@ -262,22 +246,16 @@ mod tests {
         let name_pos = Position::new(1, 13);
         let hover_attr = hover_at_position(&doc, name_pos, Some(&schema));
         assert_eq!(
-            hover_attr
-                .as_ref()
-                .map(|h| h.contents.value.contains("The server resource name.")),
-            Some(true)
-        );
-        assert_eq!(
-            hover_attr
-                .as_ref()
-                .map(|h| h.contents.value.contains("Type:")),
-            Some(true)
-        );
-        assert_eq!(
-            hover_attr
-                .as_ref()
-                .map(|h| h.contents.value.contains("**Required:** `true`")),
-            Some(true)
+            hover_attr.as_ref().map(|h| h.contents.value.as_str()),
+            Some(
+                "### Attribute `name`
+
+**Type:** `string`
+
+**Required:** `true`
+
+The server resource name."
+            )
         );
         let upper_pos = Position::new(1, 20);
         let hover_fn = hover_at_position(&doc, upper_pos, Some(&schema));
@@ -291,6 +269,7 @@ mod tests {
         let hover_res = hover_at_position(&doc, res_pos, Some(&schema));
         assert!(hover_res.is_some());
     }
+
     #[test]
     fn test_hover_unparsed_doc_and_miss() {
         let item = TextDocumentItem {
@@ -313,9 +292,11 @@ mod tests {
         );
         assert!(hover_at_position(&doc2, Position::new(10, 10), None).is_none());
     }
+
     #[test]
     fn test_hover_attribute_without_schema_and_optional() {
-        let hcl = "tag = \"prod\"\n";
+        let hcl = r#"tag = "prod"
+"#;
         let doc = VirtualDocument::new(
             TextDocumentItem {
                 uri: "file:///tag.hcl".to_string(),
@@ -348,6 +329,7 @@ mod tests {
             Some(false)
         );
     }
+
     #[test]
     fn test_hover_block_variants() {
         let hcl = r#"// leading line 0
@@ -382,16 +364,14 @@ mod tests {
         let cluster_pos = doc.offset_to_position(cluster_offset + 2);
         let h_cluster = hover_at_position(&doc, cluster_pos, Some(&schema));
         assert_eq!(
-            h_cluster
-                .as_ref()
-                .map(|h| h.contents.value.contains("Cluster config")),
-            Some(true)
-        );
-        assert_eq!(
-            h_cluster
-                .as_ref()
-                .map(|h| h.contents.value.contains("**Labels:** `name`")),
-            Some(true)
+            h_cluster.as_ref().map(|h| h.contents.value.as_str()),
+            Some(
+                "### Block `cluster`
+
+Cluster config
+
+**Labels:** `name`"
+            )
         );
         let size_offset = doc.text.find("size").unwrap_or(0);
         let size_pos = doc.offset_to_position(size_offset + 1);
@@ -419,9 +399,11 @@ mod tests {
             Some(true)
         );
     }
+
     #[test]
     fn test_hover_user_functions() {
-        let hcl = "x = 1\n          ";
+        let hcl = "x = 1
+          ";
         let mut doc = VirtualDocument::new(
             TextDocumentItem {
                 uri: "file:///func.hcl".to_string(),
@@ -473,6 +455,7 @@ mod tests {
         let h_after = hover_at_position(&doc, Position::new(1, 10), None);
         assert!(h_after.is_none());
     }
+
     #[test]
     fn test_hover_in_nested_expressions() {
         let hcl = r#"

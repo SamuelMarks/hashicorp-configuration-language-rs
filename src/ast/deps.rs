@@ -72,7 +72,6 @@ pub fn extract_static_references_from_body(body: &Body) -> Result<Vec<AbsTravers
 /// ```
 #[must_use]
 pub fn extract_function_references(expr: &Expression) -> Vec<crate::ast::expr::NamespacedIdent> {
-    let mut funcs = Vec::new();
     struct FuncVisitor<'a>(&'a mut Vec<crate::ast::expr::NamespacedIdent>);
     impl crate::ast::walk::AstVisitor for FuncVisitor<'_> {
         fn visit_func_call(&mut self, func: &crate::ast::expr::FuncCall) -> bool {
@@ -80,6 +79,7 @@ pub fn extract_function_references(expr: &Expression) -> Vec<crate::ast::expr::N
             true
         }
     }
+    let mut funcs = Vec::new();
     crate::ast::walk::walk_expression(&mut FuncVisitor(&mut funcs), expr);
     funcs
 }
@@ -123,10 +123,10 @@ fn extract_dynamic_block_references(
             extract_expr_references(lbl, local_bindings, refs, seen);
         }
     }
-    let iter_name = match dyn_block.iterator.as_deref() {
-        Some(name) => name,
-        None => dyn_block.block_type.as_str(),
-    };
+    let iter_name = dyn_block
+        .iterator
+        .as_deref()
+        .unwrap_or(&dyn_block.block_type);
     let mut child_bindings = local_bindings.clone();
     child_bindings.insert(iter_name.to_string());
     extract_body_references(&dyn_block.content, &child_bindings, refs, seen);
@@ -326,10 +326,9 @@ impl DependencyGraph {
     /// Returns the immediate dependents that rely on a node.
     #[must_use]
     pub fn dependents(&self, node: &str) -> Vec<String> {
-        match self.dependents.get(node) {
-            Some(deps) => deps.iter().cloned().collect(),
-            None => Vec::new(),
-        }
+        self.dependents
+            .get(node)
+            .map_or_else(Vec::new, |deps| deps.iter().cloned().collect())
     }
     /// Detects if there are any cycles in the dependency graph.
     ///
@@ -414,18 +413,12 @@ impl DependencyGraph {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::ast::expr::{BinaryOp, ForExpr, Traversal};
     #[test]
-    fn test_extract_static_references_simple_and_nested() {
+    fn test_extract_static_references_simple_and_nested() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let trav_b = Traversal {
             expr: Box::new(Expression::Variable("b".to_string(), span.clone())),
@@ -443,12 +436,13 @@ mod tests {
             Box::new(Expression::Traversal(Box::new(trav_b), span.clone())),
             span,
         );
-        let refs = extract_static_references(&expr).unwrap();
+        let refs = extract_static_references(&expr)?;
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
         assert_eq!(ref_strings, vec!["a", "b.c[...]", "d"]);
+        Ok(())
     }
     #[test]
-    fn test_extract_static_references_for_expr_scopes() {
+    fn test_extract_static_references_for_expr_scopes() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let for_expr = Expression::ForExpr(
             Box::new(ForExpr {
@@ -484,12 +478,13 @@ mod tests {
             }),
             span,
         );
-        let refs = extract_static_references(&for_expr).unwrap();
+        let refs = extract_static_references(&for_expr)?;
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
         assert_eq!(ref_strings, vec!["items", "external_var", "filter_val"]);
+        Ok(())
     }
     #[test]
-    fn test_extract_static_references_template_directives() {
+    fn test_extract_static_references_template_directives() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let tpl = Expression::Template(
             vec![TemplatePart::Directive(
@@ -512,12 +507,13 @@ mod tests {
             )],
             span,
         );
-        let refs = extract_static_references(&tpl).unwrap();
+        let refs = extract_static_references(&tpl)?;
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
         assert_eq!(ref_strings, vec!["source_list", "external_prefix"]);
+        Ok(())
     }
     #[test]
-    fn test_extract_static_references_dynamic_blocks() {
+    fn test_extract_static_references_dynamic_blocks() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
         let mut content = Body::new(span.clone());
@@ -573,15 +569,16 @@ mod tests {
             span,
         );
         body.dynamic_blocks.push(dyn_block_no_labels);
-        let refs = extract_static_references_from_body(&body).unwrap();
+        let refs = extract_static_references_from_body(&body)?;
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
         assert_eq!(
             ref_strings,
             vec!["tag_list", "tag_label", "global_setting", "tag_list2"]
         );
+        Ok(())
     }
     #[test]
-    fn test_dependency_graph_acyclic_and_topological_sort() {
+    fn test_dependency_graph_acyclic_and_topological_sort() -> Result<(), HclError> {
         let mut graph = DependencyGraph::new();
         graph.add_edge("a", "sub_a");
         graph.add_edge("c", "b");
@@ -595,18 +592,21 @@ mod tests {
         assert_eq!(graph.dependents("a"), vec!["b".to_string()]);
         assert_eq!(graph.dependents("z"), Vec::<String>::new());
         assert!(graph.detect_cycles().is_none());
-        let sorted = graph.topological_sort().unwrap();
+        let sorted = graph.topological_sort()?;
         assert_eq!(sorted, vec!["sub_a", "a", "b", "c"]);
+        Ok(())
     }
     #[test]
-    fn test_dependency_graph_cycle_detection() {
+    fn test_dependency_graph_cycle_detection() -> Result<(), HclError> {
         let mut graph = DependencyGraph::new();
         graph.add_edge("start", "a");
         graph.add_edge("a", "dead_end");
         graph.add_edge("a", "b");
         graph.add_edge("b", "c");
         graph.add_edge("c", "a");
-        let cycle = graph.detect_cycles().unwrap();
+        let cycle = graph
+            .detect_cycles()
+            .ok_or_else(|| HclError::Eval("expected cycle".to_string()))?;
         assert!(cycle.len() >= 3);
         assert_eq!(cycle.first(), cycle.last());
         assert!(!cycle.contains(&"start".to_string()));
@@ -614,9 +614,10 @@ mod tests {
         assert!(res.is_err());
         let err_str = format!("{res:?}");
         assert!(err_str.contains("CyclicDependency"));
+        Ok(())
     }
     #[test]
-    fn test_extract_static_references_validations_and_assertions() {
+    fn test_extract_static_references_validations_and_assertions() -> Result<(), HclError> {
         use crate::ast::structure::{PostconditionBlock, PreconditionBlock, ValidationBlock};
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
@@ -635,16 +636,16 @@ mod tests {
             Expression::Variable("msg_c".to_string(), span.clone()),
             span,
         ));
-        let refs = extract_static_references_from_body(&body).unwrap();
+        let refs = extract_static_references_from_body(&body)?;
         let ref_strings: Vec<String> = refs.iter().map(ToString::to_string).collect();
         assert_eq!(
             ref_strings,
             vec!["var_a", "msg_a", "var_b", "msg_b", "var_c", "msg_c"]
         );
+        Ok(())
     }
     #[test]
-    fn test_extract_static_references_more_expr_types() {
-        use crate::ast::expr::{Conditional, FuncCall, UnaryOp};
+    fn test_extract_static_references_blocks_and_traversals() -> Result<(), HclError> {
         use crate::ast::structure::Block;
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
@@ -673,7 +674,7 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         });
-        let refs_body = extract_static_references_from_body(&body).unwrap();
+        let refs_body = extract_static_references_from_body(&body)?;
         assert_eq!(
             refs_body
                 .iter()
@@ -699,7 +700,7 @@ mod tests {
             }),
             span.clone(),
         );
-        let refs_trav = extract_static_references(&non_abs_trav).unwrap();
+        let refs_trav = extract_static_references(&non_abs_trav)?;
         assert_eq!(
             refs_trav
                 .iter()
@@ -729,10 +730,17 @@ mod tests {
                 }),
                 span.clone(),
             )),
-            span.clone(),
+            span,
         );
-        let refs_dup = extract_static_references(&trav_dup).unwrap();
+        let refs_dup = extract_static_references(&trav_dup)?;
         assert_eq!(refs_dup.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_static_references_complex_and_for_exprs() -> Result<(), HclError> {
+        use crate::ast::expr::{Conditional, FuncCall, UnaryOp};
+        let span = Span::new(0, 10, 1, 1, 1, 11);
         let complex_expr = Expression::Tuple(
             vec![
                 Expression::Object(
@@ -768,9 +776,9 @@ mod tests {
                 Expression::Number(crate::number::Number::from(1), span.clone()),
                 Expression::String("literal".to_string(), span.clone()),
             ],
-            span.clone(),
+            span,
         );
-        let refs_complex = extract_static_references(&complex_expr).unwrap();
+        let refs_complex = extract_static_references(&complex_expr)?;
         assert_eq!(
             refs_complex
                 .iter()
@@ -780,6 +788,12 @@ mod tests {
                 "obj_k", "obj_v", "fn_arg", "c_cond", "c_true", "c_false", "u_var"
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_static_references_for_exprs() -> Result<(), HclError> {
+        let span = Span::new(0, 10, 1, 1, 1, 11);
         let for_expr = Expression::ForExpr(
             Box::new(ForExpr {
                 key_var: Some("k".to_string()),
@@ -798,7 +812,7 @@ mod tests {
             }),
             span.clone(),
         );
-        let refs_for = extract_static_references(&for_expr).unwrap();
+        let refs_for = extract_static_references(&for_expr)?;
         assert_eq!(
             refs_for.iter().map(ToString::to_string).collect::<Vec<_>>(),
             vec!["for_coll", "for_k_extra", "for_cond_extra"]
@@ -832,9 +846,9 @@ mod tests {
                 cond_expr: None,
                 grouping: false,
             }),
-            span.clone(),
+            span,
         );
-        let refs_for_simple = extract_static_references(&for_expr_simple).unwrap();
+        let refs_for_simple = extract_static_references(&for_expr_simple)?;
         assert_eq!(
             refs_for_simple
                 .iter()
@@ -842,6 +856,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["for_coll", "dup_var"]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_static_references_templates() -> Result<(), HclError> {
+        let span = Span::new(0, 10, 1, 1, 1, 11);
         let tpl_if = Expression::Template(
             vec![
                 TemplatePart::Literal("lit".to_string(), span.clone()),
@@ -885,7 +905,7 @@ mod tests {
             ],
             span.clone(),
         );
-        let refs_tpl = extract_static_references(&tpl_if).unwrap();
+        let refs_tpl = extract_static_references(&tpl_if)?;
         assert_eq!(
             refs_tpl.iter().map(ToString::to_string).collect::<Vec<_>>(),
             vec![
@@ -912,7 +932,7 @@ mod tests {
             )],
             span,
         );
-        let refs_tpl_for = extract_static_references(&tpl_for).unwrap();
+        let refs_tpl_for = extract_static_references(&tpl_for)?;
         assert_eq!(
             refs_tpl_for
                 .iter()
@@ -920,9 +940,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["tpl_coll", "tpl_body_extra"]
         );
+        Ok(())
     }
     #[test]
-    fn test_dependency_graph_diamond_and_disconnected() {
+    fn test_dependency_graph_diamond_and_disconnected() -> Result<(), HclError> {
         let mut graph = DependencyGraph::new();
         graph.add_edge("d", "b");
         graph.add_edge("d", "c");
@@ -931,7 +952,7 @@ mod tests {
         graph.add_edge("y", "x");
         graph.add_node("solo");
         assert!(graph.detect_cycles().is_none());
-        let sorted = graph.topological_sort().unwrap();
+        let sorted = graph.topological_sort()?;
         assert_eq!(sorted.len(), 7);
         let mut pos_map = std::collections::HashMap::new();
         for (i, node) in sorted.iter().enumerate() {
@@ -942,6 +963,7 @@ mod tests {
         assert!(pos_map["b"] < pos_map["d"]);
         assert!(pos_map["c"] < pos_map["d"]);
         assert!(pos_map["x"] < pos_map["y"]);
+        Ok(())
     }
     #[test]
     fn test_extract_function_references() {

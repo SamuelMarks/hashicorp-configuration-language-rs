@@ -1,7 +1,11 @@
-#![allow(clippy::pedantic, clippy::nursery)]
 //! Build script for `hcl-ffi` to generate C header files.
+#![deny(missing_docs)]
+#![deny(rustdoc::missing_crate_level_docs)]
+#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::env;
+use std::io;
 use std::path::{Path, PathBuf};
 
 /// Generates C bindings header for `hcl-ffi`.
@@ -11,22 +15,13 @@ use std::path::{Path, PathBuf};
 /// * `out_dir` - Optional custom output directory override.
 ///
 /// # Errors
-/// Returns an error string if binding generation fails.
-pub fn generate_bindings(manifest_dir: Option<&str>, out_dir: Option<&str>) -> Result<(), String> {
-    let crate_dir = match manifest_dir {
-        Some(d) => PathBuf::from(d),
-        None => match env::var("CARGO_MANIFEST_DIR") {
-            Ok(dir) => PathBuf::from(dir),
-            Err(_) => PathBuf::from("."),
-        },
-    };
-    let out = match out_dir {
-        Some(d) => PathBuf::from(d),
-        None => match env::var("OUT_DIR") {
-            Ok(dir) => PathBuf::from(dir),
-            Err(_) => target_dir().join("include"),
-        },
-    };
+/// Returns [`io::Error`] if binding generation fails.
+pub fn generate_bindings(manifest_dir: Option<&str>, out_dir: Option<&str>) -> io::Result<()> {
+    let crate_dir = PathBuf::from(manifest_dir.unwrap_or("."));
+    let out = out_dir.map_or_else(
+        || target_dir(manifest_dir, None).join("include"),
+        PathBuf::from,
+    );
     let _ = std::fs::create_dir_all(&out);
     let output_file = out.join("hcl.h");
 
@@ -37,60 +32,41 @@ pub fn generate_bindings(manifest_dir: Option<&str>, out_dir: Option<&str>) -> R
         ..Default::default()
     };
 
-    match cbindgen::Builder::new()
+    cbindgen::Builder::new()
         .with_crate(&crate_dir)
         .with_config(config)
         .generate()
-    {
-        Ok(bindings) => {
-            let _ = bindings.write_to_file(&output_file);
-            let local_include = Path::new(&crate_dir).join("include");
-            let _ = std::fs::create_dir_all(&local_include);
-            let _ = bindings.write_to_file(local_include.join("hcl.h"));
-            Ok(())
-        }
-        Err(e) => Err(format!("cbindgen error: {e}")),
-    }
+        .map_or_else(
+            |e| Err(io::Error::other(format!("cbindgen error: {e}"))),
+            |bindings| {
+                let _ = bindings.write_to_file(&output_file);
+                let local_include = Path::new(&crate_dir).join("include");
+                let _ = std::fs::create_dir_all(&local_include);
+                let _ = bindings.write_to_file(local_include.join("hcl.h"));
+                Ok(())
+            },
+        )
 }
 
 /// Resolves the cargo target directory.
 ///
+/// # Arguments
+/// * `manifest_override` - Optional manifest directory override.
+/// * `target_override` - Optional target directory override.
+///
 /// # Returns
 /// The path to the resolved target directory.
 #[must_use]
-pub fn target_dir() -> PathBuf {
-    if let Ok(target) = env::var("CARGO_TARGET_DIR") {
-        PathBuf::from(target)
-    } else {
-        let manifest = if let Ok(m) = env::var("CARGO_MANIFEST_DIR") {
-            m
-        } else {
-            ".".to_string()
-        };
-        PathBuf::from(manifest).join("target")
-    }
+pub fn target_dir(manifest_override: Option<&str>, target_override: Option<&str>) -> PathBuf {
+    target_override.map_or_else(
+        || PathBuf::from(manifest_override.unwrap_or(".")).join("target"),
+        PathBuf::from,
+    )
 }
 
 /// Main entrypoint for build script execution.
 pub fn main() {
-    let _ = generate_bindings(None, None);
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    let _ = generate_bindings(Some(manifest), Some("target/include"));
-    let _ = generate_bindings(Some("/nonexistent"), None);
-    let _ = target_dir();
-
-    unsafe {
-        std::env::set_var("CARGO_TARGET_DIR", "/tmp/build_rs_target");
-    }
-    let _ = target_dir();
-    unsafe {
-        std::env::remove_var("CARGO_TARGET_DIR");
-        std::env::remove_var("CARGO_MANIFEST_DIR");
-        std::env::remove_var("OUT_DIR");
-    }
-    let _ = target_dir();
-    let _ = generate_bindings(None, None);
-    unsafe {
-        std::env::set_var("CARGO_MANIFEST_DIR", manifest);
-    }
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok();
+    let out_dir = env::var("OUT_DIR").ok();
+    let _ = generate_bindings(manifest_dir.as_deref(), out_dir.as_deref());
 }

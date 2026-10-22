@@ -11,13 +11,13 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 hashicorp-configuration-language-rs = { path = ".." }
-serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-cbindgen = { version = "0.28", default-features = false }
+cbindgen = { version = "0.29", default-features = false }
 
 [build-dependencies]
-cbindgen = { version = "0.28", default-features = false }
+cbindgen = { version = "0.29", default-features = false }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)', 'cfg(tarpaulin_include)'] }

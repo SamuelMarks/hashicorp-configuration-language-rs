@@ -35,7 +35,7 @@ pub struct FunctionBlock {
 impl FunctionBlock {
     /// Creates a new `FunctionBlock`.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         name: String,
         params: Vec<FunctionParam>,
         return_type: Option<TypeExpr>,
@@ -63,25 +63,19 @@ impl FunctionBlock {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::error::HclError;
     use crate::number::Number;
     use std::str::FromStr;
     #[test]
-    fn test_function_block_new() {
+    fn test_function_block_new() -> Result<(), HclError> {
         let span = Span::new(0, 0, 0, 0, 0, 0);
         let params = vec![FunctionParam {
             name: "x".to_string(),
             type_expr: None,
             span: span.clone(),
         }];
-        let body = Expression::Number(Number::from_str("42").unwrap(), span.clone());
+        let body = Expression::Number(Number::from_str("42")?, span.clone());
         let fb = FunctionBlock::new("test_func".to_string(), params, None, body, span.clone())
             .with_variadic_param(Some(FunctionParam {
                 name: "rest".to_string(),
@@ -97,5 +91,6 @@ mod tests {
         );
         assert!(fb.return_type.is_none());
         assert_eq!(fb.span, span);
+        Ok(())
     }
 }

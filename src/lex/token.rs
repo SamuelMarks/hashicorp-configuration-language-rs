@@ -175,13 +175,6 @@ impl Token {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use logos::Logos;
     #[test]
@@ -193,7 +186,7 @@ mod tests {
         assert_eq!(t.span, span);
     }
     #[test]
-    fn test_token_kinds() {
+    fn test_token_kinds_delimiters_and_punctuation() {
         let mut lex = TokenKind::lexer("{ } [ ] ( )");
         assert_eq!(lex.next(), Some(Ok(TokenKind::OBrace)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Whitespace)));
@@ -220,6 +213,10 @@ mod tests {
         assert_eq!(lex.next(), Some(Ok(TokenKind::FatArrow)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Whitespace)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Ellipsis)));
+    }
+
+    #[test]
+    fn test_token_kinds_arithmetic_operators() {
         let mut lex = TokenKind::lexer("+ - * / %");
         assert_eq!(lex.next(), Some(Ok(TokenKind::Plus)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Whitespace)));
@@ -230,6 +227,10 @@ mod tests {
         assert_eq!(lex.next(), Some(Ok(TokenKind::Slash)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Whitespace)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Percent)));
+    }
+
+    #[test]
+    fn test_token_kinds_comparison_and_logical_operators() {
         let mut lex = TokenKind::lexer("== != < <= > >= && || ! ?");
         assert_eq!(lex.next(), Some(Ok(TokenKind::Eq)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Whitespace)));
@@ -250,6 +251,10 @@ mod tests {
         assert_eq!(lex.next(), Some(Ok(TokenKind::Not)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Whitespace)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Question)));
+    }
+
+    #[test]
+    fn test_token_kinds_literals_and_comments() {
         let mut lex = TokenKind::lexer("var_name 123.45e-2 \"str\\n\"");
         assert_eq!(lex.next(), Some(Ok(TokenKind::Ident)));
         assert_eq!(lex.next(), Some(Ok(TokenKind::Whitespace)));

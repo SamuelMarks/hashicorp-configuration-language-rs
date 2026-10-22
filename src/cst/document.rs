@@ -11,7 +11,7 @@ pub struct TokenStream {
 impl TokenStream {
     /// Create a new, empty token stream.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { tokens: Vec::new() }
     }
     /// Push a token to the stream.
@@ -32,7 +32,7 @@ pub enum DocumentItem {
 impl DocumentItem {
     /// Returns the item as an attribute if it is an attribute.
     #[must_use]
-    pub fn as_attribute(&self) -> Option<&Attribute> {
+    pub const fn as_attribute(&self) -> Option<&Attribute> {
         match self {
             Self::Attribute(a) => Some(a),
             _ => None,
@@ -40,7 +40,7 @@ impl DocumentItem {
     }
     /// Returns the item as a block if it is a block.
     #[must_use]
-    pub fn as_block(&self) -> Option<&Block> {
+    pub const fn as_block(&self) -> Option<&Block> {
         match self {
             Self::Block(b) => Some(b),
             _ => None,
@@ -54,22 +54,16 @@ pub struct Document {
     pub leading: TokenStream,
     /// Interleaved items preserving exact source ordering.
     pub items: Vec<DocumentItem>,
-    /// The blocks in this document.
-    pub blocks: Vec<Block>,
-    /// The attributes in this document.
-    pub attributes: Vec<Attribute>,
     /// Trailing formatting after the last item.
     pub trailing: TokenStream,
 }
 impl Document {
     /// Create a new, empty Document.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             leading: TokenStream::new(),
             items: Vec::new(),
-            blocks: Vec::new(),
-            attributes: Vec::new(),
             trailing: TokenStream::new(),
         }
     }
@@ -80,12 +74,22 @@ impl Document {
             _ => None,
         })
     }
+    /// Returns a vector of references to attributes in this document.
+    #[must_use]
+    pub fn attributes(&self) -> Vec<&Attribute> {
+        self.attributes_iter().collect()
+    }
     /// Returns an iterator over blocks in this document.
     pub fn blocks_iter(&self) -> impl Iterator<Item = &Block> {
         self.items.iter().filter_map(|item| match item {
             DocumentItem::Block(block) => Some(block),
             _ => None,
         })
+    }
+    /// Returns a vector of references to blocks in this document.
+    #[must_use]
+    pub fn blocks(&self) -> Vec<&Block> {
+        self.blocks_iter().collect()
     }
     /// Sets an attribute on the document, synthesizing its expression tokens from an AST [`Expression`].
     ///
@@ -99,20 +103,16 @@ impl Document {
         let span = Span::new(0, 0, 1, 1, 1, 1);
         let mut tokens = vec![Token::new(TokenKind::Whitespace, " ", span.clone())];
         tokens.extend(crate::cst::builder::tokens_for_expression(expr));
-        if let Some(attr) = self.attributes.iter_mut().find(|a| a.name.text == name) {
-            attr.expr_tokens.clone_from(&tokens);
-            for item in &mut self.items {
-                if let DocumentItem::Attribute(a) = item {
-                    if a.name.text == name {
-                        a.expr_tokens.clone_from(&tokens);
-                        break;
-                    }
+        for item in &mut self.items {
+            if let DocumentItem::Attribute(a) = item {
+                if a.name.text == name {
+                    a.expr_tokens = tokens;
+                    return;
                 }
             }
-            return;
         }
         let mut leading = TokenStream::new();
-        if !self.items.is_empty() || !self.attributes.is_empty() {
+        if !self.items.is_empty() {
             leading.push(Token::new(TokenKind::Newline, "\n", span.clone()));
         }
         let mut equals_leading = TokenStream::new();
@@ -125,7 +125,6 @@ impl Document {
             expr_tokens: tokens,
             trailing: TokenStream::new(),
         };
-        self.attributes.push(attr.clone());
         self.items.push(DocumentItem::Attribute(attr));
     }
     /// Removes an attribute by name from the document, returning it if it existed.
@@ -133,15 +132,19 @@ impl Document {
     /// # Arguments
     /// * `name` - The name of the attribute to remove.
     pub fn remove_attribute(&mut self, name: &str) -> Option<Attribute> {
-        let idx = self.attributes.iter().position(|a| a.name.text == name)?;
-        let removed = self.attributes.remove(idx);
-        if let Some(item_idx) = self.items.iter().position(|item| match item {
-            DocumentItem::Attribute(a) => a.name.text == name,
-            _ => false,
-        }) {
-            self.items.remove(item_idx);
-        }
-        Some(removed)
+        let mut removed = None;
+        self.items.retain_mut(|item| {
+            if removed.is_none() {
+                if let DocumentItem::Attribute(a) = item {
+                    if a.name.text == name {
+                        removed = Some(a.clone());
+                        return false;
+                    }
+                }
+            }
+            true
+        });
+        removed
     }
     /// Removes a block matching the specified type and labels, returning it if found.
     ///
@@ -149,23 +152,23 @@ impl Document {
     /// * `block_type` - The block type identifier.
     /// * `labels` - The block labels to match against.
     pub fn remove_block(&mut self, block_type: &str, labels: &[&str]) -> Option<Block> {
-        let idx = self.blocks.iter().position(|b| {
-            b.type_ident.text == block_type
-                && (labels.is_empty()
-                    || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>() == labels)
-        })?;
-        let removed = self.blocks.remove(idx);
-        if let Some(item_idx) = self.items.iter().position(|item| match item {
-            DocumentItem::Block(b) => {
-                b.type_ident.text == block_type
-                    && (labels.is_empty()
-                        || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>() == labels)
+        let mut removed = None;
+        self.items.retain_mut(|item| {
+            if removed.is_none() {
+                if let DocumentItem::Block(b) = item {
+                    if b.type_ident.text == block_type
+                        && (labels.is_empty()
+                            || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
+                                == labels)
+                    {
+                        removed = Some(b.clone());
+                        return false;
+                    }
+                }
             }
-            _ => false,
-        }) {
-            self.items.remove(item_idx);
-        }
-        Some(removed)
+            true
+        });
+        removed
     }
     /// Replaces an attribute's expression with a new AST [`Expression`].
     ///
@@ -180,30 +183,24 @@ impl Document {
         name: &str,
         new_expr: &Expression,
     ) -> Result<(), crate::error::HclError> {
-        if let Some(attr) = self.attributes.iter_mut().find(|a| a.name.text == name) {
-            let span = Span::new(0, 0, 1, 1, 1, 1);
-            let mut tokens = vec![Token::new(TokenKind::Whitespace, " ", span)];
-            tokens.extend(crate::cst::builder::tokens_for_expression(new_expr));
-            attr.expr_tokens.clone_from(&tokens);
-            for item in &mut self.items {
-                if let DocumentItem::Attribute(a) = item {
-                    if a.name.text == name {
-                        a.expr_tokens = tokens;
-                        break;
-                    }
+        for item in &mut self.items {
+            if let DocumentItem::Attribute(a) = item {
+                if a.name.text == name {
+                    let span = Span::new(0, 0, 1, 1, 1, 1);
+                    let mut tokens = vec![Token::new(TokenKind::Whitespace, " ", span)];
+                    tokens.extend(crate::cst::builder::tokens_for_expression(new_expr));
+                    a.expr_tokens = tokens;
+                    return Ok(());
                 }
             }
-            Ok(())
-        } else {
-            Err(crate::error::HclError::MissingField(name.to_string()))
         }
+        Err(crate::error::HclError::MissingField(name.to_string()))
     }
     /// Appends a [`Block`] to the document.
     ///
     /// # Arguments
     /// * `block` - The block to append.
     pub fn append_block(&mut self, block: Block) {
-        self.blocks.push(block.clone());
         self.items.push(DocumentItem::Block(block));
     }
     /// Finds all blocks with the specified block type identifier.
@@ -212,8 +209,7 @@ impl Document {
     /// * `block_type` - The block type identifier string.
     #[must_use]
     pub fn find_blocks(&self, block_type: &str) -> Vec<&Block> {
-        self.blocks
-            .iter()
+        self.blocks_iter()
             .filter(|b| b.type_ident.text == block_type)
             .collect()
     }
@@ -238,12 +234,6 @@ impl Document {
                 _ => false,
             })
             .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target.to_string()))?;
-        let attr_idx = self
-            .attributes
-            .iter()
-            .position(|a| a.name.text == target)
-            .unwrap_or(self.attributes.len());
-        self.attributes.insert(attr_idx, attr.clone());
         self.items.insert(item_idx, DocumentItem::Attribute(attr));
         Ok(())
     }
@@ -268,12 +258,6 @@ impl Document {
                 _ => false,
             })
             .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target.to_string()))?;
-        let attr_idx = self
-            .attributes
-            .iter()
-            .position(|a| a.name.text == target)
-            .map_or(self.attributes.len(), |i| i + 1);
-        self.attributes.insert(attr_idx, attr.clone());
         self.items
             .insert(item_idx + 1, DocumentItem::Attribute(attr));
         Ok(())
@@ -306,17 +290,6 @@ impl Document {
                 _ => false,
             })
             .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target_type.to_string()))?;
-        let block_idx = self
-            .blocks
-            .iter()
-            .position(|b| {
-                b.type_ident.text == target_type
-                    && (target_labels.is_empty()
-                        || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
-                            == target_labels)
-            })
-            .unwrap_or(self.blocks.len());
-        self.blocks.insert(block_idx, block.clone());
         self.items.insert(item_idx, DocumentItem::Block(block));
         Ok(())
     }
@@ -348,17 +321,6 @@ impl Document {
                 _ => false,
             })
             .ok_or_else(|| crate::error::HclError::CstNodeNotFound(target_type.to_string()))?;
-        let block_idx = self
-            .blocks
-            .iter()
-            .position(|b| {
-                b.type_ident.text == target_type
-                    && (target_labels.is_empty()
-                        || b.labels.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
-                            == target_labels)
-            })
-            .map_or(self.blocks.len(), |i| i + 1);
-        self.blocks.insert(block_idx, block.clone());
         self.items.insert(item_idx + 1, DocumentItem::Block(block));
         Ok(())
     }
@@ -497,7 +459,7 @@ pub struct Block {
     pub trailing: TokenStream,
 }
 /// A CST node representing an attribute.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {
     /// Formatting before the attribute name.
     pub leading: TokenStream,
@@ -535,14 +497,8 @@ impl Attribute {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::lex::token::TokenKind;
     use crate::span::Span;
@@ -574,10 +530,10 @@ mod tests {
     #[test]
     fn test_document() {
         let doc = Document::new();
-        assert_eq!(doc.blocks.len(), 0);
-        assert_eq!(doc.attributes.len(), 0);
+        assert_eq!(doc.blocks().len(), 0);
+        assert_eq!(doc.attributes().len(), 0);
         let default_doc = Document::default();
-        assert_eq!(default_doc.blocks.len(), 0);
+        assert_eq!(default_doc.blocks().len(), 0);
     }
     #[test]
     fn test_attribute_block_creation() {
@@ -650,7 +606,7 @@ mod tests {
         let mut doc = Document::new();
         let expr1 = Expression::Number(crate::number::Number::from(10), span.clone());
         doc.set_attribute("count", &expr1);
-        assert_eq!(doc.attributes.len(), 1);
+        assert_eq!(doc.attributes().len(), 1);
         assert_eq!(doc.items.len(), 1);
         let blk = Block {
             leading: TokenStream::new(),
@@ -662,23 +618,24 @@ mod tests {
             trailing: TokenStream::new(),
         };
         doc.append_block(blk);
-        assert_eq!(doc.blocks.len(), 1);
+        assert_eq!(doc.blocks().len(), 1);
         assert_eq!(doc.items.len(), 2);
         assert_eq!(doc.find_blocks("resource").len(), 1);
         assert_eq!(doc.find_blocks("data").len(), 0);
         doc.set_attribute("other", &expr1);
-        assert_eq!(doc.attributes.len(), 2);
+        assert_eq!(doc.attributes().len(), 2);
         assert_eq!(doc.items.len(), 3);
         let expr2 = Expression::Number(crate::number::Number::from(20), span.clone());
         doc.set_attribute("other", &expr2);
-        assert_eq!(doc.attributes.len(), 2);
+        assert_eq!(doc.attributes().len(), 2);
         assert_eq!(doc.items.len(), 3);
-        assert!(doc.attributes[1].expr_tokens.iter().any(|t| t.text == "20"));
-        let mut doc_attr_only = Document::new();
-        doc_attr_only.attributes.push(doc.attributes[0].clone());
-        doc_attr_only.set_attribute("extra", &expr1);
-        assert_eq!(doc_attr_only.attributes.len(), 2);
-        let mut attr = doc.attributes[0].clone();
+        assert!(
+            doc.attributes()[1]
+                .expr_tokens
+                .iter()
+                .any(|t| t.text == "20")
+        );
+        let mut attr = doc.attributes()[0].clone();
         attr.with_leading_comment("Server count configuration");
         assert!(
             attr.leading
@@ -704,20 +661,16 @@ mod tests {
         assert!(removed.is_some());
         let removed_count = doc.remove_attribute("count");
         assert!(removed_count.is_some());
-        assert_eq!(doc.attributes.len(), 0);
+        assert_eq!(doc.attributes().len(), 0);
         assert_eq!(doc.items.len(), 1);
         assert!(doc.remove_attribute("nonexistent").is_none());
-        let mut doc_missing_item = Document::new();
-        doc_missing_item.attributes.push(attr);
-        let removed_missing = doc_missing_item.remove_attribute("count");
-        assert!(removed_missing.is_some());
         let mut doc_replace = Document::new();
         doc_replace.set_attribute("other", &expr1);
         doc_replace
             .items
             .push(DocumentItem::Trivia(TokenStream::new()));
         doc_replace.set_attribute("timeout", &expr1);
-        let new_expr = Expression::Number(crate::number::Number::from(99), span.clone());
+        let new_expr = Expression::Number(crate::number::Number::from(99), span);
         assert!(
             doc_replace
                 .replace_attribute_expr("timeout", &new_expr)
@@ -728,6 +681,12 @@ mod tests {
                 .replace_attribute_expr("nonexistent", &new_expr)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn test_document_block_removal() {
+        let span = Span::new(0, 1, 1, 1, 1, 2);
+        let expr1 = Expression::Number(crate::number::Number::from(10), span.clone());
         let mut doc_blk = Document::new();
         doc_blk.set_attribute("attr_first", &expr1);
         let blk0 = Block {
@@ -750,10 +709,10 @@ mod tests {
             trailing: TokenStream::new(),
         };
         doc_blk.append_block(blk1);
-        assert_eq!(doc_blk.blocks.len(), 2);
+        assert_eq!(doc_blk.blocks().len(), 2);
         assert_eq!(doc_blk.items.len(), 3);
         assert!(doc_blk.remove_block("service", &["web"]).is_some());
-        assert_eq!(doc_blk.blocks.len(), 1);
+        assert_eq!(doc_blk.blocks().len(), 1);
         assert_eq!(doc_blk.items.len(), 2);
         assert!(doc_blk.remove_block("service", &["web"]).is_none());
         let blk2 = Block {
@@ -765,12 +724,10 @@ mod tests {
             close_brace: Token::new(TokenKind::CBrace, "}", span),
             trailing: TokenStream::new(),
         };
-        doc_blk.append_block(blk2.clone());
+        doc_blk.append_block(blk2);
         assert!(doc_blk.remove_block("config", &[]).is_some());
-        let mut doc_no_item_block = Document::new();
-        doc_no_item_block.blocks.push(blk2);
-        assert!(doc_no_item_block.remove_block("config", &[]).is_some());
     }
+
     #[test]
     fn test_surgical_insertions_and_walk_tokens() {
         let span = Span::new(0, 1, 1, 1, 1, 2);
@@ -814,15 +771,14 @@ mod tests {
         lead_trivia.push(Token::new(TokenKind::Comment, "# preamble\n", span.clone()));
         doc.items.push(DocumentItem::Trivia(lead_trivia));
         let a2 = make_attr("a2");
-        doc.attributes.push(a2.clone());
         doc.items.push(DocumentItem::Attribute(a2));
         let a1 = make_attr("a1");
         assert!(doc.insert_attribute_before("a2", a1).is_ok());
-        assert_eq!(doc.attributes[0].name.text, "a1");
-        assert_eq!(doc.attributes[1].name.text, "a2");
+        assert_eq!(doc.attributes()[0].name.text, "a1");
+        assert_eq!(doc.attributes()[1].name.text, "a2");
         let a3 = make_attr("a3");
         assert!(doc.insert_attribute_after("a2", a3).is_ok());
-        assert_eq!(doc.attributes[2].name.text, "a3");
+        assert_eq!(doc.attributes()[2].name.text, "a3");
         assert!(
             doc.insert_attribute_before("nonexistent", make_attr("err"))
                 .is_err()
@@ -832,14 +788,13 @@ mod tests {
                 .is_err()
         );
         let b2 = make_block("resource", "b2");
-        doc.blocks.push(b2.clone());
         doc.items.push(DocumentItem::Block(b2));
         let b1 = make_block("resource", "b1");
         assert!(doc.insert_block_before("resource", &["b2"], b1).is_ok());
-        assert_eq!(doc.blocks[0].labels[0].text, "b1");
+        assert_eq!(doc.blocks()[0].labels[0].text, "b1");
         let b3 = make_block("resource", "b3");
         assert!(doc.insert_block_after("resource", &["b2"], b3).is_ok());
-        assert_eq!(doc.blocks[2].labels[0].text, "b3");
+        assert_eq!(doc.blocks()[2].labels[0].text, "b3");
         assert!(
             doc.insert_block_before("missing", &[], make_block("b", ""))
                 .is_err()
@@ -848,8 +803,53 @@ mod tests {
             doc.insert_block_after("missing", &[], make_block("b", ""))
                 .is_err()
         );
+        let mut count_a = 0;
+        doc.walk_tokens(|_| count_a += 1);
+        let mut count_b = 0;
+        doc.walk_tokens_mut(|_| count_b += 1);
+        assert_eq!(count_a, count_b);
+    }
+
+    #[test]
+    fn test_surgical_zero_label_blocks_and_walk_tokens() {
+        let span = Span::new(0, 1, 1, 1, 1, 2);
+        let make_block = |typ: &str, label: &str| {
+            let mut leading = TokenStream::new();
+            leading.push(Token::new(TokenKind::Whitespace, "  ", span.clone()));
+            let mut trailing = TokenStream::new();
+            trailing.push(Token::new(TokenKind::Newline, "\n", span.clone()));
+            Block {
+                leading,
+                type_ident: Token::new(TokenKind::Ident, typ, span.clone()),
+                labels: if label.is_empty() {
+                    vec![]
+                } else {
+                    vec![Token::new(TokenKind::Ident, label, span.clone())]
+                },
+                open_brace: Token::new(TokenKind::OBrace, "{", span.clone()),
+                body: Box::new(Document::new()),
+                close_brace: Token::new(TokenKind::CBrace, "}", span.clone()),
+                trailing,
+            }
+        };
+        let mut doc = Document::new();
+        let mut attr_lead = TokenStream::new();
+        attr_lead.push(Token::new(TokenKind::Whitespace, " ", span.clone()));
+        let mut attr_eq_lead = TokenStream::new();
+        attr_eq_lead.push(Token::new(TokenKind::Whitespace, " ", span.clone()));
+        let mut attr_trail = TokenStream::new();
+        attr_trail.push(Token::new(TokenKind::Newline, "\n", span.clone()));
+        doc.items.push(DocumentItem::Attribute(Attribute {
+            leading: attr_lead,
+            name: Token::new(TokenKind::Ident, "a", span.clone()),
+            equals_leading: attr_eq_lead,
+            equals: Token::new(TokenKind::Assign, "=", span.clone()),
+            expr_tokens: vec![Token::new(TokenKind::Number, "1", span.clone())],
+            trailing: attr_trail,
+        }));
+        doc.items
+            .push(DocumentItem::Block(make_block("resource", "b1")));
         let blk_zero = make_block("locals", "");
-        doc.blocks.push(blk_zero.clone());
         doc.items.push(DocumentItem::Block(blk_zero));
         assert!(
             doc.insert_block_before("locals", &[], make_block("locals_before", ""))
@@ -859,8 +859,6 @@ mod tests {
             doc.insert_block_after("locals", &[], make_block("locals_after", ""))
                 .is_ok()
         );
-        assert!(doc.remove_block("resource", &["wrong"]).is_none());
-        assert!(doc.remove_block("resource", &["b1"]).is_some());
         let mut trivia_stream = TokenStream::new();
         trivia_stream.push(Token::new(TokenKind::Comment, "# trivia\n", span.clone()));
         doc.items.push(DocumentItem::Trivia(trivia_stream));
@@ -878,10 +876,13 @@ mod tests {
             visited_kinds.push(tok.kind.clone());
         });
         assert_eq!(visited_kinds.len(), token_count);
+        assert!(doc.remove_block("resource", &["wrong"]).is_none());
+        assert!(doc.remove_block("resource", &["b1"]).is_some());
     }
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod extra_tests {
     use super::*;
     use crate::lex::token::TokenKind;
@@ -898,6 +899,7 @@ mod extra_tests {
         assert_eq!(stream.tokens.len(), 1);
         let cloned = stream.clone();
         assert_eq!(stream, cloned);
-        assert!(format!("{:?}", stream).contains("TokenStream"));
+        let stream_dbg = format!("{stream:?}");
+        assert!(stream_dbg.contains("TokenStream"));
     }
 }

@@ -308,7 +308,7 @@ impl DynamicBlock {
     /// * `span` - The full source span of the dynamic block.
     /// * `type_span` - The source span of the block type name.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         block_type: String,
         for_each: Expression,
         iterator: Option<String>,
@@ -346,7 +346,7 @@ impl ValidationBlock {
     /// * `error_message` - The error message expression evaluated on failure.
     /// * `span` - The source span covering the validation block.
     #[must_use]
-    pub fn new(condition: Expression, error_message: Expression, span: Span) -> Self {
+    pub const fn new(condition: Expression, error_message: Expression, span: Span) -> Self {
         Self {
             condition,
             error_message,
@@ -372,7 +372,7 @@ impl PreconditionBlock {
     /// * `error_message` - The error message expression evaluated on failure.
     /// * `span` - The source span covering the precondition block.
     #[must_use]
-    pub fn new(condition: Expression, error_message: Expression, span: Span) -> Self {
+    pub const fn new(condition: Expression, error_message: Expression, span: Span) -> Self {
         Self {
             condition,
             error_message,
@@ -412,7 +412,7 @@ impl PostconditionBlock {
     /// * `error_message` - The error message expression evaluated on failure.
     /// * `span` - The source span covering the postcondition block.
     #[must_use]
-    pub fn new(condition: Expression, error_message: Expression, span: Span) -> Self {
+    pub const fn new(condition: Expression, error_message: Expression, span: Span) -> Self {
         Self {
             condition,
             error_message,
@@ -436,13 +436,6 @@ impl From<PostconditionBlock> for ValidationBlock {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
     fn test_body_and_dynamic_block() {
@@ -475,6 +468,12 @@ mod tests {
         body.dynamic_blocks.push(dyn_block.clone());
         assert_eq!(body.dynamic_blocks.len(), 1);
         assert_eq!(body.dynamic_blocks[0], dyn_block);
+    }
+
+    #[test]
+    fn test_body_validations_and_conditions() {
+        let span = Span::new(0, 10, 1, 1, 1, 11);
+        let mut body = Body::new(span.clone());
         let val_block = ValidationBlock::new(
             Expression::Null(span.clone()),
             Expression::Null(span.clone()),
@@ -548,7 +547,7 @@ mod tests {
             expr: Expression::Null(attr_span.clone()),
             span: attr_span.clone(),
             name_span: attr_span.clone(),
-            equals_span: attr_span.clone(),
+            equals_span: attr_span,
             leading_comments: Vec::new(),
             trailing_comment: None,
         };
@@ -563,7 +562,7 @@ mod tests {
             type_span: inner_span.clone(),
             label_spans: vec![],
             open_brace_span: inner_span.clone(),
-            close_brace_span: inner_span.clone(),
+            close_brace_span: inner_span,
             leading_comments: Vec::new(),
             trailing_comment: None,
         };
@@ -581,7 +580,7 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         };
-        let mut root_body = Body::new(outer_span.clone());
+        let mut root_body = Body::new(outer_span);
         let unrelated_block = Block {
             block_type: "unrelated".to_string(),
             labels: vec![],

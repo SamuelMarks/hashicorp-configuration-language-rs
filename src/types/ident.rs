@@ -1,3 +1,4 @@
+//! Strongly-typed HCL identifier wrapper.
 use serde::{Deserialize, Serialize};
 /// A strongly-typed identifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

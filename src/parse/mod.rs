@@ -7,6 +7,8 @@ pub mod json;
 pub mod merge;
 /// The main parser.
 pub mod parser;
+/// Template, interpolation, directive, and heredoc indentation parsing.
+pub mod template;
 /// Type expression parsing.
 pub mod type_expr;
 pub use file_manager::{FileManager, HclParser};
@@ -44,32 +46,23 @@ pub enum Precedence {
 impl Precedence {
     #[must_use]
     /// Determine precedence from a token kind
-    pub fn from_token(kind: &crate::lex::token::TokenKind) -> Self {
+    pub const fn from_token(kind: &crate::lex::token::TokenKind) -> Self {
         use crate::lex::token::TokenKind;
         match kind {
-            TokenKind::Question => Precedence::Conditional,
-            TokenKind::Or => Precedence::Or,
-            TokenKind::And => Precedence::And,
-            TokenKind::Eq | TokenKind::NotEq => Precedence::Equality,
-            TokenKind::Lt | TokenKind::Lte | TokenKind::Gt | TokenKind::Gte => {
-                Precedence::Relational
-            }
-            TokenKind::Plus | TokenKind::Minus => Precedence::Additive,
-            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Multiplicative,
-            TokenKind::OParen | TokenKind::OBrack | TokenKind::Dot => Precedence::Call,
-            _ => Precedence::Lowest,
+            TokenKind::Question => Self::Conditional,
+            TokenKind::Or => Self::Or,
+            TokenKind::And => Self::And,
+            TokenKind::Eq | TokenKind::NotEq => Self::Equality,
+            TokenKind::Lt | TokenKind::Lte | TokenKind::Gt | TokenKind::Gte => Self::Relational,
+            TokenKind::Plus | TokenKind::Minus => Self::Additive,
+            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Self::Multiplicative,
+            TokenKind::OParen | TokenKind::OBrack | TokenKind::Dot => Self::Call,
+            _ => Self::Lowest,
         }
     }
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::lex::token::TokenKind;
     #[test]

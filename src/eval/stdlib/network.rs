@@ -1,4 +1,5 @@
 //! Network standard library functions.
+use crate::error::HclError;
 use crate::eval::func::Function;
 use crate::types::{Type, Value, ValueData};
 use ipnet::IpNet;
@@ -19,9 +20,11 @@ pub fn functions() -> Vec<Function> {
 fn cidrcontains_func() -> Function {
     Function {
         name: "cidrcontains".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("cidrcontains expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "cidrcontains expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
@@ -29,49 +32,54 @@ fn cidrcontains_func() -> Function {
             let prefix_str = coerce_to_string(&args[0], "cidrcontains")?;
             let ip_str = coerce_to_string(&args[1], "cidrcontains")?;
             let net = IpNet::from_str(&prefix_str)
-                .map_err(|e| format!("invalid CIDR prefix '{prefix_str}': {e}"))?;
+                .map_err(|e| HclError::Eval(format!("invalid CIDR prefix '{prefix_str}': {e}")))?;
             let addr = IpAddr::from_str(&ip_str)
-                .map_err(|e| format!("invalid IP address '{ip_str}': {e}"))?;
+                .map_err(|e| HclError::Eval(format!("invalid IP address '{ip_str}': {e}")))?;
             let result = net.contains(&addr);
             Ok(Value::new(Type::Bool, ValueData::Bool(result)))
         }),
         signature: None,
     }
 }
-fn coerce_to_string(arg: &Value, name: &str) -> Result<String, String> {
-    let coerced = arg
-        .clone()
-        .coerce(&Type::String)
-        .map_err(|_| format!("{} requires a string, got type {}", name, arg.ty()))?;
+fn coerce_to_string(arg: &Value, name: &str) -> Result<String, HclError> {
+    let coerced = arg.clone().coerce(&Type::String).map_err(|_| {
+        HclError::FunctionArgMismatch(format!("{} requires a string, got type {}", name, arg.ty()))
+    })?;
     if let ValueData::String(s) = *coerced.data {
         Ok(s)
     } else {
-        Err(format!("{name} requires a string"))
+        Err(HclError::FunctionArgMismatch(format!(
+            "{name} requires a string"
+        )))
     }
 }
 fn cidrhost_func() -> Function {
     Function {
         name: "cidrhost".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("cidrhost expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "cidrhost expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let prefix = coerce_to_string(&args[0], "cidrhost prefix")?;
-            let host_val = args[1]
-                .clone()
-                .coerce(&Type::Number)
-                .map_err(|_| "cidrhost host_num must be number".to_string())?;
+            let host_val = args[1].clone().coerce(&Type::Number).map_err(|_| {
+                HclError::FunctionArgMismatch("cidrhost host_num must be number".to_string())
+            })?;
             let hostnum = if let ValueData::Number(n) = *host_val.data {
                 use bigdecimal::num_traits::ToPrimitive;
                 n.0.to_i128()
-                    .ok_or_else(|| "host number too large".to_string())?
+                    .ok_or_else(|| HclError::Eval("host number too large".to_string()))?
             } else {
-                return Err("host_num must be a number".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "host_num must be a number".to_string(),
+                ));
             };
-            let _net = IpNet::from_str(&prefix).map_err(|e| format!("invalid CIDR prefix: {e}"))?;
+            let _net = IpNet::from_str(&prefix)
+                .map_err(|e| HclError::Eval(format!("invalid CIDR prefix: {e}")))?;
             Ok(Value::new(
                 Type::String,
                 ValueData::String(format!("host_stub_{prefix}_{hostnum}")),
@@ -83,15 +91,18 @@ fn cidrhost_func() -> Function {
 fn cidrnetmask_func() -> Function {
     Function {
         name: "cidrnetmask".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("cidrnetmask expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "cidrnetmask expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let prefix = coerce_to_string(&args[0], "cidrnetmask prefix")?;
-            let net = IpNet::from_str(&prefix).map_err(|e| format!("invalid CIDR prefix: {e}"))?;
+            let net = IpNet::from_str(&prefix)
+                .map_err(|e| HclError::Eval(format!("invalid CIDR prefix: {e}")))?;
             Ok(Value::new(
                 Type::String,
                 ValueData::String(net.netmask().to_string()),
@@ -103,9 +114,11 @@ fn cidrnetmask_func() -> Function {
 fn cidrsubnet_func() -> Function {
     Function {
         name: "cidrsubnet".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 3 {
-                return Err("cidrsubnet expects 3 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "cidrsubnet expects 3 arguments".to_string(),
+                ));
             }
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::String));
@@ -122,9 +135,11 @@ fn cidrsubnet_func() -> Function {
 fn cidrsubnets_func() -> Function {
     Function {
         name: "cidrsubnets".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() < 2 {
-                return Err("cidrsubnets expects at least 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "cidrsubnets expects at least 2 arguments".to_string(),
+                ));
             }
             if args.iter().any(crate::types::val::Value::is_unknown) {
                 return Ok(Value::unknown(Type::List(Box::new(Type::String))));
@@ -146,29 +161,24 @@ fn cidrsubnets_func() -> Function {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
+    use crate::error::HclError;
     use crate::eval::stdlib::network::*;
     use crate::number::Number;
     use crate::types::{Type, Value, ValueData};
     use std::str::FromStr;
-    fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
+    fn eval_func(name: &str, args: &[Value]) -> Result<Value, HclError> {
         let funcs = functions();
         for f in funcs {
             if f.name == name {
                 return (f.func)(args);
             }
         }
-        panic!("Function {name} not found");
+        Err(HclError::Eval(format!("Function {name} not found")))
     }
     #[test]
-    fn test_network_unknown_fallbacks() {
+    fn test_network_unknown_fallbacks() -> Result<(), HclError> {
         use crate::types::{Type, Value, ValueData};
         let host = cidrhost_func();
         let netmask = cidrnetmask_func();
@@ -177,27 +187,12 @@ mod tests {
         let contains = cidrcontains_func();
         let unk = Value::unknown(Type::String);
         let s = Value::new(Type::String, ValueData::String("string".to_string()));
-        assert!((host.func)(&[unk.clone(), s.clone()]).unwrap().is_unknown());
-        assert!(
-            (netmask.func)(std::slice::from_ref(&unk))
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            (subnet.func)(&[unk.clone(), s.clone(), s.clone()])
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            (subnets.func)(&[unk.clone(), s.clone()])
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            (contains.func)(&[unk.clone(), s.clone()])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!((host.func)(&[unk.clone(), s.clone()])?.is_unknown());
+        assert!((netmask.func)(std::slice::from_ref(&unk))?.is_unknown());
+        assert!((subnet.func)(&[unk.clone(), s.clone(), s.clone()])?.is_unknown());
+        assert!((subnets.func)(&[unk.clone(), s.clone()])?.is_unknown());
+        assert!((contains.func)(&[unk, s])?.is_unknown());
+        Ok(())
     }
     #[test]
     fn test_network_arg_length_errors() {
@@ -215,14 +210,13 @@ mod tests {
         assert!((contains.func)(std::slice::from_ref(&s)).is_err());
     }
     #[test]
-    fn test_cidrhost() {
+    fn test_cidrhost() -> Result<(), HclError> {
         assert!(eval_func("cidrhost", &[]).is_err());
         assert!(
             eval_func(
                 "cidrhost",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
-            )
-            .unwrap()
+            )?
             .is_unknown()
         );
         assert!(
@@ -232,21 +226,16 @@ mod tests {
                     Value::new(Type::String, ValueData::String("10.0.0.0/16".to_string())),
                     Value::unknown(Type::Number),
                 ]
-            )
-            .unwrap()
+            )?
             .is_unknown()
         );
         let res = eval_func(
             "cidrhost",
             &[
                 Value::new(Type::String, ValueData::String("10.0.0.0/16".to_string())),
-                Value::new(
-                    Type::Number,
-                    ValueData::Number(Number::from_str("5").unwrap()),
-                ),
+                Value::new(Type::Number, ValueData::Number(Number::from_str("5")?)),
             ],
-        )
-        .unwrap();
+        )?;
         assert!(matches!(&* res.data, ValueData::String(s) if { assert!(s
             .contains("host_stub_10.0.0.0/16_5")); true }));
         assert!(
@@ -257,10 +246,7 @@ mod tests {
                         Type::String,
                         ValueData::String("invalid-prefix".to_string())
                     ),
-                    Value::new(
-                        Type::Number,
-                        ValueData::Number(Number::from_str("5").unwrap())
-                    )
+                    Value::new(Type::Number, ValueData::Number(Number::from_str("5")?))
                 ]
             )
             .is_err()
@@ -275,23 +261,19 @@ mod tests {
             )
             .is_err()
         );
+        Ok(())
     }
     #[test]
-    fn test_cidrnetmask() {
+    fn test_cidrnetmask() -> Result<(), HclError> {
         assert!(eval_func("cidrnetmask", &[]).is_err());
-        assert!(
-            eval_func("cidrnetmask", &[Value::unknown(Type::String)])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("cidrnetmask", &[Value::unknown(Type::String)])?.is_unknown());
         let res = eval_func(
             "cidrnetmask",
             &[Value::new(
                 Type::String,
                 ValueData::String("10.0.0.0/16".to_string()),
             )],
-        )
-        .unwrap();
+        )?;
         assert!(matches!(&* res.data, ValueData::String(s) if { assert!(s
             .contains("255.255.0.0")); true }));
         assert!(
@@ -304,9 +286,10 @@ mod tests {
             )
             .is_err()
         );
+        Ok(())
     }
     #[test]
-    fn test_cidrsubnet() {
+    fn test_cidrsubnet() -> Result<(), HclError> {
         assert!(eval_func("cidrsubnet", &[]).is_err());
         assert!(
             eval_func(
@@ -316,66 +299,51 @@ mod tests {
                     Value::unknown(Type::String),
                     Value::unknown(Type::String)
                 ]
-            )
-            .unwrap()
+            )?
             .is_unknown()
         );
         let res = eval_func(
             "cidrsubnet",
             &[
                 Value::new(Type::String, ValueData::String("10.0.0.0/16".to_string())),
-                Value::new(
-                    Type::Number,
-                    ValueData::Number(Number::from_str("8").unwrap()),
-                ),
-                Value::new(
-                    Type::Number,
-                    ValueData::Number(Number::from_str("2").unwrap()),
-                ),
+                Value::new(Type::Number, ValueData::Number(Number::from_str("8")?)),
+                Value::new(Type::Number, ValueData::Number(Number::from_str("2")?)),
             ],
-        )
-        .unwrap();
+        )?;
         assert!(matches!(&* res.data, ValueData::String(s) if { assert!(s
             .contains("subnet_stub_10.0.0.0/16")); true }));
+        Ok(())
     }
     #[test]
-    fn test_cidrsubnets() {
+    fn test_cidrsubnets() -> Result<(), HclError> {
         assert!(eval_func("cidrsubnets", &[]).is_err());
         assert!(
             eval_func(
                 "cidrsubnets",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
-            )
-            .unwrap()
+            )?
             .is_unknown()
         );
         let res = eval_func(
             "cidrsubnets",
             &[
                 Value::new(Type::String, ValueData::String("10.0.0.0/16".to_string())),
-                Value::new(
-                    Type::Number,
-                    ValueData::Number(Number::from_str("4").unwrap()),
-                ),
-                Value::new(
-                    Type::Number,
-                    ValueData::Number(Number::from_str("4").unwrap()),
-                ),
+                Value::new(Type::Number, ValueData::Number(Number::from_str("4")?)),
+                Value::new(Type::Number, ValueData::Number(Number::from_str("4")?)),
             ],
-        )
-        .unwrap();
+        )?;
         assert!(
             matches!(&* res.data, ValueData::Array(arr) if { assert_eq!(arr.len(), 2);
             true })
         );
+        Ok(())
     }
     #[test]
-    #[should_panic(expected = "Function notexist not found")]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).unwrap();
+        assert!(eval_func("notexist", &[]).is_err());
     }
     #[test]
-    fn test_network_coverage() {
+    fn test_network_coverage() -> Result<(), HclError> {
         let str_val = |s: &str| Value::new(Type::String, ValueData::String(s.to_string()));
         let non_val = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         assert!(
@@ -405,10 +373,7 @@ mod tests {
             )
             .is_err()
         );
-        let huge_num = Value::new(
-            Type::Number,
-            ValueData::Number(Number::from_str("1e100").unwrap()),
-        );
+        let huge_num = Value::new(Type::Number, ValueData::Number(Number::from_str("1e100")?));
         assert!(eval_func("cidrhost", &[str_val("10.0.0.0/8"), huge_num]).is_err());
         assert!(eval_func("cidrnetmask", std::slice::from_ref(&non_val)).is_err());
         assert!(eval_func("cidrsubnet", &[non_val.clone(), str_val("1"), str_val("1")]).is_err());
@@ -434,5 +399,6 @@ mod tests {
             eval_func("cidrcontains", &[valid_prefix, valid_ip_out]),
             Ok(Value::new(Type::Bool, ValueData::Bool(false)))
         );
+        Ok(())
     }
 }

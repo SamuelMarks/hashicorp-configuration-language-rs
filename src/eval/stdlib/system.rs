@@ -2,6 +2,7 @@
 //!
 //! Provides the `env(var_name)` built-in standard library function along with the
 //! [`Environment`] abstraction for isolated and mockable process environment variable lookups.
+use crate::error::HclError;
 use crate::eval::func::Function;
 use crate::types::ty::Type;
 use crate::types::val::{Value, ValueData};
@@ -92,9 +93,12 @@ pub fn env_func() -> Function {
 pub fn env_func_with_provider(provider: Arc<dyn Environment>) -> Function {
     Function {
         name: "env".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() || args.len() > 2 {
-                return Err(format!("env expects 1 or 2 arguments, got {}", args.len()));
+                return Err(HclError::FunctionArgMismatch(format!(
+                    "env expects 1 or 2 arguments, got {}",
+                    args.len()
+                )));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
@@ -102,10 +106,10 @@ pub fn env_func_with_provider(provider: Arc<dyn Environment>) -> Function {
             let var_name = match &*args[0].data {
                 ValueData::String(s) => s.as_str(),
                 _ => {
-                    return Err(format!(
+                    return Err(HclError::FunctionArgMismatch(format!(
                         "env expects a string variable name, got {}",
                         args[0].ty()
-                    ));
+                    )));
                 }
             };
             let fallback = if args.len() == 2 {
@@ -115,10 +119,10 @@ pub fn env_func_with_provider(provider: Arc<dyn Environment>) -> Function {
                 match &*args[1].data {
                     ValueData::String(s) => s.clone(),
                     _ => {
-                        return Err(format!(
+                        return Err(HclError::FunctionArgMismatch(format!(
                             "env fallback must be a string, got {}",
                             args[1].ty()
-                        ));
+                        )));
                     }
                 }
             } else {
@@ -132,16 +136,9 @@ pub fn env_func_with_provider(provider: Arc<dyn Environment>) -> Function {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
-    fn test_system_and_mock_environment() {
+    fn test_system_and_mock_environment() -> Result<(), HclError> {
         assert_eq!(functions().len(), 1);
         let sys = SystemEnvironment;
         let _ = format!("{sys:?}");
@@ -153,14 +150,12 @@ mod tests {
         assert_eq!(mock.get_var("FOO"), Some("bar".to_string()));
         assert_eq!(mock.get_var("MISSING"), None);
         let env_fn = env_func_with_provider(mock.clone());
-        let res =
-            (env_fn.func)(&[Value::new(Type::String, ValueData::String("FOO".into()))]).unwrap();
+        let res = (env_fn.func)(&[Value::new(Type::String, ValueData::String("FOO".into()))])?;
         assert_eq!(res.data.as_ref(), &ValueData::String("bar".to_string()));
         let res_existing_fb = (env_fn.func)(&[
             Value::new(Type::String, ValueData::String("FOO".into())),
             Value::new(Type::String, ValueData::String("ignored".into())),
-        ])
-        .unwrap();
+        ])?;
         assert_eq!(
             res_existing_fb.data.as_ref(),
             &ValueData::String("bar".to_string())
@@ -168,27 +163,24 @@ mod tests {
         let res_missing = (env_fn.func)(&[Value::new(
             Type::String,
             ValueData::String("MISSING".into()),
-        )])
-        .unwrap();
+        )])?;
         assert_eq!(res_missing.data.as_ref(), &ValueData::String(String::new()));
         let res_fb = (env_fn.func)(&[
             Value::new(Type::String, ValueData::String("MISSING".into())),
             Value::new(Type::String, ValueData::String("fallback_val".into())),
-        ])
-        .unwrap();
+        ])?;
         assert_eq!(
             res_fb.data.as_ref(),
             &ValueData::String("fallback_val".to_string())
         );
         mock.remove_var("FOO");
         assert_eq!(mock.get_var("FOO"), None);
-        let res_unk = (env_fn.func)(&[Value::unknown(Type::String)]).unwrap();
+        let res_unk = (env_fn.func)(&[Value::unknown(Type::String)])?;
         assert!(res_unk.is_unknown());
         let res_unk_fb = (env_fn.func)(&[
             Value::new(Type::String, ValueData::String("VAR".into())),
             Value::unknown(Type::String),
-        ])
-        .unwrap();
+        ])?;
         assert!(res_unk_fb.is_unknown());
         assert!((env_fn.func)(&[]).is_err());
         assert!(
@@ -209,5 +201,6 @@ mod tests {
         );
         let sys_fn = env_func();
         let _ = (sys_fn.func)(&[Value::new(Type::String, ValueData::String("PATH".into()))]);
+        Ok(())
     }
 }

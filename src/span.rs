@@ -32,7 +32,7 @@ impl std::fmt::Display for Span {
 impl Span {
     /// Merges two spans into one covering both, preserving common file identity.
     #[must_use]
-    pub fn merge(&self, other: &Span) -> Span {
+    pub fn merge(&self, other: &Self) -> Self {
         let file = match (&self.file, &other.file) {
             (Some(f1), Some(f2)) if f1 == f2 => Some(f1.clone()),
             (Some(f1), None) => Some(f1.clone()),
@@ -51,13 +51,13 @@ impl Span {
         } else {
             (other.end_line, other.end_col)
         };
-        Span::new_with_file(
+        Self::new_with_file(
             start_byte, end_byte, start_line, start_col, end_line, end_col, file,
         )
     }
     /// Create a new `Span` without a file identifier.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         start_byte: usize,
         end_byte: usize,
         start_line: usize,
@@ -86,7 +86,7 @@ impl Span {
     /// * `end_col` - Ending column number (1-indexed).
     /// * `file` - Optional source file path or identifier.
     #[must_use]
-    pub fn new_with_file(
+    pub const fn new_with_file(
         start_byte: usize,
         end_byte: usize,
         start_line: usize,
@@ -122,7 +122,7 @@ impl Span {
     /// # Arguments
     /// * `pos` - The coordinate position to check.
     #[must_use]
-    pub fn contains_position(&self, pos: &Position) -> bool {
+    pub const fn contains_position(&self, pos: &Position) -> bool {
         if self.end_byte > self.start_byte {
             return pos.byte_offset >= self.start_byte && pos.byte_offset < self.end_byte;
         }
@@ -146,13 +146,6 @@ impl Span {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
     fn test_span_new() {

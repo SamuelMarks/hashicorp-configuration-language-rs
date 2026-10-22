@@ -1,10 +1,13 @@
 //! LSP server daemon and request dispatch engine.
 //!
 //! Implements document lifecycles, JSON-RPC routing, and diagnostics publishing over stdio and TCP.
+#![deny(missing_docs)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use crate::cache::DocumentCache;
 use crate::completion::completions_at_position;
 use crate::definition::{find_references, goto_definition};
-use crate::error::LspError;
+use crate::error::HclError;
 use crate::hover::hover_at_position;
 use crate::protocol::error_codes;
 use crate::protocol::{
@@ -19,6 +22,7 @@ use hashicorp_configuration_language_rs::ast::schema::BodySchema;
 use hashicorp_configuration_language_rs::diagnostic::json::DiagnosticJson;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpListener;
+
 /// The central LSP language server daemon.
 #[derive(Debug, Default)]
 pub struct LspServer {
@@ -31,12 +35,14 @@ pub struct LspServer {
     /// Whether the server has received a `shutdown` request.
     pub is_shutdown: bool,
 }
+
 impl LspServer {
     /// Creates a new `LspServer`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
+
     /// Configures the server with an optional declarative schema.
     ///
     /// # Arguments
@@ -49,6 +55,7 @@ impl LspServer {
         self.schema = Some(schema);
         self
     }
+
     /// Dispatches a JSON-RPC request message and generates the appropriate response.
     ///
     /// # Arguments
@@ -56,6 +63,7 @@ impl LspServer {
     ///
     /// # Returns
     /// The generated [`Response`] message.
+    #[must_use]
     pub fn handle_request(&mut self, req: Request) -> Response {
         if !self.is_initialized && req.method != "initialize" {
             return Response::error(
@@ -77,18 +85,20 @@ impl LspServer {
                 self.is_shutdown = true;
                 Response::ok(req.id, serde_json::Value::Null)
             }
-            "textDocument/documentSymbol" => self.handle_document_symbol(req.id, req.params),
-            "textDocument/hover" => self.handle_hover(req.id, req.params),
-            "textDocument/completion" => self.handle_completion(req.id, req.params),
+            "textDocument/documentSymbol" => {
+                self.handle_document_symbol(req.id, req.params.as_ref())
+            }
+            "textDocument/hover" => self.handle_hover(req.id, req.params.as_ref()),
+            "textDocument/completion" => self.handle_completion(req.id, req.params.as_ref()),
             "textDocument/semanticTokens/full" => {
-                self.handle_semantic_tokens_full(req.id, req.params)
+                self.handle_semantic_tokens_full(req.id, req.params.as_ref())
             }
             "textDocument/semanticTokens/range" => {
-                self.handle_semantic_tokens_range(req.id, req.params)
+                self.handle_semantic_tokens_range(req.id, req.params.as_ref())
             }
-            "textDocument/definition" => self.handle_definition(req.id, req.params),
-            "workspace/symbol" => self.handle_workspace_symbol(req.id, req.params),
-            "textDocument/references" => self.handle_references(req.id, req.params),
+            "textDocument/definition" => self.handle_definition(req.id, req.params.as_ref()),
+            "workspace/symbol" => self.handle_workspace_symbol(req.id, req.params.as_ref()),
+            "textDocument/references" => self.handle_references(req.id, req.params.as_ref()),
             _ => Response::error(
                 Some(req.id),
                 error_codes::METHOD_NOT_FOUND,
@@ -96,6 +106,7 @@ impl LspServer {
             ),
         }
     }
+
     /// Handles a JSON-RPC notification message and optionally returns a notification to emit.
     ///
     /// # Arguments
@@ -148,6 +159,7 @@ impl LspServer {
             _ => None,
         }
     }
+
     /// Handles the `initialize` lifecycle request.
     fn handle_initialize(&mut self, id: RequestId, params: Option<serde_json::Value>) -> Response {
         let _init_params: Option<InitializeParams> =
@@ -159,7 +171,11 @@ impl LspServer {
             hover_provider: Some(true),
             completion_provider: Some(crate::protocol::CompletionOptions {
                 resolve_provider: Some(false),
-                trigger_characters: Some(vec![".".to_string(), "=".to_string(), "\"".to_string()]),
+                trigger_characters: Some(vec![
+                    ".".to_string(),
+                    "=".to_string(),
+                    r#"""#.to_string(),
+                ]),
             }),
             semantic_tokens_provider: Some(SemanticTokensOptions {
                 legend: semantic_tokens_legend(),
@@ -175,8 +191,13 @@ impl LspServer {
             serde_json::to_value(result).unwrap_or(serde_json::Value::Null),
         )
     }
+
     /// Handles document outline symbol extraction requests.
-    fn handle_document_symbol(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
+    fn handle_document_symbol(
+        &self,
+        id: RequestId,
+        params: Option<&serde_json::Value>,
+    ) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
         };
@@ -190,8 +211,9 @@ impl LspServer {
             serde_json::to_value(symbols).unwrap_or(serde_json::Value::Null),
         )
     }
+
     /// Handles hover documentation requests.
-    fn handle_hover(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
+    fn handle_hover(&self, id: RequestId, params: Option<&serde_json::Value>) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
         };
@@ -199,8 +221,10 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-        let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
-        let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
+        let line =
+            u32::try_from(p["position"]["line"].as_u64().unwrap_or_default()).unwrap_or(u32::MAX);
+        let char_offset = u32::try_from(p["position"]["character"].as_u64().unwrap_or_default())
+            .unwrap_or(u32::MAX);
         let pos = Position::new(line, char_offset);
         let hover = hover_at_position(doc, pos, self.schema.as_ref());
         Response::ok(
@@ -208,8 +232,9 @@ impl LspServer {
             serde_json::to_value(hover).unwrap_or(serde_json::Value::Null),
         )
     }
+
     /// Handles code completion requests.
-    fn handle_completion(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
+    fn handle_completion(&self, id: RequestId, params: Option<&serde_json::Value>) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
         };
@@ -217,8 +242,10 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-        let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
-        let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
+        let line =
+            u32::try_from(p["position"]["line"].as_u64().unwrap_or_default()).unwrap_or(u32::MAX);
+        let char_offset = u32::try_from(p["position"]["character"].as_u64().unwrap_or_default())
+            .unwrap_or(u32::MAX);
         let pos = Position::new(line, char_offset);
         let completions = completions_at_position(doc, pos, self.schema.as_ref());
         Response::ok(
@@ -226,11 +253,12 @@ impl LspServer {
             serde_json::to_value(completions).unwrap_or(serde_json::Value::Null),
         )
     }
+
     /// Handles full-document semantic tokens extraction requests.
     fn handle_semantic_tokens_full(
         &self,
         id: RequestId,
-        params: Option<serde_json::Value>,
+        params: Option<&serde_json::Value>,
     ) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
@@ -245,11 +273,12 @@ impl LspServer {
             serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null),
         )
     }
+
     /// Handles range-scoped semantic tokens extraction requests.
     fn handle_semantic_tokens_range(
         &self,
         id: RequestId,
-        params: Option<serde_json::Value>,
+        params: Option<&serde_json::Value>,
     ) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
@@ -258,11 +287,8 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-        let range: Range = match serde_json::from_value(p["range"].clone()) {
-            Ok(r) => r,
-            Err(_) => {
-                return Response::error(Some(id), error_codes::INVALID_PARAMS, "Invalid range");
-            }
+        let Ok(range) = serde_json::from_value::<Range>(p["range"].clone()) else {
+            return Response::error(Some(id), error_codes::INVALID_PARAMS, "Invalid range");
         };
         let tokens = semantic_tokens_range(doc, range);
         Response::ok(
@@ -270,8 +296,9 @@ impl LspServer {
             serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null),
         )
     }
+
     /// Handles goto definition lookup requests.
-    fn handle_definition(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
+    fn handle_definition(&self, id: RequestId, params: Option<&serde_json::Value>) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
         };
@@ -279,8 +306,10 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-        let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
-        let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
+        let line =
+            u32::try_from(p["position"]["line"].as_u64().unwrap_or_default()).unwrap_or(u32::MAX);
+        let char_offset = u32::try_from(p["position"]["character"].as_u64().unwrap_or_default())
+            .unwrap_or(u32::MAX);
         let pos = Position::new(line, char_offset);
         let def = goto_definition(doc, pos, &self.cache);
         Response::ok(
@@ -288,11 +317,12 @@ impl LspServer {
             serde_json::to_value(def).unwrap_or(serde_json::Value::Null),
         )
     }
-    /// Handles find references lookup requests.
+
+    /// Handles workspace symbol search requests.
     fn handle_workspace_symbol(
         &self,
         id: RequestId,
-        params: Option<serde_json::Value>,
+        params: Option<&serde_json::Value>,
     ) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
@@ -309,7 +339,8 @@ impl LspServer {
         )
     }
 
-    fn handle_references(&self, id: RequestId, params: Option<serde_json::Value>) -> Response {
+    /// Handles find references lookup requests.
+    fn handle_references(&self, id: RequestId, params: Option<&serde_json::Value>) -> Response {
         let Some(p) = params else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Missing params");
         };
@@ -317,8 +348,10 @@ impl LspServer {
         let Some(doc) = self.cache.get_document(uri) else {
             return Response::error(Some(id), error_codes::INVALID_PARAMS, "Document not found");
         };
-        let line = p["position"]["line"].as_u64().unwrap_or_default() as u32;
-        let char_offset = p["position"]["character"].as_u64().unwrap_or_default() as u32;
+        let line =
+            u32::try_from(p["position"]["line"].as_u64().unwrap_or_default()).unwrap_or(u32::MAX);
+        let char_offset = u32::try_from(p["position"]["character"].as_u64().unwrap_or_default())
+            .unwrap_or(u32::MAX);
         let pos = Position::new(line, char_offset);
         let refs = find_references(doc, pos, &self.cache);
         Response::ok(
@@ -326,6 +359,7 @@ impl LspServer {
             serde_json::to_value(refs).unwrap_or(serde_json::Value::Null),
         )
     }
+
     /// Runs the message loop reading from a standard input stream and writing to output.
     ///
     /// # Arguments
@@ -333,8 +367,8 @@ impl LspServer {
     /// * `output` - The output byte stream.
     ///
     /// # Errors
-    /// Returns [`LspError`] if communication encounters unrecoverable errors.
-    pub fn run_stream<R: Read, W: Write>(&mut self, input: R, output: W) -> Result<(), LspError> {
+    /// Returns [`HclError`] if communication encounters unrecoverable errors.
+    pub fn run_stream<R: Read, W: Write>(&mut self, input: R, output: W) -> Result<(), HclError> {
         let mut reader = BufReader::new(input);
         let mut writer = BufWriter::new(output);
         while let Some(msg_str) = Transport::read_message(&mut reader)? {
@@ -355,29 +389,32 @@ impl LspServer {
         }
         Ok(())
     }
+
     /// Listens for a single TCP client connection on `addr` and runs the server loop.
     ///
     /// # Arguments
     /// * `addr` - The TCP bind address (e.g. `"127.0.0.1:9257"`).
     ///
     /// # Errors
-    /// Returns [`LspError`] if binding or communicating fails.
-    pub fn run_tcp(&mut self, addr: &str) -> Result<(), LspError> {
+    /// Returns [`HclError`] if binding or communicating fails.
+    pub fn run_tcp(&mut self, addr: &str) -> Result<(), HclError> {
         let listener = TcpListener::bind(addr)?;
         self.run_tcp_listener(&listener)
     }
+
     /// Listens for a single TCP client connection on `listener` and runs the server loop.
     ///
     /// # Arguments
     /// * `listener` - An already-bound TCP listener.
     ///
     /// # Errors
-    /// Returns [`LspError`] if accepting a connection or communicating fails.
-    pub fn run_tcp_listener(&mut self, listener: &TcpListener) -> Result<(), LspError> {
+    /// Returns [`HclError`] if accepting a connection or communicating fails.
+    pub fn run_tcp_listener(&mut self, listener: &TcpListener) -> Result<(), HclError> {
         let (stream, _) = listener.accept()?;
         self.run_stream(&stream, &stream)
     }
 }
+
 /// Creates a `textDocument/publishDiagnostics` notification for document diagnostics.
 fn create_publish_diagnostics_notification(
     uri: &str,
@@ -391,17 +428,13 @@ fn create_publish_diagnostics_notification(
     let params = serde_json::json!({ "uri" : uri, "diagnostics" : diag_jsons, });
     Notification::new("textDocument/publishDiagnostics", Some(params))
 }
+
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::protocol::TextDocumentItem;
     use std::io::Cursor;
+
     #[test]
     fn test_server_initialize_and_document_lifecycle() {
         let mut server = LspServer::new();
@@ -421,7 +454,8 @@ mod tests {
             "textDocument/didOpen",
             Some(serde_json::json!(
                 { "textDocument" : { "uri" : "file:///main.tf", "languageId" : "hcl",
-                "version" : 1, "text" : "name = \"test\"\n", } }
+                "version" : 1, "text" : r#"name = "test"
+            "#, } }
             )),
         );
         let pub_diag = server.handle_notification(open_notif);
@@ -433,7 +467,14 @@ mod tests {
             params: Some(serde_json::json!({ "textDocument" : { "uri" : "file:///main.tf" } })),
         };
         let sym_resp = server.handle_request(sym_req);
-        assert!(sym_resp.result.is_some());
+        assert_eq!(
+            sym_resp
+                .result
+                .as_ref()
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(1)
+        );
         let shut_req = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(3),
@@ -441,7 +482,7 @@ mod tests {
             params: None,
         };
         let shut_resp = server.handle_request(shut_req);
-        assert!(shut_resp.result.is_some());
+        assert_eq!(shut_resp.result, Some(serde_json::Value::Null));
         assert!(server.is_shutdown);
         let exit_req = Request {
             jsonrpc: "2.0".to_string(),
@@ -460,6 +501,59 @@ mod tests {
         let post_resp = server.handle_request(post_req);
         assert!(post_resp.error.is_some());
     }
+
+    fn assert_valid_method_response(method: &str, resp_valid: &Response) {
+        assert!(resp_valid.error.is_none());
+        match method {
+            "textDocument/documentSymbol" => {
+                assert_eq!(
+                    resp_valid
+                        .result
+                        .as_ref()
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|s| s.get("name"))
+                        .and_then(|n| n.as_str()),
+                    Some("foo")
+                );
+            }
+            "textDocument/hover" => {
+                assert!(
+                    resp_valid
+                        .result
+                        .as_ref()
+                        .and_then(|v| v.get("contents"))
+                        .and_then(|c| c.get("value"))
+                        .and_then(|s| s.as_str())
+                        .is_some_and(|s| s.contains("foo"))
+                );
+            }
+            "textDocument/completion" => {
+                assert!(
+                    resp_valid
+                        .result
+                        .as_ref()
+                        .and_then(|v| v.get("items"))
+                        .and_then(|i| i.as_array())
+                        .is_some_and(|arr| !arr.is_empty())
+                );
+            }
+            "textDocument/semanticTokens/full" => {
+                assert!(
+                    resp_valid
+                        .result
+                        .as_ref()
+                        .and_then(|v| v.get("data"))
+                        .and_then(|d| d.as_array())
+                        .is_some_and(|arr| !arr.is_empty())
+                );
+            }
+            _ => {
+                assert!(resp_valid.result.is_some());
+            }
+        }
+    }
+
     #[test]
     fn test_server_all_requests_and_errors() {
         let mut server = LspServer::new().with_schema(BodySchema::new());
@@ -498,7 +592,7 @@ mod tests {
             "textDocument/references",
         ];
         for (i, &method) in methods.iter().enumerate() {
-            let id = RequestId::Number(10 + i as i64);
+            let id = RequestId::Number(10 + i64::try_from(i).unwrap_or(0));
             let req_no_params = Request {
                 jsonrpc: "2.0".to_string(),
                 id: id.clone(),
@@ -534,56 +628,47 @@ mod tests {
                 )),
             };
             let resp_valid = server.handle_request(req_valid);
-            assert!(resp_valid.result.is_some());
+            assert_valid_method_response(method, &resp_valid);
         }
+    }
+
+    #[test]
+    fn test_server_semantic_tokens_range_and_unknown_methods() {
+        let mut server = LspServer::new();
+        server.is_initialized = true;
+        let open_notif = Notification::new(
+            "textDocument/didOpen",
+            Some(serde_json::json!(
+                { "textDocument" : { "uri" : "file:///test.hcl", "languageId" :
+                "hcl", "version" : 1, "text" : "foo = 1\n", } }
+            )),
+        );
+        assert!(server.handle_notification(open_notif).is_some());
         let range_method = "textDocument/semanticTokens/range";
-        let req_no_params = Request {
-            jsonrpc: "2.0".to_string(),
-            id: RequestId::Number(50),
-            method: range_method.to_string(),
-            params: None,
-        };
-        assert_eq!(
-            server
-                .handle_request(req_no_params)
-                .error
-                .as_ref()
-                .map(|e| e.code),
-            Some(error_codes::INVALID_PARAMS)
-        );
-        let req_miss_doc = Request {
-            jsonrpc: "2.0".to_string(),
-            id: RequestId::Number(51),
-            method: range_method.to_string(),
-            params: Some(serde_json::json!(
-                { "textDocument" : { "uri" : "file:///nonexistent.hcl" } }
-            )),
-        };
-        assert_eq!(
-            server
-                .handle_request(req_miss_doc)
-                .error
-                .as_ref()
-                .map(|e| e.code),
-            Some(error_codes::INVALID_PARAMS)
-        );
-        let req_bad_range = Request {
-            jsonrpc: "2.0".to_string(),
-            id: RequestId::Number(52),
-            method: range_method.to_string(),
-            params: Some(serde_json::json!(
-                { "textDocument" : { "uri" : "file:///test.hcl" }, "range" :
-                "invalid-range" }
-            )),
-        };
-        assert_eq!(
-            server
-                .handle_request(req_bad_range)
-                .error
-                .as_ref()
-                .map(|e| e.code),
-            Some(error_codes::INVALID_PARAMS)
-        );
+        for (id_num, params) in [
+            (50, None),
+            (
+                51,
+                Some(serde_json::json!({ "textDocument" : { "uri" : "file:///nonexistent.hcl" } })),
+            ),
+            (
+                52,
+                Some(
+                    serde_json::json!({ "textDocument" : { "uri" : "file:///test.hcl" }, "range" : "invalid-range" }),
+                ),
+            ),
+        ] {
+            let req = Request {
+                jsonrpc: "2.0".to_string(),
+                id: RequestId::Number(id_num),
+                method: range_method.to_string(),
+                params,
+            };
+            assert_eq!(
+                server.handle_request(req).error.as_ref().map(|e| e.code),
+                Some(error_codes::INVALID_PARAMS)
+            );
+        }
         let req_good_range = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(53),
@@ -594,7 +679,15 @@ mod tests {
                 "character" : 5 } } }
             )),
         };
-        assert!(server.handle_request(req_good_range).result.is_some());
+        let resp_good_range = server.handle_request(req_good_range);
+        assert!(
+            resp_good_range
+                .result
+                .as_ref()
+                .and_then(|v| v.get("data"))
+                .and_then(|d| d.as_array())
+                .is_some_and(|arr| !arr.is_empty())
+        );
         let req_unknown = Request {
             jsonrpc: "2.0".to_string(),
             id: RequestId::Number(60),
@@ -609,7 +702,22 @@ mod tests {
                 .map(|e| e.code),
             Some(error_codes::METHOD_NOT_FOUND)
         );
+        let req_ws_no_params = Request {
+            jsonrpc: "2.0".to_string(),
+            id: RequestId::Number(61),
+            method: "workspace/symbol".to_string(),
+            params: None,
+        };
+        assert_eq!(
+            server
+                .handle_request(req_ws_no_params)
+                .error
+                .as_ref()
+                .map(|e| e.code),
+            Some(error_codes::INVALID_PARAMS)
+        );
     }
+
     #[test]
     fn test_server_notifications() {
         let mut server = LspServer::new();
@@ -637,7 +745,8 @@ mod tests {
             "textDocument/didOpen",
             Some(serde_json::json!(
                 { "textDocument" : { "uri" : "file:///err.hcl", "languageId" : "hcl",
-                "version" : 1, "text" : "bad_syntax = \n", } }
+                "version" : 1, "text" : "bad_syntax =
+            ", } }
             )),
         );
         assert!(server.handle_notification(err_open).is_some());
@@ -645,7 +754,8 @@ mod tests {
             "textDocument/didOpen",
             Some(serde_json::json!(
                 { "textDocument" : { "uri" : "file:///test.hcl", "languageId" :
-                "hcl", "version" : 1, "text" : "x = 1\n", } }
+                "hcl", "version" : 1, "text" : "x = 1
+            ", } }
             )),
         );
         assert!(server.handle_notification(good_open).is_some());
@@ -653,7 +763,8 @@ mod tests {
             "textDocument/didChange",
             Some(serde_json::json!(
                 { "textDocument" : { "uri" : "file:///test.hcl", "version" : 2 },
-                "contentChanges" : [{ "text" : "x = 2\n" }] }
+                "contentChanges" : [{ "text" : "x = 2
+            " }] }
             )),
         );
         assert!(server.handle_notification(good_change).is_some());
@@ -668,69 +779,69 @@ mod tests {
         let unknown_notif = Notification::new("unknown/notif", None);
         assert!(server.handle_notification(unknown_notif).is_none());
     }
+
     #[test]
-    fn test_server_run_stream() {
+    fn test_server_run_stream() -> Result<(), HclError> {
         let mut server = LspServer::new();
         server.is_initialized = true;
         let mut input_buf = Vec::new();
-        let _ = Transport::write_message(
+        Transport::write_message(
             &mut input_buf,
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
-        );
-        let _ = Transport::write_message(
+        )?;
+        Transport::write_message(
             &mut input_buf,
-            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///stream.hcl","languageId":"hcl","version":1,"text":"val = 10\n"}}}"#,
-        );
-        let _ = Transport::write_message(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///stream.hcl","languageId":"hcl","version":1,"text":"val = 10"}}}"#,
+        )?;
+        Transport::write_message(
             &mut input_buf,
             r#"{"jsonrpc":"2.0","method":"initialized","params":null}"#,
-        );
-        let _ = Transport::write_message(&mut input_buf, "{\"plain\": 123}");
-        let _ = Transport::write_message(
+        )?;
+        Transport::write_message(&mut input_buf, r#"{"plain": 123}"#)?;
+        Transport::write_message(
             &mut input_buf,
             r#"{"jsonrpc":"2.0","method":"exit","params":null}"#,
-        );
-        let writer_success = MockStreamWriter::new(false);
-        let mut output_writer = writer_success;
-        let res = server.run_stream(Cursor::new(input_buf), &mut output_writer);
-        assert!(res.is_ok());
+        )?;
+        let mut output_writer = MockStreamWriter::new(false);
+        server.run_stream(Cursor::new(input_buf), &mut output_writer)?;
         assert!(!output_writer.buf.is_empty(), "expected non-empty output");
+
         let mut eof_buf = Vec::new();
-        let _ = Transport::write_message(
+        Transport::write_message(
             &mut eof_buf,
             r#"{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}"#,
-        );
+        )?;
         let mut eof_writer = MockStreamWriter::new(false);
-        assert!(
-            server
-                .run_stream(Cursor::new(eof_buf), &mut eof_writer)
-                .is_ok()
-        );
-        let bad_header_stream = Cursor::new(b"Content-Length: not_a_num\r\n\r\n{}" as &[u8])
-            .get_ref()
-            .to_vec();
+        server.run_stream(Cursor::new(eof_buf), &mut eof_writer)?;
+
+        let bad_header_stream = b"Content-Length: not_a_num
+
+{}"
+        .to_vec();
         let mut bad_writer = MockStreamWriter::new(false);
         assert!(
             server
                 .run_stream(Cursor::new(bad_header_stream), &mut bad_writer)
                 .is_err()
         );
+
         let mut req_buf = Vec::new();
-        let _ = Transport::write_message(
+        Transport::write_message(
             &mut req_buf,
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
-        );
+        )?;
         let mut fail_req_writer = MockStreamWriter::new(true);
         assert!(
             server
                 .run_stream(Cursor::new(req_buf), &mut fail_req_writer)
                 .is_err()
         );
+
         let mut notif_buf = Vec::new();
-        let _ = Transport::write_message(
+        Transport::write_message(
             &mut notif_buf,
-            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///fail.hcl","languageId":"hcl","version":1,"text":"a = 1\n"}}}"#,
-        );
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///fail.hcl","languageId":"hcl","version":1,"text":"a = 1"}}}"#,
+        )?;
         let mut fail_notif_writer = MockStreamWriter::new(true);
         assert!(
             server
@@ -739,20 +850,24 @@ mod tests {
         );
         assert!(MockStreamWriter::new(true).flush().is_err());
         assert!(MockStreamWriter::new(false).flush().is_ok());
+        Ok(())
     }
+
     /// Mock writer that can selectively succeed or fail on writes to test all stream paths.
     struct MockStreamWriter {
         fail_writes: bool,
         buf: Vec<u8>,
     }
+
     impl MockStreamWriter {
-        fn new(fail_writes: bool) -> Self {
+        const fn new(fail_writes: bool) -> Self {
             Self {
                 fail_writes,
                 buf: Vec::new(),
             }
         }
     }
+
     impl Write for MockStreamWriter {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             if self.fail_writes {
@@ -770,64 +885,62 @@ mod tests {
             }
         }
     }
+
     #[test]
-    fn test_server_run_tcp_lifecycle() {
+    fn test_server_run_tcp_lifecycle() -> Result<(), HclError> {
         let mut server = LspServer::new();
         server.is_initialized = true;
-        let nb_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        nb_listener.set_nonblocking(true).unwrap();
+        let nb_listener = TcpListener::bind("127.0.0.1:0")?;
+        nb_listener.set_nonblocking(true)?;
         assert!(server.run_tcp_listener(&nb_listener).is_err());
         for target in ["invalid-address:99999", "127.0.0.1:0"] {
-            match TcpListener::bind(target) {
-                Ok(listener) => {
-                    let port = listener.local_addr().map_or(0, |a| a.port());
-                    drop(listener);
-                    let addr = format!("127.0.0.1:{port}");
-                    let thread_addr = addr.clone();
-                    let client_handle = std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(20));
-                        for is_err in [true, false] {
-                            let target_addr = if is_err { "127.0.0.1:1" } else { &thread_addr };
-                            if let Ok(mut stream) = std::net::TcpStream::connect(target_addr) {
-                                let exit_str = r#"{"jsonrpc":"2.0","method":"exit","params":null}"#;
-                                let _ = Transport::write_message(&mut stream, exit_str);
-                            }
+            if let Ok(listener) = TcpListener::bind(target) {
+                let port = listener.local_addr().map_or(0, |a| a.port());
+                drop(listener);
+                let addr = format!("127.0.0.1:{port}");
+                let thread_addr = addr.clone();
+                let client_handle = std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    for is_err in [true, false] {
+                        let target_addr = if is_err { "127.0.0.1:1" } else { &thread_addr };
+                        if let Ok(mut stream) = std::net::TcpStream::connect(target_addr) {
+                            let exit_str = r#"{"jsonrpc":"2.0","method":"exit","params":null}"#;
+                            let _ = Transport::write_message(&mut stream, exit_str);
                         }
-                    });
-                    assert!(server.run_tcp(&addr).is_ok());
-                    let _ = client_handle.join();
-                }
-                Err(_) => {
-                    assert!(server.run_tcp(target).is_err());
-                }
+                    }
+                });
+                server.run_tcp(&addr)?;
+                let _ = client_handle.join();
+            } else {
+                assert!(server.run_tcp(target).is_err());
             }
         }
+        Ok(())
     }
-}
 
-#[test]
-fn test_handle_workspace_symbol() {
-    use crate::protocol::TextDocumentItem;
-    let mut server = LspServer::new();
-    server.is_initialized = true;
-    let item = TextDocumentItem {
-        uri: "file:///test.hcl".to_string(),
-        language_id: "hcl".to_string(),
-        version: 1,
-        text: "resource \"aws_s3_bucket\" \"b\" { bucket = \"my-bucket\" }".to_string(),
-    };
-    server.cache.open_document(item, None);
+    #[test]
+    fn test_handle_workspace_symbol() {
+        let mut server = LspServer::new();
+        server.is_initialized = true;
+        let item = TextDocumentItem {
+            uri: "file:///test.hcl".to_string(),
+            language_id: "hcl".to_string(),
+            version: 1,
+            text: r#"resource "aws_s3_bucket" "b" { bucket = "my-bucket" }"#.to_string(),
+        };
+        server.cache.open_document(item, None);
 
-    let req = Request {
-        jsonrpc: "2.0".to_string(),
-        id: RequestId::Number(2),
-        method: "workspace/symbol".to_string(),
-        params: Some(serde_json::json!({
-            "query": "aws_s3_bucket"
-        })),
-    };
-    let resp = server.handle_request(req);
-    println!("{:?}", resp.error);
-    assert!(resp.error.is_none());
-    assert!(resp.result.is_some());
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: RequestId::Number(2),
+            method: "workspace/symbol".to_string(),
+            params: Some(serde_json::json!({
+                "query": "aws_s3_bucket"
+            })),
+        };
+        let resp = server.handle_request(req);
+        assert!(resp.error.is_none());
+        let syms = resp.result.and_then(|v| v.as_array().cloned());
+        assert!(syms.is_some_and(|arr| !arr.is_empty()));
+    }
 }

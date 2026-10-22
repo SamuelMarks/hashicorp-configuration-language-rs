@@ -157,11 +157,8 @@ fn evaluate_validation_internal(
                     return Err(errs);
                 }
             };
-            let err_string = if let Some(pfx) = err_prefix {
-                format!("{pfx}{message}")
-            } else {
-                message.clone()
-            };
+            let err_string =
+                err_prefix.map_or_else(|| message.clone(), |pfx| format!("{pfx}{message}"));
             let mut diags = Diagnostics::new();
             diags.push(
                 Diagnostic::error(summary_title, message, val.span.clone())
@@ -186,21 +183,15 @@ fn evaluate_validation_internal(
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::api::parse;
     use crate::ast::expr::Expression;
     use crate::span::Span;
     use crate::types::Value;
     use std::collections::BTreeMap;
-    fn empty_span() -> Span {
+    const fn empty_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
     fn setup_var_context(pairs: &[(&str, Value)]) -> Context<'static> {
@@ -219,7 +210,7 @@ mod tests {
         ctx
     }
     #[test]
-    fn test_evaluate_validation_success() {
+    fn test_evaluate_validation_success() -> Result<(), HclError> {
         let mut ctx = setup_var_context(&[(
             "port",
             Value::new(Type::Number, ValueData::Number(8080.into())),
@@ -230,13 +221,14 @@ mod tests {
                 error_message = "Port must be 8080."
             }
         "#;
-        let body = parse(input).unwrap();
+        let body = parse(input)?;
         assert_eq!(body.validations.len(), 1);
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_ok());
+        Ok(())
     }
     #[test]
-    fn test_evaluate_validation_failure() {
+    fn test_evaluate_validation_failure() -> Result<(), HclError> {
         let mut ctx = setup_var_context(&[(
             "port",
             Value::new(Type::Number, ValueData::Number(80.into())),
@@ -247,11 +239,11 @@ mod tests {
                 error_message = format("Port %d is invalid, must be 8080.", var.port)
             }
         "#;
-        let body = parse(input).unwrap();
+        let body = parse(input)?;
         assert_eq!(body.validations.len(), 1);
-        let res = evaluate_validation(&body.validations[0], &mut ctx);
-        assert!(res.is_err());
-        let errs = res.unwrap_err();
+        let Err(errs) = evaluate_validation(&body.validations[0], &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
         assert_eq!(diag.summary_str(), "Validation rule failed");
@@ -259,9 +251,10 @@ mod tests {
             diag.to_string()
                 .contains("Port 80 is invalid, must be 8080.")
         );
+        Ok(())
     }
     #[test]
-    fn test_evaluate_validation_unknown_condition_passes() {
+    fn test_evaluate_validation_unknown_condition_passes() -> Result<(), HclError> {
         let mut ctx = setup_var_context(&[("status", Value::unknown(Type::Bool))]);
         let input = r#"
             validation {
@@ -269,12 +262,13 @@ mod tests {
                 error_message = "Status must be true."
             }
         "#;
-        let body = parse(input).unwrap();
+        let body = parse(input)?;
         let res = evaluate_validation(&body.validations[0], &mut ctx);
         assert!(res.is_ok());
+        Ok(())
     }
     #[test]
-    fn test_evaluate_validation_null_condition_errors() {
+    fn test_evaluate_validation_null_condition_errors() -> Result<(), HclError> {
         let mut ctx = setup_var_context(&[("flag", Value::null(Type::Bool))]);
         let input = r#"
             validation {
@@ -282,18 +276,19 @@ mod tests {
                 error_message = "Flag must not be null."
             }
         "#;
-        let body = parse(input).unwrap();
-        let res = evaluate_validation(&body.validations[0], &mut ctx);
-        assert!(res.is_err());
-        let errs = res.unwrap_err();
+        let body = parse(input)?;
+        let Err(errs) = evaluate_validation(&body.validations[0], &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert!(
             errs.errors()[0]
                 .to_string()
                 .contains("condition evaluated to null")
         );
+        Ok(())
     }
     #[test]
-    fn test_evaluate_validation_type_mismatch() {
+    fn test_evaluate_validation_type_mismatch() -> Result<(), HclError> {
         let mut ctx = setup_var_context(&[(
             "name",
             Value::new(Type::String, ValueData::String("prod".into())),
@@ -304,18 +299,19 @@ mod tests {
                 error_message = "Should be bool."
             }
         "#;
-        let body = parse(input).unwrap();
-        let res = evaluate_validation(&body.validations[0], &mut ctx);
-        assert!(res.is_err());
-        let errs = res.unwrap_err();
+        let body = parse(input)?;
+        let Err(errs) = evaluate_validation(&body.validations[0], &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert!(
             errs.errors()[0]
                 .to_string()
                 .contains("condition must evaluate to bool")
         );
+        Ok(())
     }
     #[test]
-    fn test_evaluate_precondition_and_postcondition() {
+    fn test_evaluate_precondition_and_postcondition() -> Result<(), HclError> {
         let mut ctx = setup_var_context(&[
             ("ready", Value::new(Type::Bool, ValueData::Bool(true))),
             ("health", Value::new(Type::Bool, ValueData::Bool(false))),
@@ -332,24 +328,27 @@ mod tests {
                 }
             }
         "#;
-        let body = parse(input).unwrap();
+        let body = parse(input)?;
         let lifecycle_block = &body.blocks[0];
         assert_eq!(lifecycle_block.body.preconditions.len(), 1);
         assert_eq!(lifecycle_block.body.postconditions.len(), 1);
         let pre_res = evaluate_precondition(&lifecycle_block.body.preconditions[0], &mut ctx);
         assert!(pre_res.is_ok());
-        let post_res = evaluate_postcondition(&lifecycle_block.body.postconditions[0], &mut ctx);
-        assert!(post_res.is_err());
-        let post_errs = post_res.unwrap_err();
+        let Err(post_errs) =
+            evaluate_postcondition(&lifecycle_block.body.postconditions[0], &mut ctx)
+        else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert_eq!(post_errs.errors()[0].summary_str(), "Postcondition failed");
         assert!(
             post_errs.errors()[0]
                 .to_string()
                 .contains("Unhealthy status")
         );
+        Ok(())
     }
     #[test]
-    fn test_evaluate_all_validations_recursive() {
+    fn test_evaluate_all_validations_recursive() -> Result<(), HclError> {
         let mut ctx = setup_var_context(&[
             ("val1", Value::new(Type::Bool, ValueData::Bool(true))),
             ("val2", Value::new(Type::Bool, ValueData::Bool(false))),
@@ -378,10 +377,10 @@ mod tests {
                 }
             }
         "#;
-        let body = parse(input).unwrap();
-        let all_res = evaluate_all_validations(&body, &mut ctx);
-        assert!(all_res.is_err());
-        let errs = all_res.unwrap_err();
+        let body = parse(input)?;
+        let Err(errs) = evaluate_all_validations(&body, &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert_eq!(errs.errors().len(), 3);
         assert!(
             errs.errors()
@@ -398,31 +397,33 @@ mod tests {
                 .iter()
                 .any(|e| e.to_string().contains("Postcondition failed"))
         );
+        Ok(())
     }
     #[test]
-    fn test_evaluate_validation_error_in_error_message_expr() {
+    fn test_evaluate_validation_error_in_error_message_expr() -> Result<(), HclError> {
         let mut ctx = Context::new();
         let val_block = ValidationBlock::new(
             Expression::Bool(false, empty_span()),
             Expression::Variable("undefined_variable_in_msg".to_string(), empty_span()),
             empty_span(),
         );
-        let res = evaluate_validation(&val_block, &mut ctx);
-        assert!(res.is_err());
-        let errs = res.unwrap_err();
+        let Err(errs) = evaluate_validation(&val_block, &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert!(errs.errors()[0].to_string().contains("Unknown variable"));
+        Ok(())
     }
     #[test]
-    fn test_evaluate_validation_non_string_error_messages() {
+    fn test_evaluate_validation_non_string_error_messages() -> Result<(), HclError> {
         let mut ctx = Context::new();
         let val_block_bool = ValidationBlock::new(
             Expression::Bool(false, empty_span()),
             Expression::Bool(false, empty_span()),
             empty_span(),
         );
-        let res = evaluate_validation(&val_block_bool, &mut ctx);
-        assert!(res.is_err());
-        let errs = res.unwrap_err();
+        let Err(errs) = evaluate_validation(&val_block_bool, &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert!(errs.errors()[0].to_string().contains("false"));
         let val_block_tuple = ValidationBlock::new(
             Expression::Bool(false, empty_span()),
@@ -436,13 +437,14 @@ mod tests {
             Expression::Number(404.into(), empty_span()),
             empty_span(),
         );
-        let res = evaluate_validation(&val_block_num, &mut ctx);
-        assert!(res.is_err());
-        let errs = res.unwrap_err();
+        let Err(errs) = evaluate_validation(&val_block_num, &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert!(errs.errors()[0].to_string().contains("404"));
+        Ok(())
     }
     #[test]
-    fn test_evaluate_validation_condition_corrupted_data() {
+    fn test_evaluate_validation_condition_corrupted_data() -> Result<(), HclError> {
         let mut ctx = Context::new();
         ctx.set_variable(
             "bad_bool",
@@ -453,13 +455,14 @@ mod tests {
             Expression::String("error".to_string(), empty_span()),
             empty_span(),
         );
-        let res = evaluate_validation(&val_block, &mut ctx);
-        assert!(res.is_err());
-        let errs = res.unwrap_err();
+        let Err(errs) = evaluate_validation(&val_block, &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert_eq!(errs.errors()[0].summary_str(), "Invalid condition value");
+        Ok(())
     }
     #[test]
-    fn test_evaluate_precondition_postcondition_type_error() {
+    fn test_evaluate_precondition_postcondition_type_error() -> Result<(), HclError> {
         let mut ctx = Context::new();
         ctx.set_variable(
             "bad_cond",
@@ -470,23 +473,23 @@ mod tests {
             Expression::String("error".to_string(), empty_span()),
             empty_span(),
         );
-        let res_pre = evaluate_precondition(&pre, &mut ctx);
-        assert!(res_pre.is_err());
-        assert_eq!(
-            res_pre.unwrap_err().errors()[0].summary_str(),
-            "Invalid condition type"
-        );
+        let Err(errs_pre) = evaluate_precondition(&pre, &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
+        assert_eq!(errs_pre.errors()[0].summary_str(), "Invalid condition type");
         let post = PostconditionBlock::new(
             Expression::Variable("bad_cond".to_string(), empty_span()),
             Expression::String("error".to_string(), empty_span()),
             empty_span(),
         );
-        let res_post = evaluate_postcondition(&post, &mut ctx);
-        assert!(res_post.is_err());
+        let Err(errs_post) = evaluate_postcondition(&post, &mut ctx) else {
+            return Err(HclError::Validation("expected error".to_string()));
+        };
         assert_eq!(
-            res_post.unwrap_err().errors()[0].summary_str(),
+            errs_post.errors()[0].summary_str(),
             "Invalid condition type"
         );
+        Ok(())
     }
     #[test]
     fn test_evaluate_validation_condition_eval_failure() {
@@ -500,7 +503,7 @@ mod tests {
         assert!(res.is_err());
     }
     #[test]
-    fn test_evaluate_all_validations_all_pass() {
+    fn test_evaluate_all_validations_all_pass() -> Result<(), HclError> {
         let mut ctx = Context::new();
         let input = r#"
             validation {
@@ -518,8 +521,9 @@ mod tests {
                 }
             }
         "#;
-        let body = parse(input).unwrap();
+        let body = parse(input)?;
         let res = evaluate_all_validations(&body, &mut ctx);
         assert!(res.is_ok());
+        Ok(())
     }
 }

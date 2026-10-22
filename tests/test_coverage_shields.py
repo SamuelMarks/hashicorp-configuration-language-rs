@@ -346,9 +346,19 @@ class TestCoverageShields(unittest.TestCase):
         mock_which.side_effect = lambda cmd: "/usr/bin/" + cmd
         repo_root = Path("/dummy/repo")
 
-        # 1. With lines count > 0
+        # 1. With lines, functions, and branches count > 0
         llvm_json = json.dumps(
-            {"data": [{"totals": {"lines": {"count": 200, "covered": 180}}}]}
+            {
+                "data": [
+                    {
+                        "totals": {
+                            "lines": {"count": 200, "covered": 180},
+                            "functions": {"count": 50, "covered": 50},
+                            "branches": {"count": 100, "covered": 95},
+                        }
+                    }
+                ]
+            }
         )
         mock_run.return_value = MagicMock(returncode=0, stdout=llvm_json, stderr="")
         pct = compute_test_coverage(repo_root)
@@ -363,6 +373,14 @@ class TestCoverageShields(unittest.TestCase):
         )
         pct2 = compute_test_coverage(repo_root)
         self.assertEqual(pct2, 88.4)
+
+        # 3. With empty totals
+        llvm_json_empty = json.dumps({"data": [{"totals": {}}]})
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout=llvm_json_empty, stderr=""
+        )
+        pct3 = compute_test_coverage(repo_root)
+        self.assertEqual(pct3, 0.0)
 
     @patch("shutil.which")
     @patch("subprocess.run")
@@ -554,11 +572,11 @@ class TestCoverageShields(unittest.TestCase):
         )
 
         with patch.object(Path, "exists", return_value=True):
-            # First run: modifies file -> returns 1
+            # First run: modifies file -> returns 0
             m = mock_open(read_data=initial_readme)
             with patch("builtins.open", m):
                 code = main([])
-                self.assertEqual(code, 1)
+                self.assertEqual(code, 0)
                 m().write.assert_called_once_with(updated_readme)
 
             # Second run on already-updated content: unmodified -> returns 0

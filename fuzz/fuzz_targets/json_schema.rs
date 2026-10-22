@@ -1,3 +1,4 @@
+//! Fuzz target for schema-driven JSON configuration parsing.
 #![no_main]
 use hashicorp_configuration_language_rs::ast::schema::BodySchema;
 use hashicorp_configuration_language_rs::parse::json::parse_json_with_schema;

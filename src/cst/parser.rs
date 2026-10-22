@@ -7,47 +7,52 @@ use crate::lex::token::{Token, TokenKind};
 pub struct CstParser<'a> {
     lexer: Lexer<'a>,
     current: Option<Token>,
+    lex_error: Option<String>,
 }
 impl<'a> CstParser<'a> {
     /// Create a new CST parser for the given input.
     #[must_use]
     pub fn new(input: &'a str) -> Self {
         let mut lexer = Lexer::new(input);
-        let current = loop {
-            match lexer.next() {
-                Some(Ok(t)) => break Some(t),
-                Some(Err(_)) => {}
-                None => break None,
+        let mut lex_error = None;
+        let current = match lexer.next() {
+            Some(Ok(t)) => Some(t),
+            Some(Err(err)) => {
+                lex_error = Some(format!("Unexpected token '{}'", err.text));
+                None
             }
+            None => None,
         };
-        Self { lexer, current }
+        Self {
+            lexer,
+            current,
+            lex_error,
+        }
     }
     /// Advance the lexer and return the consumed token.
     fn advance(&mut self) -> Option<Token> {
         let current = self.current.take();
-        self.current = loop {
-            match self.lexer.next() {
-                Some(Ok(t)) => break Some(t),
-                Some(Err(_)) => {}
-                None => break None,
+        self.current = match self.lexer.next() {
+            Some(Ok(t)) => Some(t),
+            Some(Err(err)) => {
+                self.lex_error = Some(format!("Unexpected token '{}'", err.text));
+                None
             }
+            None => None,
         };
         current
     }
     /// Peek at the current token.
-    fn peek(&self) -> Option<&Token> {
+    const fn peek(&self) -> Option<&Token> {
         self.current.as_ref()
     }
     /// Consumes and returns the currently peeked token.
     fn consume_current(&mut self) -> Token {
-        match self.advance() {
-            Some(tok) => tok,
-            None => Token {
-                kind: TokenKind::Whitespace,
-                text: String::new(),
-                span: crate::span::Span::new(0, 0, 1, 1, 1, 1),
-            },
-        }
+        self.advance().unwrap_or_else(|| Token {
+            kind: TokenKind::Whitespace,
+            text: String::new(),
+            span: crate::span::Span::new(0, 0, 1, 1, 1, 1),
+        })
     }
     /// Advance and return the next token if it matches a formatting token.
     fn pop_formatting(&mut self) -> Option<Token> {
@@ -83,6 +88,9 @@ impl<'a> CstParser<'a> {
     fn parse_document(&mut self, is_block_body: bool) -> Result<Document, HclError> {
         let mut doc = Document::new();
         doc.leading = self.consume_formatting();
+        if let Some(err) = self.lex_error.take() {
+            return Err(HclError::Lex(err));
+        }
         while let Some(tok) = self.peek() {
             if is_block_body && tok.kind == TokenKind::CBrace {
                 break;
@@ -90,6 +98,9 @@ impl<'a> CstParser<'a> {
             if tok.kind == TokenKind::Ident {
                 let ident = self.consume_current();
                 let post_ident_formatting = self.consume_formatting();
+                if let Some(err) = self.lex_error.take() {
+                    return Err(HclError::Lex(err));
+                }
                 if let Some(next) = self.peek() {
                     if next.kind == TokenKind::Assign {
                         let equals = self.consume_current();
@@ -97,6 +108,9 @@ impl<'a> CstParser<'a> {
                         let mut expr_tokens = Vec::new();
                         expr_tokens.extend(post_equals.tokens);
                         let trailing = self.parse_attribute_expr(&mut expr_tokens);
+                        if let Some(err) = self.lex_error.take() {
+                            return Err(HclError::Lex(err));
+                        }
                         let mut leading = TokenStream::new();
                         std::mem::swap(&mut leading, &mut doc.trailing);
                         let attr = Attribute {
@@ -107,8 +121,7 @@ impl<'a> CstParser<'a> {
                             expr_tokens,
                             trailing,
                         };
-                        doc.items.push(DocumentItem::Attribute(attr.clone()));
-                        doc.attributes.push(attr);
+                        doc.items.push(DocumentItem::Attribute(attr));
                     } else if next.kind == TokenKind::Ident
                         || next.kind == TokenKind::String
                         || next.kind == TokenKind::OBrace
@@ -123,6 +136,9 @@ impl<'a> CstParser<'a> {
                                 }
                                 _ => break,
                             }
+                        }
+                        if let Some(err) = self.lex_error.take() {
+                            return Err(HclError::Lex(err));
                         }
                         if let Some(open_brace) = self.peek() {
                             if open_brace.kind == TokenKind::OBrace {
@@ -140,8 +156,7 @@ impl<'a> CstParser<'a> {
                                     close_brace: close_brace_tok,
                                     trailing: TokenStream::new(),
                                 };
-                                doc.items.push(DocumentItem::Block(block.clone()));
-                                doc.blocks.push(block);
+                                doc.items.push(DocumentItem::Block(block));
                             } else {
                                 return Err(HclError::Parse(format!(
                                     "Expected '{{' after block labels, found {:?}",
@@ -166,6 +181,9 @@ impl<'a> CstParser<'a> {
                 return Err(HclError::Parse(format!("Unexpected token: {:?}", tok.kind)));
             }
             doc.trailing.tokens.extend(self.consume_formatting().tokens);
+            if let Some(err) = self.lex_error.take() {
+                return Err(HclError::Lex(err));
+            }
         }
         Ok(doc)
     }
@@ -203,26 +221,20 @@ impl<'a> CstParser<'a> {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
-    fn test_cst_parser_basic_attribute() {
+    fn test_cst_parser_basic_attribute() -> Result<(), HclError> {
         let input = "  foo = 123 \n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
+        let doc = parser.parse()?;
         assert_eq!(doc.leading.tokens.len(), 1);
         assert_eq!(doc.leading.tokens[0].kind, TokenKind::Whitespace);
-        assert_eq!(doc.attributes.len(), 1);
-        let attr = &doc.attributes[0];
+        assert_eq!(doc.attributes().len(), 1);
+        let attr = doc.attributes()[0];
         assert_eq!(attr.name.text, "foo");
         assert_eq!(attr.expr_tokens.len(), 3);
         assert_eq!(attr.trailing.tokens.len(), 1);
+        Ok(())
     }
     #[test]
     fn test_cst_parser_unexpected_eof() {
@@ -239,26 +251,27 @@ mod tests {
         assert!(CstParser::new(invalid).parse().is_err());
     }
     #[test]
-    fn test_cst_parser_block_empty() {
+    fn test_cst_parser_block_empty() -> Result<(), HclError> {
         let input = "block {}";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.blocks.len(), 1);
-        let block = &doc.blocks[0];
+        let doc = parser.parse()?;
+        assert_eq!(doc.blocks().len(), 1);
+        let block = doc.blocks()[0];
         assert_eq!(block.type_ident.text, "block");
         assert_eq!(block.labels.len(), 1);
         assert_eq!(block.open_brace.text, "{");
         assert_eq!(block.close_brace.text, "}");
-        assert_eq!(block.body.attributes.len(), 0);
-        assert_eq!(block.body.blocks.len(), 0);
+        assert_eq!(block.body.attributes().len(), 0);
+        assert_eq!(block.body.blocks().len(), 0);
+        Ok(())
     }
     #[test]
-    fn test_cst_parser_block_with_labels() {
+    fn test_cst_parser_block_with_labels() -> Result<(), HclError> {
         let input = "resource \"aws_instance\" web { foo = 123 }";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.blocks.len(), 1);
-        let block = &doc.blocks[0];
+        let doc = parser.parse()?;
+        assert_eq!(doc.blocks().len(), 1);
+        let block = doc.blocks()[0];
         assert_eq!(block.type_ident.text, "resource");
         assert_eq!(block.labels.len(), 5);
         assert_eq!(block.labels[0].kind, TokenKind::Whitespace);
@@ -268,30 +281,33 @@ mod tests {
         assert_eq!(block.labels[3].kind, TokenKind::Ident);
         assert_eq!(block.labels[3].text, "web");
         assert_eq!(block.labels[4].kind, TokenKind::Whitespace);
-        assert_eq!(block.body.attributes.len(), 1);
-        assert_eq!(block.body.attributes[0].name.text, "foo");
+        assert_eq!(block.body.attributes().len(), 1);
+        assert_eq!(block.body.attributes()[0].name.text, "foo");
+        Ok(())
     }
     #[test]
-    fn test_cst_parser_block_nested() {
+    fn test_cst_parser_block_nested() -> Result<(), HclError> {
         let input = "block { nested { a = b } }";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.blocks.len(), 1);
-        let block = &doc.blocks[0];
-        assert_eq!(block.body.blocks.len(), 1);
-        assert_eq!(block.body.blocks[0].type_ident.text, "nested");
-        assert_eq!(block.body.blocks[0].body.attributes.len(), 1);
+        let doc = parser.parse()?;
+        assert_eq!(doc.blocks().len(), 1);
+        let block = doc.blocks()[0];
+        assert_eq!(block.body.blocks().len(), 1);
+        assert_eq!(block.body.blocks()[0].type_ident.text, "nested");
+        assert_eq!(block.body.blocks()[0].body.attributes().len(), 1);
+        Ok(())
     }
     #[test]
-    fn test_cst_parser_bracket_paren() {
+    fn test_cst_parser_bracket_paren() -> Result<(), HclError> {
         let input = "foo = [ ( 1 ) ]\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.attributes[0].expr_tokens.len(), 10);
+        let doc = parser.parse()?;
+        assert_eq!(doc.attributes()[0].expr_tokens.len(), 10);
         let input_unmatched = "foo = ) ]\n";
         let parser = CstParser::new(input_unmatched);
-        let doc_unmatched = parser.parse().unwrap();
-        assert_eq!(doc_unmatched.attributes[0].expr_tokens.len(), 4);
+        let doc_unmatched = parser.parse()?;
+        assert_eq!(doc_unmatched.attributes()[0].expr_tokens.len(), 4);
+        Ok(())
     }
     #[test]
     fn test_cst_parser_block_errors() {
@@ -330,21 +346,33 @@ mod tests {
     fn test_cst_parser_lexer_error() {
         let input = "`";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.attributes.len(), 0);
+        assert!(matches!(parser.parse(), Err(HclError::Lex(_))));
     }
     #[test]
     fn test_cst_parser_lexer_error_advance() {
         let input = "foo = `";
         let parser = CstParser::new(input);
-        assert!(parser.parse().is_ok());
+        assert!(matches!(parser.parse(), Err(HclError::Lex(_))));
+        assert!(matches!(
+            CstParser::new("foo `").parse(),
+            Err(HclError::Lex(_))
+        ));
+        assert!(matches!(
+            CstParser::new("block \"label\" `").parse(),
+            Err(HclError::Lex(_))
+        ));
+        assert!(matches!(
+            CstParser::new("foo = 1\n`").parse(),
+            Err(HclError::Lex(_))
+        ));
     }
     #[test]
-    fn test_cst_parser_brace_nesting() {
+    fn test_cst_parser_brace_nesting() -> Result<(), HclError> {
         let input = "foo = { a = 1 }\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.attributes[0].expr_tokens.len(), 10);
+        let doc = parser.parse()?;
+        assert_eq!(doc.attributes()[0].expr_tokens.len(), 10);
+        Ok(())
     }
     #[test]
     fn test_cst_parser_brace_mismatch() {
@@ -353,27 +381,29 @@ mod tests {
         assert!(parser.parse().is_err());
     }
     #[test]
-    fn test_cst_parser_inline_comment() {
+    fn test_cst_parser_inline_comment() -> Result<(), HclError> {
         let input = "foo = 1 // comment\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.attributes[0].expr_tokens.len(), 3);
+        let doc = parser.parse()?;
+        assert_eq!(doc.attributes()[0].expr_tokens.len(), 3);
         assert_eq!(
-            doc.attributes[0].trailing.tokens[0].kind,
+            doc.attributes()[0].trailing.tokens[0].kind,
             TokenKind::InlineComment
         );
+        Ok(())
     }
     #[test]
-    fn test_cst_parser_inline_comment_nested() {
+    fn test_cst_parser_inline_comment_nested() -> Result<(), HclError> {
         let input = "foo = { 1 // comment \n}\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
+        let doc = parser.parse()?;
         assert!(
-            doc.attributes[0]
+            doc.attributes()[0]
                 .expr_tokens
                 .iter()
                 .any(|t| t.kind == TokenKind::InlineComment)
         );
+        Ok(())
     }
     #[test]
     fn test_cst_parser_advance_expect_eof() {
@@ -406,16 +436,21 @@ mod tests {
         );
     }
     #[test]
-    fn test_cst_parser_comments_and_formatting() {
+    fn test_cst_parser_comments_and_formatting() -> Result<(), HclError> {
         let input = "# top comment\n/* block comment */\nfoo = 1\n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
-        assert_eq!(doc.attributes.len(), 1);
+        let doc = parser.parse()?;
+        assert_eq!(doc.attributes().len(), 1);
         assert!(
             doc.leading
                 .tokens
                 .iter()
                 .any(|t| t.kind == TokenKind::Comment)
         );
+        let trailing_lex_err = CstParser::new("foo = 1\n@").parse();
+        assert!(trailing_lex_err.is_err());
+        let block_trailing_lex_err = CstParser::new("block {\n}\n@").parse();
+        assert!(block_trailing_lex_err.is_err());
+        Ok(())
     }
 }

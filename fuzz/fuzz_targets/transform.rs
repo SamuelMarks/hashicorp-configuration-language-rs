@@ -1,3 +1,4 @@
+//! Fuzz target for AST body transformations (`ext::transform`).
 #![no_main]
 use hashicorp_configuration_language_rs::ext::transform::{PrefixTransformer, TransformedBody};
 use hashicorp_configuration_language_rs::parse::parser::Parser;

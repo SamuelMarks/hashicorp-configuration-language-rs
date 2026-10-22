@@ -3,43 +3,10 @@
 //! Provides a stable C-compatible API with opaque pointer handles for parsing,
 //! evaluation, formatting, and diagnostics management.
 
-#![deny(clippy::all, clippy::pedantic)]
+#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
 #![deny(missing_docs)]
-#![allow(clippy::use_self)]
-#![allow(clippy::option_if_let_else)]
-#![allow(clippy::missing_const_for_fn)]
-#![allow(clippy::redundant_clone)]
-#![allow(clippy::suspicious_operation_groupings)]
-#![allow(clippy::needless_collect)]
-#![allow(clippy::match_wildcard_for_single_variants)]
-#![allow(clippy::uninlined_format_args)]
-#![allow(clippy::redundant_closure_for_method_calls)]
-#![allow(clippy::iter_on_single_items)]
-#![allow(clippy::trivial_regex)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::or_fun_call)]
-#![allow(clippy::similar_names)]
-#![allow(clippy::if_not_else)]
-#![allow(clippy::format_push_string)]
-#![allow(clippy::unused_self)]
-#![allow(clippy::derive_partial_eq_without_eq)]
-#![allow(clippy::equatable_if_let)]
-#![allow(clippy::branches_sharing_code)]
-#![allow(clippy::significant_drop_tightening)]
-#![allow(clippy::suboptimal_flops)]
-#![allow(clippy::useless_let_if_seq)]
-#![allow(clippy::collection_is_never_read)]
-#![allow(clippy::literal_string_with_formatting_args)]
-#![allow(clippy::string_lit_as_bytes)]
+#![deny(rustdoc::missing_crate_level_docs)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![allow(unsafe_op_in_unsafe_fn)]
 
 use hashicorp_configuration_language_rs::ast::structure::Body;
 use hashicorp_configuration_language_rs::cst::format::format_str;
@@ -89,6 +56,14 @@ pub unsafe extern "C" fn hcl_context_new() -> *mut hcl_context_t {
 
 /// Binds a named variable into an evaluation context.
 ///
+/// # Arguments
+/// * `ctx` - Mutable pointer to an [`hcl_context_t`].
+/// * `name` - Null-terminated UTF-8 variable name.
+/// * `val` - Pointer to an [`hcl_value_t`] to bind.
+///
+/// # Returns
+/// `0` on success, or `-1` if any pointer is null or `name` is invalid UTF-8.
+///
 /// # Safety
 /// * `ctx` must be a valid, non-null pointer to an [`hcl_context_t`].
 /// * `name` must be a valid null-terminated C string.
@@ -103,22 +78,30 @@ pub unsafe extern "C" fn hcl_context_set_variable(
         return -1;
     }
 
-    let Ok(c_str) = CStr::from_ptr(name).to_str() else {
+    // SAFETY: Caller guarantees `name` is a non-null, null-terminated C string.
+    let Ok(c_str) = unsafe { CStr::from_ptr(name) }.to_str() else {
         return -1;
     };
 
-    (*ctx).inner.set_variable(c_str, (*val).inner.clone());
+    // SAFETY: Caller guarantees `ctx` and `val` are valid pointers.
+    unsafe {
+        (*ctx).inner.set_variable(c_str, (*val).inner.clone());
+    }
     0
 }
 
 /// Releases an evaluation context handle.
+///
+/// # Arguments
+/// * `ctx` - Pointer to the context handle to free.
 ///
 /// # Safety
 /// * `ctx` must be a pointer returned by [`hcl_context_new`] or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hcl_free_context(ctx: *mut hcl_context_t) {
     if !ctx.is_null() {
-        drop(Box::from_raw(ctx));
+        // SAFETY: Caller guarantees `ctx` was allocated via `hcl_context_new`.
+        drop(unsafe { Box::from_raw(ctx) });
     }
 }
 
@@ -145,7 +128,8 @@ pub unsafe extern "C" fn hcl_parse_string(
         return -1;
     }
 
-    let Ok(input_str) = CStr::from_ptr(input).to_str() else {
+    // SAFETY: Caller guarantees `input` is a valid null-terminated C string.
+    let Ok(input_str) = unsafe { CStr::from_ptr(input) }.to_str() else {
         return -1;
     };
 
@@ -155,8 +139,11 @@ pub unsafe extern "C" fn hcl_parse_string(
 
     let has_errors = diags.has_errors();
 
-    *out_body = Box::into_raw(Box::new(hcl_body_t { inner: body }));
-    *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t { inner: diags }));
+    // SAFETY: Caller guarantees `out_body` and `out_diags` are valid writable pointers.
+    unsafe {
+        *out_body = Box::into_raw(Box::new(hcl_body_t { inner: body }));
+        *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t { inner: diags }));
+    }
 
     i32::from(has_errors)
 }
@@ -188,14 +175,20 @@ pub unsafe extern "C" fn hcl_evaluate(
     let mut obj_attrs = BTreeMap::new();
     let mut attr_types = BTreeMap::new();
 
-    for (k, attr) in &(*body).inner.attributes {
-        let eval = Evaluator::new(&(*ctx).inner);
+    // SAFETY: Caller guarantees `body` and `ctx` are valid non-null pointers.
+    let attributes = unsafe { &(*body).inner.attributes };
+    for (k, attr) in attributes {
+        // SAFETY: Caller guarantees `ctx` is valid.
+        let eval = Evaluator::new(unsafe { &(*ctx).inner });
         match eval.evaluate(&attr.expr) {
             Ok((val, d)) => {
                 accumulated_diags.extend(d);
                 attr_types.insert(k.clone(), val.ty().clone());
                 obj_attrs.insert(k.clone(), val.clone());
-                (*ctx).inner.set_variable(k.clone(), val);
+                // SAFETY: Caller guarantees `ctx` is valid.
+                unsafe {
+                    (*ctx).inner.set_variable(k.clone(), val);
+                }
             }
             Err(d) => {
                 accumulated_diags.extend(d);
@@ -203,9 +196,12 @@ pub unsafe extern "C" fn hcl_evaluate(
         }
     }
 
-    *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t {
-        inner: accumulated_diags,
-    }));
+    // SAFETY: Caller guarantees `out_diags` is a valid writable pointer.
+    unsafe {
+        *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t {
+            inner: accumulated_diags,
+        }));
+    }
 
     let result_val = Value::new(Type::object(attr_types), ValueData::Object(obj_attrs));
     Box::into_raw(Box::new(hcl_value_t { inner: result_val }))
@@ -234,17 +230,21 @@ pub unsafe extern "C" fn hcl_format_string(
         return -1;
     }
 
-    let Ok(input_str) = CStr::from_ptr(input).to_str() else {
+    // SAFETY: Caller guarantees `input` is a valid null-terminated C string.
+    let Ok(input_str) = unsafe { CStr::from_ptr(input) }.to_str() else {
         return -1;
     };
 
     match format_str(input_str) {
         Ok(formatted) => {
             let c_string = CString::new(formatted).unwrap_or_default();
-            *out_str = c_string.into_raw();
-            *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t {
-                inner: Diagnostics::new(),
-            }));
+            // SAFETY: Caller guarantees `out_str` and `out_diags` are valid writable pointers.
+            unsafe {
+                *out_str = c_string.into_raw();
+                *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t {
+                    inner: Diagnostics::new(),
+                }));
+            }
             0
         }
         Err(err) => {
@@ -256,8 +256,11 @@ pub unsafe extern "C" fn hcl_format_string(
                     hashicorp_configuration_language_rs::span::Span::default(),
                 ),
             );
-            *out_str = std::ptr::null_mut();
-            *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t { inner: diags }));
+            // SAFETY: Caller guarantees `out_str` and `out_diags` are valid writable pointers.
+            unsafe {
+                *out_str = std::ptr::null_mut();
+                *out_diags = Box::into_raw(Box::new(hcl_diagnostics_t { inner: diags }));
+            }
             1
         }
     }
@@ -265,49 +268,68 @@ pub unsafe extern "C" fn hcl_format_string(
 
 /// Releases an AST body handle.
 ///
+/// # Arguments
+/// * `body` - Pointer to the body handle to free.
+///
 /// # Safety
 /// `body` must be a pointer returned by [`hcl_parse_string`] or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hcl_free_body(body: *mut hcl_body_t) {
     if !body.is_null() {
-        drop(Box::from_raw(body));
+        // SAFETY: Caller guarantees `body` was allocated via `hcl_parse_string`.
+        drop(unsafe { Box::from_raw(body) });
     }
 }
 
 /// Releases a value handle.
+///
+/// # Arguments
+/// * `val` - Pointer to the value handle to free.
 ///
 /// # Safety
 /// `val` must be a pointer returned by [`hcl_evaluate`] or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hcl_free_value(val: *mut hcl_value_t) {
     if !val.is_null() {
-        drop(Box::from_raw(val));
+        // SAFETY: Caller guarantees `val` was allocated via `hcl_evaluate`.
+        drop(unsafe { Box::from_raw(val) });
     }
 }
 
 /// Releases a diagnostics collection handle.
+///
+/// # Arguments
+/// * `diags` - Pointer to the diagnostics handle to free.
 ///
 /// # Safety
 /// `diags` must be a pointer returned by an FFI function or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hcl_free_diagnostics(diags: *mut hcl_diagnostics_t) {
     if !diags.is_null() {
-        drop(Box::from_raw(diags));
+        // SAFETY: Caller guarantees `diags` was allocated via this FFI library.
+        drop(unsafe { Box::from_raw(diags) });
     }
 }
 
 /// Releases a string allocated by this library.
+///
+/// # Arguments
+/// * `str_ptr` - Pointer to the C string to free.
 ///
 /// # Safety
 /// `str_ptr` must be a pointer returned by an FFI function or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hcl_free_string(str_ptr: *mut c_char) {
     if !str_ptr.is_null() {
-        drop(CString::from_raw(str_ptr));
+        // SAFETY: Caller guarantees `str_ptr` was allocated via `CString::into_raw`.
+        drop(unsafe { CString::from_raw(str_ptr) });
     }
 }
 
 /// Returns the number of diagnostics in a diagnostics handle.
+///
+/// # Arguments
+/// * `diags` - Pointer to the diagnostics handle.
 ///
 /// # Safety
 /// `diags` must be a valid, non-null pointer to an [`hcl_diagnostics_t`].
@@ -316,11 +338,15 @@ pub unsafe extern "C" fn hcl_diagnostics_count(diags: *const hcl_diagnostics_t) 
     if diags.is_null() {
         0
     } else {
-        (*diags).inner.errors().len()
+        // SAFETY: Caller guarantees `diags` is a valid pointer.
+        unsafe { (*diags).inner.errors().len() }
     }
 }
 
 /// Returns `true` if the diagnostics collection contains error-level items.
+///
+/// # Arguments
+/// * `diags` - Pointer to the diagnostics handle.
 ///
 /// # Safety
 /// `diags` must be a valid, non-null pointer to an [`hcl_diagnostics_t`].
@@ -329,11 +355,15 @@ pub unsafe extern "C" fn hcl_diagnostics_has_errors(diags: *const hcl_diagnostic
     if diags.is_null() {
         false
     } else {
-        (*diags).inner.has_errors()
+        // SAFETY: Caller guarantees `diags` is a valid pointer.
+        unsafe { (*diags).inner.has_errors() }
     }
 }
 
 /// Serializes diagnostics to a JSON string.
+///
+/// # Arguments
+/// * `diags` - Pointer to the diagnostics handle.
 ///
 /// # Safety
 /// The returned pointer must be released with [`hcl_free_string`].
@@ -342,11 +372,15 @@ pub unsafe extern "C" fn hcl_diagnostics_to_json(diags: *const hcl_diagnostics_t
     if diags.is_null() {
         return std::ptr::null_mut();
     }
-    let json = (*diags).inner.to_json(None).unwrap_or_default();
+    // SAFETY: Caller guarantees `diags` is a valid pointer.
+    let json = (unsafe { (*diags).inner.to_json(None) }).unwrap_or_default();
     CString::new(json).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
 /// Serializes a value to its JSON string representation.
+///
+/// # Arguments
+/// * `val` - Pointer to the value handle.
 ///
 /// # Safety
 /// The returned pointer must be released with [`hcl_free_string`].
@@ -355,14 +389,20 @@ pub unsafe extern "C" fn hcl_value_to_json(val: *const hcl_value_t) -> *mut c_ch
     if val.is_null() {
         return std::ptr::null_mut();
     }
-    let json = encode_value_to_json(&(*val).inner)
+    // SAFETY: Caller guarantees `val` is a valid pointer.
+    let Some(json) = encode_value_to_json(unsafe { &(*val).inner })
         .ok()
         .and_then(|v| serde_json::to_string(&v).ok())
-        .unwrap_or_default();
+    else {
+        return std::ptr::null_mut();
+    };
     CString::new(json).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
 /// Returns the type description of a value as a C string.
+///
+/// # Arguments
+/// * `val` - Pointer to the value handle.
 ///
 /// # Safety
 /// The returned pointer must be released with [`hcl_free_string`].
@@ -371,7 +411,8 @@ pub unsafe extern "C" fn hcl_value_type(val: *const hcl_value_t) -> *mut c_char 
     if val.is_null() {
         return std::ptr::null_mut();
     }
-    let ty_str = (*val).inner.ty().to_string();
+    // SAFETY: Caller guarantees `val` is a valid pointer.
+    let ty_str = unsafe { (*val).inner.ty().to_string() };
     CString::new(ty_str).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
@@ -381,26 +422,20 @@ mod build_script;
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery,
-        clippy::collection_is_never_read
-    )]
-
     use super::*;
+    use hashicorp_configuration_language_rs::error::HclError;
 
     #[test]
-    fn test_c_abi_parse_evaluate_format_lifecycle() {
+    fn test_c_abi_parse_evaluate_format_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
-            // 1. Context creation
             let ctx = hcl_context_new();
             assert!(!ctx.is_null());
 
-            // 2. Parse string
-            let input = CString::new("port = 8080\nname = \"app\"\n").unwrap();
+            let input = CString::new(
+                r#"port = 8080
+name = "app"
+"#,
+            )?;
             let mut body: *mut hcl_body_t = std::ptr::null_mut();
             let mut diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
 
@@ -410,33 +445,32 @@ mod tests {
             assert_eq!(hcl_diagnostics_count(diags), 0);
             assert!(!hcl_diagnostics_has_errors(diags));
 
-            // Diagnostics to JSON on clean run
             let clean_json = hcl_diagnostics_to_json(diags);
             assert!(!clean_json.is_null());
-            let clean_json_str = CStr::from_ptr(clean_json).to_str().unwrap();
+            let clean_json_str = CStr::from_ptr(clean_json).to_str()?;
             assert!(clean_json_str.contains("[]"));
             hcl_free_string(clean_json);
 
-            // 3. Evaluate body
             let mut eval_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             let val = hcl_evaluate(body, ctx, &raw mut eval_diags);
             assert!(!val.is_null());
             assert!(!hcl_diagnostics_has_errors(eval_diags));
 
-            // Inspect value type and json
             let val_type = hcl_value_type(val);
             assert!(!val_type.is_null());
-            let type_str = CStr::from_ptr(val_type).to_str().unwrap();
+            let type_str = CStr::from_ptr(val_type).to_str()?;
             assert!(type_str.contains("object"));
 
             let val_json = hcl_value_to_json(val);
             assert!(!val_json.is_null());
-            let json_str = CStr::from_ptr(val_json).to_str().unwrap();
+            let json_str = CStr::from_ptr(val_json).to_str()?;
             assert!(json_str.contains("8080"));
             assert!(json_str.contains("app"));
 
-            // 4. Format string
-            let unformatted = CString::new("a=1\n").unwrap();
+            let unformatted = CString::new(
+                "a=1
+",
+            )?;
             let mut formatted_str: *mut c_char = std::ptr::null_mut();
             let mut fmt_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             let fmt_res = hcl_format_string(
@@ -446,14 +480,17 @@ mod tests {
             );
             assert_eq!(fmt_res, 0);
             assert!(!formatted_str.is_null());
-            let res_str = CStr::from_ptr(formatted_str).to_str().unwrap();
-            assert_eq!(res_str, "a = 1\n");
+            let res_str = CStr::from_ptr(formatted_str).to_str()?;
+            assert_eq!(
+                res_str,
+                "a = 1
+"
+            );
 
-            // 5. Context set variable
-            let set_res = hcl_context_set_variable(ctx, CString::new("env").unwrap().as_ptr(), val);
+            let env_name = CString::new("env")?;
+            let set_res = hcl_context_set_variable(ctx, env_name.as_ptr(), val);
             assert_eq!(set_res, 0);
 
-            // 6. Cleanup memory
             hcl_free_string(val_type);
             hcl_free_string(val_json);
             hcl_free_string(formatted_str);
@@ -464,13 +501,13 @@ mod tests {
             hcl_free_diagnostics(fmt_diags);
             hcl_free_context(ctx);
         }
+        Ok(())
     }
 
     #[test]
-    fn test_c_abi_errors_and_diagnostics() {
+    fn test_c_abi_errors_and_diagnostics() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
-            // Parse error
-            let bad_input = CString::new("{ invalid hcl").unwrap();
+            let bad_input = CString::new("{ invalid hcl")?;
             let mut bad_body: *mut hcl_body_t = std::ptr::null_mut();
             let mut bad_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             let parse_err =
@@ -481,13 +518,12 @@ mod tests {
 
             let json_ptr = hcl_diagnostics_to_json(bad_diags);
             assert!(!json_ptr.is_null());
-            let serialized_diag_json = CStr::from_ptr(json_ptr).to_str().unwrap();
+            let serialized_diag_json = CStr::from_ptr(json_ptr).to_str()?;
             assert!(serialized_diag_json.contains("severity"));
             hcl_free_string(json_ptr);
             hcl_free_body(bad_body);
             hcl_free_diagnostics(bad_diags);
 
-            // Format error
             let mut fmt_out: *mut c_char = std::ptr::null_mut();
             let mut fmt_err_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             let fmt_fail =
@@ -497,9 +533,11 @@ mod tests {
             assert!(hcl_diagnostics_has_errors(fmt_err_diags));
             hcl_free_diagnostics(fmt_err_diags);
 
-            // Evaluation error
             let ctx = hcl_context_new();
-            let eval_err_input = CString::new("err_attr = 1 / 0\n").unwrap();
+            let eval_err_input = CString::new(
+                "err_attr = 1 / 0
+",
+            )?;
             let mut eval_body: *mut hcl_body_t = std::ptr::null_mut();
             let mut p_diags: *mut hcl_diagnostics_t = std::ptr::null_mut();
             assert_eq!(
@@ -520,20 +558,36 @@ mod tests {
             hcl_free_body(eval_body);
             hcl_free_diagnostics(eval_fail_diags);
             hcl_free_context(ctx);
+
+            // Capsule value with ops but no string conversion returns error in encode_value_to_json
+            let cap_ty = Type::capsule_with_ops::<i32>(
+                "unserializable",
+                std::sync::Arc::new(
+                    hashicorp_configuration_language_rs::types::ty::CapsuleOps::new(
+                        "unserializable",
+                        std::sync::Arc::new(|_, _| true),
+                        std::sync::Arc::new(|_| 0),
+                    ),
+                ),
+            );
+            let cap_val = Value::new(cap_ty, ValueData::Capsule(std::sync::Arc::new(42_i32)));
+            let cap_handle = Box::into_raw(Box::new(hcl_value_t { inner: cap_val }));
+            assert!(hcl_value_to_json(cap_handle).is_null());
+            hcl_free_value(cap_handle);
         }
+        Ok(())
     }
 
     #[test]
-    fn test_c_abi_null_and_invalid_utf8_safety() {
+    fn test_c_abi_null_and_invalid_utf8_safety() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
-            // Null pointers
             assert_eq!(
                 hcl_parse_string(std::ptr::null(), std::ptr::null_mut(), std::ptr::null_mut()),
                 -1
             );
             let mut b: *mut hcl_body_t = std::ptr::null_mut();
             let mut d: *mut hcl_diagnostics_t = std::ptr::null_mut();
-            let valid = CString::new("a=1").unwrap();
+            let valid = CString::new("a=1")?;
             assert_eq!(
                 hcl_parse_string(valid.as_ptr(), std::ptr::null_mut(), &raw mut d),
                 -1
@@ -550,7 +604,6 @@ mod tests {
             let ctx = hcl_context_new();
             assert!(hcl_evaluate(std::ptr::null(), ctx, &raw mut d).is_null());
 
-            // Parse valid body and evaluate with null ctx / null diags
             assert_eq!(hcl_parse_string(valid.as_ptr(), &raw mut b, &raw mut d), 0);
             assert!(hcl_evaluate(b, std::ptr::null_mut(), &raw mut d).is_null());
             assert!(hcl_evaluate(b, ctx, std::ptr::null_mut()).is_null());
@@ -591,7 +644,6 @@ mod tests {
             assert!(hcl_value_to_json(std::ptr::null()).is_null());
             assert!(hcl_value_type(std::ptr::null()).is_null());
 
-            // Invalid UTF-8 bytes
             let bad_utf8 = [0xff_u8, 0xfe_u8, 0x00_u8];
             let bad_ptr = bad_utf8.as_ptr().cast::<c_char>();
             assert_eq!(hcl_parse_string(bad_ptr, &raw mut b, &raw mut d), -1);
@@ -604,7 +656,6 @@ mod tests {
             assert_eq!(hcl_context_set_variable(test_ctx, bad_ptr, valid_val), -1);
             hcl_free_context(test_ctx);
 
-            // Null frees do not crash
             hcl_free_body(b);
             hcl_free_value(valid_val);
             hcl_free_diagnostics(d);
@@ -615,18 +666,16 @@ mod tests {
             hcl_free_string(std::ptr::null_mut());
             hcl_free_context(std::ptr::null_mut());
         }
+        Ok(())
     }
 
     #[test]
-    fn test_build_script_coverage() {
+    fn test_build_script_coverage() -> Result<(), HclError> {
         build_script::main();
 
         let temp = std::env::temp_dir().join("hcl_ffi_test_build");
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        assert!(
-            build_script::generate_bindings(Some(manifest_dir), Some(&temp.to_string_lossy()))
-                .is_ok()
-        );
+        build_script::generate_bindings(Some(manifest_dir), Some(&temp.to_string_lossy()))?;
 
         assert!(
             build_script::generate_bindings(
@@ -636,36 +685,17 @@ mod tests {
             .is_err()
         );
 
-        unsafe {
-            std::env::set_var("CARGO_TARGET_DIR", "/tmp/custom_target");
-        }
         assert_eq!(
-            build_script::target_dir(),
+            build_script::target_dir(None, Some("/tmp/custom_target")),
             std::path::PathBuf::from("/tmp/custom_target")
         );
-        unsafe {
-            std::env::remove_var("CARGO_TARGET_DIR");
-        }
-        // Test target_dir when CARGO_TARGET_DIR is unset but CARGO_MANIFEST_DIR is set
-        unsafe {
-            std::env::set_var("CARGO_MANIFEST_DIR", manifest_dir);
-        }
-        let target_with_manifest = build_script::target_dir();
+        let target_with_manifest = build_script::target_dir(Some(manifest_dir), None);
         assert!(target_with_manifest.ends_with("target"));
-
-        // Test fallback branches when CARGO_MANIFEST_DIR and OUT_DIR are unset
-        unsafe {
-            std::env::remove_var("CARGO_MANIFEST_DIR");
-            std::env::remove_var("OUT_DIR");
-        }
-        let fallback = build_script::target_dir();
+        let fallback = build_script::target_dir(None, None);
         assert!(fallback.ends_with("target"));
-        let _ = build_script::generate_bindings(None, None);
-
-        unsafe {
-            std::env::set_var("CARGO_MANIFEST_DIR", manifest_dir);
-        }
+        assert!(build_script::generate_bindings(Some(manifest_dir), None).is_ok());
 
         let _ = std::fs::remove_dir_all(temp);
+        Ok(())
     }
 }

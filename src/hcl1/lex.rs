@@ -65,80 +65,8 @@ impl<'a> Hcl1Lexer<'a> {
             let start_byte = self.current_byte();
             let start_line = self.line;
             let start_col = self.col;
-            if c == ' ' || c == '\x09' || c == '\x0d' {
-                let mut text = String::new();
-                while let Some(ch) = self.peek() {
-                    if ch == ' ' || ch == '\x09' || ch == '\x0d' {
-                        text.push(ch);
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-                let end_byte = self.current_byte();
-                let span = Span::new(
-                    start_byte, end_byte, start_line, start_col, self.line, self.col,
-                );
-                tokens.push(Hcl1Token::new(Hcl1TokenKind::Whitespace, text, span));
-                continue;
-            }
-            if c == '\x0a' {
-                self.advance();
-                let end_byte = self.current_byte();
-                let span = Span::new(
-                    start_byte, end_byte, start_line, start_col, self.line, self.col,
-                );
-                tokens.push(Hcl1Token::new(Hcl1TokenKind::Newline, "\n", span));
-                continue;
-            }
-            if c == '#' {
-                let mut text = String::new();
-                while let Some(ch) = self.peek() {
-                    if ch == '\x0a' {
-                        break;
-                    }
-                    text.push(ch);
-                    self.advance();
-                }
-                let end_byte = self.current_byte();
-                let span = Span::new(
-                    start_byte, end_byte, start_line, start_col, self.line, self.col,
-                );
-                tokens.push(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
-                continue;
-            }
-            if c == '/' && self.peek_next() == Some('/') {
-                let mut text = String::new();
-                while let Some(ch) = self.peek() {
-                    if ch == '\x0a' {
-                        break;
-                    }
-                    text.push(ch);
-                    self.advance();
-                }
-                let end_byte = self.current_byte();
-                let span = Span::new(
-                    start_byte, end_byte, start_line, start_col, self.line, self.col,
-                );
-                tokens.push(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
-                continue;
-            }
-            if c == '/' && self.peek_next() == Some('*') {
-                let mut text = String::new();
-                text.push(self.advance().unwrap_or('/'));
-                text.push(self.advance().unwrap_or('*'));
-                while let Some(ch) = self.advance() {
-                    text.push(ch);
-                    if ch == '*' && self.peek() == Some('/') {
-                        text.push(self.advance().unwrap_or('/'));
-                        break;
-                    }
-                }
-                let end_byte = self.current_byte();
-                let span = Span::new(
-                    start_byte, end_byte, start_line, start_col, self.line, self.col,
-                );
-                tokens.push(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
+            if let Some(tok) = self.lex_trivia_or_comment(c, start_byte, start_line, start_col) {
+                tokens.push(tok);
                 continue;
             }
             if c == '<' && self.peek_next() == Some('<') {
@@ -191,6 +119,72 @@ impl<'a> Hcl1Lexer<'a> {
             )));
         }
         Ok(tokens)
+    }
+
+    fn lex_trivia_or_comment(
+        &mut self,
+        c: char,
+        start_byte: usize,
+        start_line: usize,
+        start_col: usize,
+    ) -> Option<Hcl1Token> {
+        if c == ' ' || c == '\x09' || c == '\x0d' {
+            let mut text = String::new();
+            while let Some(ch) = self.peek() {
+                if ch == ' ' || ch == '\x09' || ch == '\x0d' {
+                    text.push(ch);
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            let end_byte = self.current_byte();
+            let span = Span::new(
+                start_byte, end_byte, start_line, start_col, self.line, self.col,
+            );
+            return Some(Hcl1Token::new(Hcl1TokenKind::Whitespace, text, span));
+        }
+        if c == '\x0a' {
+            self.advance();
+            let end_byte = self.current_byte();
+            let span = Span::new(
+                start_byte, end_byte, start_line, start_col, self.line, self.col,
+            );
+            return Some(Hcl1Token::new(Hcl1TokenKind::Newline, "\n", span));
+        }
+        if c == '#' || (c == '/' && self.peek_next() == Some('/')) {
+            let mut text = String::new();
+            while let Some(ch) = self.peek() {
+                if ch == '\x0a' {
+                    break;
+                }
+                text.push(ch);
+                self.advance();
+            }
+            let end_byte = self.current_byte();
+            let span = Span::new(
+                start_byte, end_byte, start_line, start_col, self.line, self.col,
+            );
+            return Some(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
+        }
+        if c == '/' && self.peek_next() == Some('*') {
+            let mut text = String::new();
+            text.push(self.advance().unwrap_or('/'));
+            text.push(self.advance().unwrap_or('*'));
+            while let Some(ch) = self.advance() {
+                text.push(ch);
+                if ch == '*' && self.peek() == Some('/') {
+                    text.push(self.advance().unwrap_or('/'));
+                    break;
+                }
+            }
+            let end_byte = self.current_byte();
+            let span = Span::new(
+                start_byte, end_byte, start_line, start_col, self.line, self.col,
+            );
+            return Some(Hcl1Token::new(Hcl1TokenKind::Comment, text, span));
+        }
+        None
     }
     fn lex_string(
         &mut self,

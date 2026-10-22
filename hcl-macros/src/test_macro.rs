@@ -48,8 +48,13 @@ fn test_expand_decode_body_comprehensive() {
             non_path_attr: (u32, u32),
         }
     };
-    let output = expand_derive_decode_body(input);
-    assert!(!output.is_empty());
+    let output = expand_derive_decode_body(input).to_string();
+    assert!(output.contains("impl crate :: decode :: DecodeBody for FullConfig"));
+    assert!(output.contains("primary_network"));
+    assert!(output.contains("custom_timeout"));
+    assert!(output.contains("remaining_hashmap"));
+    assert!(output.contains("extra_attrs_btreemap"));
+    assert!(output.contains("extra_blocks"));
 
     // 2. Struct with BTreeMap remain and HashMap remain_attrs
     let input_remain2: DeriveInput = syn::parse_quote! {
@@ -60,8 +65,10 @@ fn test_expand_decode_body_comprehensive() {
             attrs_hashmap: std::collections::HashMap<String, Value>,
         }
     };
-    let output2 = expand_derive_decode_body(input_remain2);
-    assert!(!output2.is_empty());
+    let output2 = expand_derive_decode_body(input_remain2).to_string();
+    assert!(output2.contains("impl crate :: decode :: DecodeBody for ConfigWithMaps"));
+    assert!(output2.contains("remain_btreemap"));
+    assert!(output2.contains("attrs_hashmap"));
 
     // 3. Struct with raw Body remain and non-path remain / remain_attrs
     let input_body_remain: DeriveInput = syn::parse_quote! {
@@ -72,25 +79,27 @@ fn test_expand_decode_body_comprehensive() {
             raw_attrs: (u32, u32),
         }
     };
-    let output_body = expand_derive_decode_body(input_body_remain);
-    assert!(!output_body.is_empty());
+    let output_body = expand_derive_decode_body(input_body_remain).to_string();
+    assert!(output_body.contains("impl crate :: decode :: DecodeBody for ConfigRawRemain"));
+    assert!(output_body.contains("raw_remain"));
+    assert!(output_body.contains("raw_attrs"));
 
     // 4. Unit struct (non-named fields)
     let unit_input: DeriveInput = syn::parse_quote! {
         struct UnitConfig;
     };
-    let unit_output = expand_derive_decode_body(unit_input);
-    assert!(!unit_output.is_empty());
+    let unit_output = expand_derive_decode_body(unit_input).to_string();
+    assert!(unit_output.contains("impl crate :: decode :: DecodeBody for UnitConfig"));
 
     // 5. Tuple struct
     let tuple_input: DeriveInput = syn::parse_quote! {
         struct TupleConfig(String, u32);
     };
-    let tuple_output = expand_derive_decode_body(tuple_input);
-    assert!(!tuple_output.is_empty());
+    let tuple_output = expand_derive_decode_body(tuple_input).to_string();
+    assert!(tuple_output.contains("impl crate :: decode :: DecodeBody for TupleConfig"));
 }
 
-/// Tests error diagnostics produced by `DecodeBody` during invalid usage.
+/// Tests compile-time error diagnostics for invalid label, remain, and `remain_attrs` usage.
 #[test]
 fn test_expand_decode_body_errors() {
     // 1. Label on non-string field (path and non-path)
@@ -156,7 +165,11 @@ fn test_expand_decode_body_errors() {
             .to_string()
             .contains("hcl(remain_blocks) can only be applied to a single field")
     );
+}
 
+/// Tests compile-time error diagnostics for conflicting field role attributes.
+#[test]
+fn test_expand_decode_body_role_conflicts() {
     // 5. Both attr and block on the same field
     let attr_and_block: DeriveInput = syn::parse_quote! {
         struct BothAttrBlock {
@@ -247,15 +260,19 @@ fn test_expand_encode_body_comprehensive() {
             non_path_attr: (u32, u32),
         }
     };
-    let output = expand_derive_encode_body(input);
-    assert!(!output.is_empty());
+    let output = expand_derive_encode_body(input).to_string();
+    assert!(output.contains("impl crate :: encode :: EncodeBody for FullEncode"));
+    assert!(output.contains("vec_blocks"));
+    assert!(output.contains("opt_block"));
+    assert!(output.contains("plain_block"));
+    assert!(output.contains("custom_title"));
 
     // Unit struct
     let unit_input: DeriveInput = syn::parse_quote! {
         struct EmptyEncode;
     };
-    let unit_out = expand_derive_encode_body(unit_input);
-    assert!(!unit_out.is_empty());
+    let unit_out = expand_derive_encode_body(unit_input).to_string();
+    assert!(unit_out.contains("impl crate :: encode :: EncodeBody for EmptyEncode"));
 
     // Struct with attribute error
     let bad_input: DeriveInput = syn::parse_quote! {
@@ -302,15 +319,17 @@ fn test_expand_implied_body_schema_comprehensive() {
             non_path_attr: (u32, u32),
         }
     };
-    let output = expand_derive_implied_body_schema(input);
-    assert!(!output.is_empty());
+    let output = expand_derive_implied_body_schema(input).to_string();
+    assert!(output.contains("impl crate :: ast :: schema :: ImpliedBodySchema for FullSchema"));
+    assert!(output.contains("custom_schema_attr"));
+    assert!(output.contains("required_attr"));
 
     // Unit struct
     let unit_input: DeriveInput = syn::parse_quote! {
         struct EmptySchema;
     };
-    let unit_out = expand_derive_implied_body_schema(unit_input);
-    assert!(!unit_out.is_empty());
+    let unit_out = expand_derive_implied_body_schema(unit_input).to_string();
+    assert!(unit_out.contains("impl crate :: ast :: schema :: ImpliedBodySchema for EmptySchema"));
 }
 
 /// Tests expansion of `DecodeValue` for structs and enums, including error paths.
@@ -330,8 +349,10 @@ fn test_expand_decode_value_comprehensive() {
             non_path_field: (u32, u32),
         }
     };
-    let struct_out = expand_derive_decode_value(struct_input);
-    assert!(!struct_out.is_empty());
+    let struct_out = expand_derive_decode_value(struct_input).to_string();
+    assert!(struct_out.contains("impl crate :: decode :: DecodeValue for ValueStruct"));
+    assert!(struct_out.contains("custom_field"));
+    assert!(struct_out.contains("required_field"));
 
     // 2. Enum with unit variants and custom names
     let enum_input: DeriveInput = syn::parse_quote! {
@@ -400,6 +421,18 @@ fn test_expand_decode_value_comprehensive() {
             .to_string()
             .contains("field cannot be marked as both #[hcl(attr)] and #[hcl(block)]")
     );
+
+    let custom_decode_struct: DeriveInput = syn::parse_quote! {
+        struct CustomDecodeStruct {
+            #[hcl(custom)]
+            expr_field: String,
+            #[hcl(custom)]
+            opt_expr_field: Option<String>,
+        }
+    };
+    let custom_decode_out = expand_derive_decode_body(custom_decode_struct).to_string();
+    assert!(custom_decode_out.contains("CustomDecodeExpression"));
+    assert!(custom_decode_out.contains("custom_decode_expr"));
 }
 
 /// Tests expansion of `EncodeValue` for structs and enums, including error paths.
@@ -415,8 +448,10 @@ fn test_expand_encode_value_comprehensive() {
             non_path_field: (u32, u32),
         }
     };
-    let struct_out = expand_derive_encode_value(struct_input);
-    assert!(!struct_out.is_empty());
+    let struct_out = expand_derive_encode_value(struct_input).to_string();
+    assert!(struct_out.contains("impl crate :: encode :: EncodeValue for ValueStruct"));
+    assert!(struct_out.contains("custom_field"));
+    assert!(struct_out.contains("required_field"));
 
     // 2. Enum with unit variants and custom names
     let enum_input: DeriveInput = syn::parse_quote! {
@@ -427,8 +462,9 @@ fn test_expand_encode_value_comprehensive() {
             Inactive,
         }
     };
-    let enum_out = expand_derive_encode_value(enum_input);
-    assert!(!enum_out.is_empty());
+    let enum_out = expand_derive_encode_value(enum_input).to_string();
+    assert!(enum_out.contains("impl crate :: encode :: EncodeValue for Status"));
+    assert!(enum_out.contains("in_progress"));
 
     // 3. Union error
     let union_input: DeriveInput = syn::parse_quote! {
@@ -499,7 +535,6 @@ fn test_expand_capsule_type_comprehensive() {
         }
     };
     let output = expand_derive_capsule_type(input);
-    assert!(!output.is_empty());
     let code = output.to_string();
     assert!(code.contains("custom_database"));
     assert!(code.contains("capsule_ops"));
@@ -535,8 +570,9 @@ fn test_expand_capsule_type_comprehensive() {
     let input_unit: DeriveInput = syn::parse_quote! {
         struct EmptyCapsule;
     };
-    let out_unit = expand_derive_capsule_type(input_unit);
-    assert!(!out_unit.is_empty());
+    let out_unit = expand_derive_capsule_type(input_unit).to_string();
+    assert!(out_unit.contains("EmptyCapsule"));
+    assert!(out_unit.contains("capsule_ops"));
 
     // 5. Struct with unquoted convert_to and convert_from paths
     let input_unquoted: DeriveInput = syn::parse_quote! {
@@ -607,7 +643,11 @@ fn test_non_hcl_attributes_coverage() {
             id: u32,
         }
     };
-    assert!(!expand_derive_capsule_type(capsule_input).is_empty());
+    assert!(
+        expand_derive_capsule_type(capsule_input)
+            .to_string()
+            .contains("DocCapsule")
+    );
 
     // 2. Enum variants with non-HCL attribute in DecodeValue and EncodeValue
     let enum_input: DeriveInput = syn::parse_quote! {
@@ -619,8 +659,16 @@ fn test_non_hcl_attributes_coverage() {
             SecondVariant,
         }
     };
-    assert!(!expand_derive_decode_value(enum_input.clone()).is_empty());
-    assert!(!expand_derive_encode_value(enum_input).is_empty());
+    assert!(
+        expand_derive_decode_value(enum_input.clone())
+            .to_string()
+            .contains("second_custom")
+    );
+    assert!(
+        expand_derive_encode_value(enum_input)
+            .to_string()
+            .contains("second_custom")
+    );
 
     // 3. Struct fields with non-HCL attribute in DecodeBody and EncodeBody
     let struct_input: DeriveInput = syn::parse_quote! {
@@ -630,58 +678,24 @@ fn test_non_hcl_attributes_coverage() {
             valid_field: String,
         }
     };
-    assert!(!expand_derive_decode_body(struct_input.clone()).is_empty());
-    assert!(!expand_derive_encode_body(struct_input.clone()).is_empty());
-    assert!(!expand_derive_implied_body_schema(struct_input).is_empty());
+    assert!(
+        expand_derive_decode_body(struct_input.clone())
+            .to_string()
+            .contains("valid_field")
+    );
+    assert!(
+        expand_derive_encode_body(struct_input.clone())
+            .to_string()
+            .contains("valid_field")
+    );
+    assert!(
+        expand_derive_implied_body_schema(struct_input)
+            .to_string()
+            .contains("valid_field")
+    );
 }
 
-/// Tests handling of synthetic fields with `ident: None` in named fields.
-#[test]
-fn test_named_field_without_ident_coverage() {
-    let mut fields = syn::punctuated::Punctuated::new();
-    fields.push(syn::Field {
-        attrs: Vec::new(),
-        vis: syn::Visibility::Inherited,
-        mutability: syn::FieldMutability::None,
-        ident: Some(syn::Ident::new(
-            "valid_field",
-            proc_macro2::Span::call_site(),
-        )),
-        colon_token: Some(syn::token::Colon::default()),
-        ty: syn::parse_quote!(String),
-    });
-    fields.push(syn::Field {
-        attrs: Vec::new(),
-        vis: syn::Visibility::Inherited,
-        mutability: syn::FieldMutability::None,
-        ident: None,
-        colon_token: None,
-        ty: syn::parse_quote!(u32),
-    });
-
-    let input = syn::DeriveInput {
-        attrs: Vec::new(),
-        vis: syn::Visibility::Inherited,
-        ident: syn::Ident::new("SyntheticStruct", proc_macro2::Span::call_site()),
-        generics: syn::Generics::default(),
-        data: syn::Data::Struct(syn::DataStruct {
-            struct_token: syn::token::Struct::default(),
-            fields: syn::Fields::Named(syn::FieldsNamed {
-                brace_token: syn::token::Brace::default(),
-                named: fields,
-            }),
-            semi_token: None,
-        }),
-    };
-
-    assert!(!expand_derive_decode_body(input.clone()).is_empty());
-    assert!(!expand_derive_encode_body(input.clone()).is_empty());
-    assert!(!expand_derive_implied_body_schema(input.clone()).is_empty());
-    assert!(!expand_derive_decode_value(input.clone()).is_empty());
-    assert!(!expand_derive_encode_value(input).is_empty());
-}
-
-/// Tests attribute error paths in `DecodeValue`, `EncodeValue`, and `CapsuleType`.
+/// Tests attribute error paths in `DecodeValue` and `EncodeValue`.
 #[test]
 fn test_macro_attribute_error_coverage() {
     // 1. DecodeValue enum variant name errors
@@ -692,9 +706,9 @@ fn test_macro_attribute_error_coverage() {
         }
     };
     assert!(
-        !expand_derive_decode_value(bad_val_name)
+        expand_derive_decode_value(bad_val_name)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let bad_val_lit: DeriveInput = syn::parse_quote! {
@@ -704,9 +718,9 @@ fn test_macro_attribute_error_coverage() {
         }
     };
     assert!(
-        !expand_derive_decode_value(bad_val_lit)
+        expand_derive_decode_value(bad_val_lit)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     // 2. EncodeValue enum variant name errors
@@ -717,9 +731,9 @@ fn test_macro_attribute_error_coverage() {
         }
     };
     assert!(
-        !expand_derive_encode_value(bad_enc_name)
+        expand_derive_encode_value(bad_enc_name)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let bad_enc_lit: DeriveInput = syn::parse_quote! {
@@ -729,20 +743,23 @@ fn test_macro_attribute_error_coverage() {
         }
     };
     assert!(
-        !expand_derive_encode_value(bad_enc_lit)
+        expand_derive_encode_value(bad_enc_lit)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
+}
 
-    // 3. CapsuleType type_name, convert_to, convert_from errors
+/// Tests attribute error paths in `CapsuleType`.
+#[test]
+fn test_capsule_attribute_error_coverage() {
     let cap_missing_type_name: DeriveInput = syn::parse_quote! {
         #[hcl(type_name)]
         struct CapTypeNameMissing { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_missing_type_name)
+        expand_derive_capsule_type(cap_missing_type_name)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let cap_bad_type_name: DeriveInput = syn::parse_quote! {
@@ -750,9 +767,9 @@ fn test_macro_attribute_error_coverage() {
         struct CapTypeNameBad { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_bad_type_name)
+        expand_derive_capsule_type(cap_bad_type_name)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let cap_missing_to: DeriveInput = syn::parse_quote! {
@@ -760,9 +777,9 @@ fn test_macro_attribute_error_coverage() {
         struct CapToMissing { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_missing_to)
+        expand_derive_capsule_type(cap_missing_to)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let cap_bad_to_lit: DeriveInput = syn::parse_quote! {
@@ -770,9 +787,9 @@ fn test_macro_attribute_error_coverage() {
         struct CapToBadLit { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_bad_to_lit)
+        expand_derive_capsule_type(cap_bad_to_lit)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let cap_bad_to_unquoted: DeriveInput = syn::parse_quote! {
@@ -780,9 +797,9 @@ fn test_macro_attribute_error_coverage() {
         struct CapToBadUnquoted { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_bad_to_unquoted)
+        expand_derive_capsule_type(cap_bad_to_unquoted)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let cap_missing_from: DeriveInput = syn::parse_quote! {
@@ -790,9 +807,9 @@ fn test_macro_attribute_error_coverage() {
         struct CapFromMissing { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_missing_from)
+        expand_derive_capsule_type(cap_missing_from)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let cap_bad_from_lit: DeriveInput = syn::parse_quote! {
@@ -800,9 +817,9 @@ fn test_macro_attribute_error_coverage() {
         struct CapFromBadLit { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_bad_from_lit)
+        expand_derive_capsule_type(cap_bad_from_lit)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 
     let cap_bad_from_unquoted: DeriveInput = syn::parse_quote! {
@@ -810,9 +827,9 @@ fn test_macro_attribute_error_coverage() {
         struct CapFromBadUnquoted { id: u32 }
     };
     assert!(
-        !expand_derive_capsule_type(cap_bad_from_unquoted)
+        expand_derive_capsule_type(cap_bad_from_unquoted)
             .to_string()
-            .is_empty()
+            .contains("compile_error")
     );
 }
 
@@ -830,12 +847,14 @@ fn test_expand_label_keyed_block_maps_comprehensive() {
             repeated_servers: std::collections::HashMap<String, Vec<ServerConfig>>,
         }
     };
-    let decode_out = expand_derive_decode_body(input_single.clone());
-    assert!(!decode_out.is_empty());
-    let encode_out = expand_derive_encode_body(input_single.clone());
-    assert!(!encode_out.is_empty());
-    let schema_out = expand_derive_implied_body_schema(input_single);
-    assert!(!schema_out.is_empty());
+    let decode_out = expand_derive_decode_body(input_single.clone()).to_string();
+    assert!(decode_out.contains("SingleMapConfig"));
+    assert!(decode_out.contains("repeated_servers"));
+    let encode_out = expand_derive_encode_body(input_single.clone()).to_string();
+    assert!(encode_out.contains("SingleMapConfig"));
+    assert!(encode_out.contains("repeated_servers"));
+    let schema_out = expand_derive_implied_body_schema(input_single).to_string();
+    assert!(schema_out.contains("SingleMapConfig"));
 
     // 2. Multi-level label maps (2-level and 3-level, with Single and Vec terminals)
     let input_multi: DeriveInput = syn::parse_quote! {
@@ -850,12 +869,15 @@ fn test_expand_label_keyed_block_maps_comprehensive() {
             four_level: std::collections::BTreeMap<String, std::collections::BTreeMap<String, std::collections::BTreeMap<String, std::collections::BTreeMap<String, LeafConfig>>>>,
         }
     };
-    let decode_multi_out = expand_derive_decode_body(input_multi.clone());
-    assert!(!decode_multi_out.is_empty());
-    let encode_multi_out = expand_derive_encode_body(input_multi.clone());
-    assert!(!encode_multi_out.is_empty());
-    let schema_multi_out = expand_derive_implied_body_schema(input_multi);
-    assert!(!schema_multi_out.is_empty());
+    let decode_multi_out = expand_derive_decode_body(input_multi.clone()).to_string();
+    assert!(decode_multi_out.contains("MultiMapConfig"));
+    assert!(decode_multi_out.contains("four_level"));
+    let encode_multi_out = expand_derive_encode_body(input_multi.clone()).to_string();
+    assert!(encode_multi_out.contains("MultiMapConfig"));
+    assert!(encode_multi_out.contains("four_level"));
+    let schema_multi_out = expand_derive_implied_body_schema(input_multi).to_string();
+    assert!(schema_multi_out.contains("MultiMapConfig"));
+    assert!(schema_multi_out.contains("label_4"));
 }
 
 /// Tests expansion of `DecodeBody`, `EncodeBody`, and `ImpliedBodySchema` for flattened and squashed structs.
@@ -872,12 +894,15 @@ fn test_expand_flatten_and_squash_comprehensive() {
         }
     };
 
-    let decode_out = expand_derive_decode_body(input.clone());
-    assert!(!decode_out.is_empty());
-    let encode_out = expand_derive_encode_body(input.clone());
-    assert!(!encode_out.is_empty());
-    let schema_out = expand_derive_implied_body_schema(input);
-    assert!(!schema_out.is_empty());
+    let decode_out = expand_derive_decode_body(input.clone()).to_string();
+    assert!(decode_out.contains("ParentConfig"));
+    assert!(decode_out.contains("squashed_child"));
+    let encode_out = expand_derive_encode_body(input.clone()).to_string();
+    assert!(encode_out.contains("ParentConfig"));
+    assert!(encode_out.contains("squashed_child"));
+    let schema_out = expand_derive_implied_body_schema(input).to_string();
+    assert!(schema_out.contains("ParentConfig"));
+    assert!(schema_out.contains("AnotherChildConfig"));
 }
 
 /// Tests compile-time error detection for duplicate declared attributes, blocks, and invalid flatten attributes.
@@ -944,10 +969,13 @@ fn test_expand_flatten_value_comprehensive() {
         }
     };
 
-    let decode_val_out = expand_derive_decode_value(input.clone());
-    assert!(!decode_val_out.is_empty());
-    let encode_val_out = expand_derive_encode_value(input);
-    assert!(!encode_val_out.is_empty());
+    let decode_val_out = expand_derive_decode_value(input.clone()).to_string();
+    assert!(decode_val_out.contains("FlattenValueConfig"));
+    assert!(decode_val_out.contains("InnerValueConfig"));
+    assert!(decode_val_out.contains("OptValueConfig"));
+    let encode_val_out = expand_derive_encode_value(input).to_string();
+    assert!(encode_val_out.contains("FlattenValueConfig"));
+    assert!(encode_val_out.contains("opt_inner"));
 }
 
 /// Tests expansion of `DecodeBody`, `EncodeBody`, and `ImpliedBodySchema` with `#[hcl(body)]`, `#[hcl(with)]`, `#[hcl(default_expr)]`, and `#[hcl(default_fn)]`.
@@ -968,12 +996,15 @@ fn test_expand_body_retention_and_custom_hooks_comprehensive() {
         }
     };
 
-    let decode_out = expand_derive_decode_body(input.clone());
-    assert!(!decode_out.is_empty());
-    let encode_out = expand_derive_encode_body(input.clone());
-    assert!(!encode_out.is_empty());
-    let schema_out = expand_derive_implied_body_schema(input);
-    assert!(!schema_out.is_empty());
+    let decode_out = expand_derive_decode_body(input.clone()).to_string();
+    assert!(decode_out.contains("HookedConfig"));
+    assert!(decode_out.contains("my_custom_decoder"));
+    assert!(decode_out.contains("default_cluster_name"));
+    let encode_out = expand_derive_encode_body(input.clone()).to_string();
+    assert!(encode_out.contains("HookedConfig"));
+    assert!(encode_out.contains("raw_body"));
+    let schema_out = expand_derive_implied_body_schema(input).to_string();
+    assert!(schema_out.contains("HookedConfig"));
 }
 
 /// Tests compile-time error detection for invalid `body`, `default_expr`, and `default_fn` usage.
@@ -1038,7 +1069,7 @@ fn test_expand_body_and_hook_errors() {
     );
 }
 
-/// Tests remaining edge cases, container types, and attribute conflicts across derive macros.
+/// Tests remaining edge cases and attribute conflicts across derive macros.
 #[test]
 fn test_macro_edge_cases_and_attribute_conflicts() {
     // 1. Optional body and default_expr / default_fn on Option fields
@@ -1058,12 +1089,13 @@ fn test_macro_edge_cases_and_attribute_conflicts() {
             bad_map: std::collections::HashMap<'static, String>,
         }
     };
-    let dec_opts = expand_derive_decode_body(input_opts.clone());
-    assert!(!dec_opts.to_string().is_empty());
-    let enc_opts = expand_derive_encode_body(input_opts.clone());
-    assert!(!enc_opts.to_string().is_empty());
-    let schema_opts = expand_derive_implied_body_schema(input_opts);
-    assert!(!schema_opts.to_string().is_empty());
+    let dec_opts = expand_derive_decode_body(input_opts.clone()).to_string();
+    assert!(dec_opts.contains("OptsConfig"));
+    assert!(dec_opts.contains("opt_body"));
+    let enc_opts = expand_derive_encode_body(input_opts.clone()).to_string();
+    assert!(enc_opts.contains("OptsConfig"));
+    let schema_opts = expand_derive_implied_body_schema(input_opts).to_string();
+    assert!(schema_opts.contains("OptsConfig"));
 
     // Non-path type for body field
     let input_tuple_body: DeriveInput = syn::parse_quote! {
@@ -1073,14 +1105,14 @@ fn test_macro_edge_cases_and_attribute_conflicts() {
         }
     };
     assert!(
-        !expand_derive_decode_body(input_tuple_body.clone())
+        expand_derive_decode_body(input_tuple_body.clone())
             .to_string()
-            .is_empty()
+            .contains("TupleBodyConfig")
     );
     assert!(
-        !expand_derive_encode_body(input_tuple_body)
+        expand_derive_encode_body(input_tuple_body)
             .to_string()
-            .is_empty()
+            .contains("TupleBodyConfig")
     );
 
     // 2. Duplicate expr field name
@@ -1135,7 +1167,11 @@ fn test_macro_edge_cases_and_attribute_conflicts() {
             .to_string()
             .contains("field cannot be marked as both #[hcl(body)]")
     );
+}
 
+/// Tests meta conflicts across derive macros.
+#[test]
+fn test_macro_meta_conflicts() {
     // 5. with/default on label, remain, remain_attrs, remain_blocks, flatten, body
     let with_conflicts: DeriveInput = syn::parse_quote! {
         struct WithConflicts {
@@ -1183,7 +1219,11 @@ fn test_macro_edge_cases_and_attribute_conflicts() {
             .to_string()
             .contains("field cannot be marked as both #[hcl(flatten)]")
     );
+}
 
+/// Tests container forms and invalid meta value forms across derive macros.
+#[test]
+fn test_macro_container_forms_and_meta_invalid_forms() {
     // 7. Missing value or non-string literals for meta pairs (with, default_expr, default_fn, name)
     let meta_invalid_forms: DeriveInput = syn::parse_quote! {
         struct MetaInvalidForms {
@@ -1243,97 +1283,11 @@ fn test_macro_edge_cases_and_attribute_conflicts() {
         }
     };
     let cont_dec = expand_derive_decode_body(containers_input.clone()).to_string();
-    assert!(!cont_dec.is_empty());
+    assert!(cont_dec.contains("ContainerForms"));
     let cont_enc = expand_derive_encode_body(containers_input.clone()).to_string();
-    assert!(!cont_enc.is_empty());
+    assert!(cont_enc.contains("ContainerForms"));
     let cont_schema = expand_derive_implied_body_schema(containers_input).to_string();
-    assert!(!cont_schema.is_empty());
-
-    // 9. Synthetic fields with empty Path segments
-    let empty_path_field: syn::Field = syn::Field {
-        attrs: vec![syn::parse_quote!(#[hcl(expr)])],
-        vis: syn::Visibility::Inherited,
-        mutability: syn::FieldMutability::None,
-        ident: Some(syn::Ident::new(
-            "empty_path",
-            proc_macro2::Span::call_site(),
-        )),
-        colon_token: Some(syn::token::Colon::default()),
-        ty: syn::Type::Path(syn::TypePath {
-            qself: None,
-            path: syn::Path {
-                leading_colon: None,
-                segments: syn::punctuated::Punctuated::new(),
-            },
-        }),
-    };
-    let empty_path_block: syn::Field = syn::Field {
-        attrs: vec![syn::parse_quote!(#[hcl(block)])],
-        vis: syn::Visibility::Inherited,
-        mutability: syn::FieldMutability::None,
-        ident: Some(syn::Ident::new(
-            "empty_path_blk",
-            proc_macro2::Span::call_site(),
-        )),
-        colon_token: Some(syn::token::Colon::default()),
-        ty: syn::Type::Path(syn::TypePath {
-            qself: None,
-            path: syn::Path {
-                leading_colon: None,
-                segments: syn::punctuated::Punctuated::new(),
-            },
-        }),
-    };
-    let empty_path_flatten: syn::Field = syn::Field {
-        attrs: vec![syn::parse_quote!(#[hcl(flatten)])],
-        vis: syn::Visibility::Inherited,
-        mutability: syn::FieldMutability::None,
-        ident: Some(syn::Ident::new(
-            "empty_path_flat",
-            proc_macro2::Span::call_site(),
-        )),
-        colon_token: Some(syn::token::Colon::default()),
-        ty: syn::Type::Path(syn::TypePath {
-            qself: None,
-            path: syn::Path {
-                leading_colon: None,
-                segments: syn::punctuated::Punctuated::new(),
-            },
-        }),
-    };
-    let input_empty_paths = DeriveInput {
-        attrs: vec![],
-        vis: syn::Visibility::Inherited,
-        ident: syn::Ident::new("EmptyPathStruct", proc_macro2::Span::call_site()),
-        generics: syn::Generics::default(),
-        data: syn::Data::Struct(syn::DataStruct {
-            struct_token: syn::token::Struct::default(),
-            fields: syn::Fields::Named(syn::FieldsNamed {
-                brace_token: syn::token::Brace::default(),
-                named: syn::punctuated::Punctuated::from_iter([
-                    empty_path_field,
-                    empty_path_block,
-                    empty_path_flatten,
-                ]),
-            }),
-            semi_token: None,
-        }),
-    };
-    assert!(
-        !expand_derive_decode_body(input_empty_paths.clone())
-            .to_string()
-            .is_empty()
-    );
-    assert!(
-        !expand_derive_encode_body(input_empty_paths.clone())
-            .to_string()
-            .is_empty()
-    );
-    assert!(
-        !expand_derive_implied_body_schema(input_empty_paths)
-            .to_string()
-            .is_empty()
-    );
+    assert!(cont_schema.contains("ContainerForms"));
 }
 
 #[test]

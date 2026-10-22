@@ -12,55 +12,31 @@ impl Formatter {
     pub fn render(doc: &Document) -> String {
         let mut out = String::new();
         Self::render_stream(&doc.leading, &mut out);
-        if doc.items.is_empty() {
-            for attr in &doc.attributes {
-                Self::render_stream(&attr.leading, &mut out);
-                out.push_str(&attr.name.text);
-                Self::render_stream(&attr.equals_leading, &mut out);
-                out.push_str(&attr.equals.text);
-                for t in &attr.expr_tokens {
-                    out.push_str(&t.text);
+        for item in &doc.items {
+            match item {
+                crate::cst::document::DocumentItem::Attribute(attr) => {
+                    Self::render_stream(&attr.leading, &mut out);
+                    out.push_str(&attr.name.text);
+                    Self::render_stream(&attr.equals_leading, &mut out);
+                    out.push_str(&attr.equals.text);
+                    for t in &attr.expr_tokens {
+                        out.push_str(&t.text);
+                    }
+                    Self::render_stream(&attr.trailing, &mut out);
                 }
-                Self::render_stream(&attr.trailing, &mut out);
-            }
-            for block in &doc.blocks {
-                Self::render_stream(&block.leading, &mut out);
-                out.push_str(&block.type_ident.text);
-                for l in &block.labels {
-                    out.push_str(&l.text);
+                crate::cst::document::DocumentItem::Block(block) => {
+                    Self::render_stream(&block.leading, &mut out);
+                    out.push_str(&block.type_ident.text);
+                    for l in &block.labels {
+                        out.push_str(&l.text);
+                    }
+                    out.push_str(&block.open_brace.text);
+                    out.push_str(&Self::render(&block.body));
+                    out.push_str(&block.close_brace.text);
+                    Self::render_stream(&block.trailing, &mut out);
                 }
-                out.push_str(&block.open_brace.text);
-                out.push_str(&Self::render(&block.body));
-                out.push_str(&block.close_brace.text);
-                Self::render_stream(&block.trailing, &mut out);
-            }
-        } else {
-            for item in &doc.items {
-                match item {
-                    crate::cst::document::DocumentItem::Attribute(attr) => {
-                        Self::render_stream(&attr.leading, &mut out);
-                        out.push_str(&attr.name.text);
-                        Self::render_stream(&attr.equals_leading, &mut out);
-                        out.push_str(&attr.equals.text);
-                        for t in &attr.expr_tokens {
-                            out.push_str(&t.text);
-                        }
-                        Self::render_stream(&attr.trailing, &mut out);
-                    }
-                    crate::cst::document::DocumentItem::Block(block) => {
-                        Self::render_stream(&block.leading, &mut out);
-                        out.push_str(&block.type_ident.text);
-                        for l in &block.labels {
-                            out.push_str(&l.text);
-                        }
-                        out.push_str(&block.open_brace.text);
-                        out.push_str(&Self::render(&block.body));
-                        out.push_str(&block.close_brace.text);
-                        Self::render_stream(&block.trailing, &mut out);
-                    }
-                    crate::cst::document::DocumentItem::Trivia(stream) => {
-                        Self::render_stream(stream, &mut out);
-                    }
+                crate::cst::document::DocumentItem::Trivia(stream) => {
+                    Self::render_stream(stream, &mut out);
                 }
             }
         }
@@ -76,63 +52,35 @@ impl Formatter {
     pub fn render_redacted(doc: &Document, sensitive_attrs: &[&str]) -> String {
         let mut out = String::new();
         Self::render_stream(&doc.leading, &mut out);
-        if doc.items.is_empty() {
-            for attr in &doc.attributes {
-                Self::render_stream(&attr.leading, &mut out);
-                out.push_str(&attr.name.text);
-                Self::render_stream(&attr.equals_leading, &mut out);
-                out.push_str(&attr.equals.text);
-                if sensitive_attrs.contains(&attr.name.text.as_str()) {
-                    out.push_str(" \"(sensitive value)\"");
-                } else {
-                    for t in &attr.expr_tokens {
-                        out.push_str(&t.text);
-                    }
-                }
-                Self::render_stream(&attr.trailing, &mut out);
-            }
-            for block in &doc.blocks {
-                Self::render_stream(&block.leading, &mut out);
-                out.push_str(&block.type_ident.text);
-                for l in &block.labels {
-                    out.push_str(&l.text);
-                }
-                out.push_str(&block.open_brace.text);
-                out.push_str(&Self::render_redacted(&block.body, sensitive_attrs));
-                out.push_str(&block.close_brace.text);
-                Self::render_stream(&block.trailing, &mut out);
-            }
-        } else {
-            for item in &doc.items {
-                match item {
-                    crate::cst::document::DocumentItem::Attribute(attr) => {
-                        Self::render_stream(&attr.leading, &mut out);
-                        out.push_str(&attr.name.text);
-                        Self::render_stream(&attr.equals_leading, &mut out);
-                        out.push_str(&attr.equals.text);
-                        if sensitive_attrs.contains(&attr.name.text.as_str()) {
-                            out.push_str(" \"(sensitive value)\"");
-                        } else {
-                            for t in &attr.expr_tokens {
-                                out.push_str(&t.text);
-                            }
+        for item in &doc.items {
+            match item {
+                crate::cst::document::DocumentItem::Attribute(attr) => {
+                    Self::render_stream(&attr.leading, &mut out);
+                    out.push_str(&attr.name.text);
+                    Self::render_stream(&attr.equals_leading, &mut out);
+                    out.push_str(&attr.equals.text);
+                    if sensitive_attrs.contains(&attr.name.text.as_str()) {
+                        out.push_str(" \"(sensitive value)\"");
+                    } else {
+                        for t in &attr.expr_tokens {
+                            out.push_str(&t.text);
                         }
-                        Self::render_stream(&attr.trailing, &mut out);
                     }
-                    crate::cst::document::DocumentItem::Block(block) => {
-                        Self::render_stream(&block.leading, &mut out);
-                        out.push_str(&block.type_ident.text);
-                        for l in &block.labels {
-                            out.push_str(&l.text);
-                        }
-                        out.push_str(&block.open_brace.text);
-                        out.push_str(&Self::render_redacted(&block.body, sensitive_attrs));
-                        out.push_str(&block.close_brace.text);
-                        Self::render_stream(&block.trailing, &mut out);
+                    Self::render_stream(&attr.trailing, &mut out);
+                }
+                crate::cst::document::DocumentItem::Block(block) => {
+                    Self::render_stream(&block.leading, &mut out);
+                    out.push_str(&block.type_ident.text);
+                    for l in &block.labels {
+                        out.push_str(&l.text);
                     }
-                    crate::cst::document::DocumentItem::Trivia(stream) => {
-                        Self::render_stream(stream, &mut out);
-                    }
+                    out.push_str(&block.open_brace.text);
+                    out.push_str(&Self::render_redacted(&block.body, sensitive_attrs));
+                    out.push_str(&block.close_brace.text);
+                    Self::render_stream(&block.trailing, &mut out);
+                }
+                crate::cst::document::DocumentItem::Trivia(stream) => {
+                    Self::render_stream(stream, &mut out);
                 }
             }
         }
@@ -150,7 +98,7 @@ impl Document {
     pub fn add_attribute(&mut self, name: &str, expr_text: &str) {
         let span = Span::new(0, 0, 0, 0, 0, 0);
         let mut leading = TokenStream::new();
-        if !self.attributes.is_empty() || !self.blocks.is_empty() {
+        if !self.items.is_empty() {
             leading.push(Token::new(TokenKind::Newline, "\n", span.clone()));
         }
         let mut expr_tokens = vec![Token::new(TokenKind::Whitespace, " ", span.clone())];
@@ -181,15 +129,12 @@ impl Document {
             expr_tokens,
             trailing: TokenStream::new(),
         };
-        self.attributes.push(attr.clone());
-        if !self.items.is_empty() {
-            self.items
-                .push(crate::cst::document::DocumentItem::Attribute(attr));
-        }
+        self.items
+            .push(crate::cst::document::DocumentItem::Attribute(attr));
     }
     /// Adds a block to the document.
     pub fn add_block(&mut self, mut block: Block) {
-        if !self.blocks.is_empty() || !self.attributes.is_empty() {
+        if !self.items.is_empty() {
             let span = crate::span::Span::new(0, 0, 0, 0, 0, 0);
             if block.leading.tokens.is_empty()
                 || block.leading.tokens.first().map(|t| t.kind.clone()) != Some(TokenKind::Newline)
@@ -200,23 +145,31 @@ impl Document {
                     .insert(0, Token::new(TokenKind::Newline, "\n", span));
             }
         }
-        self.blocks.push(block);
+        self.items
+            .push(crate::cst::document::DocumentItem::Block(block));
     }
     /// Gets a mutable reference to a block by type and exact labels.
     pub fn get_block_mut(&mut self, type_ident: &str, labels: &[&str]) -> Option<&mut Block> {
-        self.blocks.iter_mut().find(|b| {
-            b.type_ident.text == type_ident
-                && b.labels.len() == labels.len()
-                && b.labels
-                    .iter()
-                    .zip(labels.iter())
-                    .all(|(l, expected)| l.text == *expected)
+        self.items.iter_mut().find_map(|item| match item {
+            crate::cst::document::DocumentItem::Block(b) => {
+                if b.type_ident.text == type_ident
+                    && b.labels.len() == labels.len()
+                    && b.labels
+                        .iter()
+                        .zip(labels.iter())
+                        .all(|(l, expected)| l.text == *expected)
+                {
+                    Some(b)
+                } else {
+                    None
+                }
+            }
+            _ => None,
         })
     }
     /// Returns an iterator over all blocks of a specific type.
-    pub fn blocks<'a>(&'a self, type_ident: &'a str) -> impl Iterator<Item = &'a Block> {
-        self.blocks
-            .iter()
+    pub fn blocks_by_type<'a>(&'a self, type_ident: &'a str) -> impl Iterator<Item = &'a Block> {
+        self.blocks_iter()
             .filter(move |b| b.type_ident.text == type_ident)
     }
 }
@@ -226,56 +179,49 @@ impl CanonicalFormatter {
     /// Formats an entire document in-place.
     pub fn format_document(doc: &mut Document) {
         Self::format_token_stream(&mut doc.leading, false);
-        Self::format_attributes_clustered(&mut doc.attributes);
-        for (i, block) in doc.blocks.iter_mut().enumerate() {
-            if i > 0 || !doc.attributes.is_empty() {
-                if !block
-                    .leading
-                    .tokens
-                    .iter()
-                    .any(|t| t.kind == TokenKind::Newline)
-                {
-                    block.leading.tokens.insert(
-                        0,
-                        Token::new(
-                            TokenKind::Newline,
-                            "\n\n",
-                            crate::span::Span::new(0, 0, 0, 0, 0, 0),
-                        ),
-                    );
-                } else if block.leading.tokens[0].kind == TokenKind::Newline
-                    && block.leading.tokens[0].text == "\n"
-                {
-                    block.leading.tokens[0].text = "\n\n".to_string();
-                }
-            } else {
-                Self::format_token_stream(&mut block.leading, true);
-            }
-            Self::format_document(&mut block.body);
-            Self::format_token_stream(&mut block.trailing, false);
-        }
-        Self::format_token_stream(&mut doc.trailing, false);
+        let mut attrs: Vec<Attribute> = doc.attributes_iter().cloned().collect();
+        Self::format_attributes_clustered(&mut attrs);
+        let has_attrs = !attrs.is_empty();
+        let mut attr_idx = 0usize;
+        let mut block_idx = 0usize;
         for item in &mut doc.items {
             match item {
                 crate::cst::document::DocumentItem::Attribute(a) => {
-                    if let Some(formatted) =
-                        doc.attributes.iter().find(|fa| fa.name.text == a.name.text)
-                    {
-                        *a = formatted.clone();
-                    }
+                    a.clone_from(&attrs[attr_idx]);
+                    attr_idx += 1;
                 }
-                crate::cst::document::DocumentItem::Block(b) => {
-                    if let Some(formatted) = doc
-                        .blocks
-                        .iter()
-                        .find(|fb| fb.type_ident.text == b.type_ident.text && fb.labels == b.labels)
-                    {
-                        *b = formatted.clone();
+                crate::cst::document::DocumentItem::Block(block) => {
+                    if block_idx > 0 || has_attrs {
+                        if !block
+                            .leading
+                            .tokens
+                            .iter()
+                            .any(|t| t.kind == TokenKind::Newline)
+                        {
+                            block.leading.tokens.insert(
+                                0,
+                                Token::new(
+                                    TokenKind::Newline,
+                                    "\n\n",
+                                    crate::span::Span::new(0, 0, 0, 0, 0, 0),
+                                ),
+                            );
+                        } else if block.leading.tokens[0].kind == TokenKind::Newline
+                            && block.leading.tokens[0].text == "\n"
+                        {
+                            block.leading.tokens[0].text = "\n\n".to_string();
+                        }
+                    } else {
+                        Self::format_token_stream(&mut block.leading, true);
                     }
+                    Self::format_document(&mut block.body);
+                    Self::format_token_stream(&mut block.trailing, false);
+                    block_idx += 1;
                 }
                 crate::cst::document::DocumentItem::Trivia(_) => {}
             }
         }
+        Self::format_token_stream(&mut doc.trailing, false);
     }
     /// Formats attributes in contiguous clusters, aligning the `=` signs within each cluster.
     ///
@@ -358,62 +304,58 @@ impl CanonicalFormatter {
                     .any(|t| t.kind == TokenKind::Comment || t.kind == TokenKind::InlineComment)
             });
             if has_trailing_comments {
-                let calc_code_width = |attr: &Attribute| -> usize {
-                    let leading_len: usize = attr.leading.tokens.iter().map(|t| t.text.len()).sum();
-                    let name_len = attr.name.text.len();
-                    let eq_leading_len: usize = attr
-                        .equals_leading
-                        .tokens
-                        .iter()
-                        .map(|t| t.text.len())
-                        .sum();
-                    let eq_len = attr.equals.text.len();
-                    let expr_len: usize = attr.expr_tokens.iter().map(|t| t.text.len()).sum();
-                    leading_len + name_len + eq_leading_len + eq_len + expr_len
-                };
-                let max_code_width = cluster_indices
+                Self::align_cluster_trailing_comments(attributes, &cluster_indices);
+            }
+        }
+    }
+    /// Aligns trailing comments within an attribute cluster to a common column.
+    fn align_cluster_trailing_comments(attributes: &mut [Attribute], cluster_indices: &[usize]) {
+        let calc_code_width = |attr: &Attribute| -> usize {
+            let leading_len: usize = attr.leading.tokens.iter().map(|t| t.text.len()).sum();
+            let name_len = attr.name.text.len();
+            let eq_leading_len: usize = attr
+                .equals_leading
+                .tokens
+                .iter()
+                .map(|t| t.text.len())
+                .sum();
+            let eq_len = attr.equals.text.len();
+            let expr_len: usize = attr.expr_tokens.iter().map(|t| t.text.len()).sum();
+            leading_len + name_len + eq_leading_len + eq_len + expr_len
+        };
+        let max_code_width = cluster_indices
+            .iter()
+            .filter(|&&idx| {
+                attributes[idx]
+                    .trailing
+                    .tokens
                     .iter()
-                    .filter(|&&idx| {
-                        attributes[idx].trailing.tokens.iter().any(|t| {
-                            t.kind == TokenKind::Comment || t.kind == TokenKind::InlineComment
-                        })
-                    })
-                    .map(|&idx| calc_code_width(&attributes[idx]))
-                    .max()
-                    .unwrap_or(0);
-                for idx in cluster_indices {
-                    let attr = &mut attributes[idx];
-                    let comment_idx = attr.trailing.tokens.iter().position(|t| {
-                        t.kind == TokenKind::Comment || t.kind == TokenKind::InlineComment
-                    });
-                    if let Some(c_idx) = comment_idx {
-                        let current_width = calc_code_width(attr);
-                        let padding = max_code_width.saturating_sub(current_width) + 1;
-                        let pad_str = " ".repeat(padding);
-                        if c_idx > 0 {
-                            if attr.trailing.tokens[c_idx - 1].kind == TokenKind::Whitespace {
-                                attr.trailing.tokens[c_idx - 1].text = pad_str;
-                            } else {
-                                attr.trailing.tokens.insert(
-                                    c_idx,
-                                    Token::new(
-                                        TokenKind::Whitespace,
-                                        pad_str,
-                                        crate::span::Span::new(0, 0, 0, 0, 0, 0),
-                                    ),
-                                );
-                            }
-                        } else {
-                            attr.trailing.tokens.insert(
-                                c_idx,
-                                Token::new(
-                                    TokenKind::Whitespace,
-                                    pad_str,
-                                    crate::span::Span::new(0, 0, 0, 0, 0, 0),
-                                ),
-                            );
-                        }
-                    }
+                    .any(|t| t.kind == TokenKind::Comment || t.kind == TokenKind::InlineComment)
+            })
+            .map(|&idx| calc_code_width(&attributes[idx]))
+            .max()
+            .unwrap_or(0);
+        for &idx in cluster_indices {
+            let attr = &mut attributes[idx];
+            let comment_idx =
+                attr.trailing.tokens.iter().position(|t| {
+                    t.kind == TokenKind::Comment || t.kind == TokenKind::InlineComment
+                });
+            if let Some(c_idx) = comment_idx {
+                let current_width = calc_code_width(attr);
+                let padding = max_code_width.saturating_sub(current_width) + 1;
+                let pad_str = " ".repeat(padding);
+                if c_idx > 0 && attr.trailing.tokens[c_idx - 1].kind == TokenKind::Whitespace {
+                    attr.trailing.tokens[c_idx - 1].text = pad_str;
+                } else {
+                    attr.trailing.tokens.insert(
+                        c_idx,
+                        Token::new(
+                            TokenKind::Whitespace,
+                            pad_str,
+                            crate::span::Span::new(0, 0, 0, 0, 0, 0),
+                        ),
+                    );
                 }
             }
         }
@@ -501,28 +443,22 @@ impl CanonicalFormatter {
     /// * `doc` - The document to mutate in place.
     /// * `sensitive_attrs` - Slice of attribute names to redact.
     pub fn redact_sensitive(doc: &mut Document, sensitive_attrs: &[&str]) {
-        for attr in &mut doc.attributes {
-            if sensitive_attrs.contains(&attr.name.text.as_str()) {
-                let dummy_span = crate::span::Span::new(0, 0, 0, 0, 0, 0);
-                attr.expr_tokens = vec![
-                    Token::new(TokenKind::Whitespace, " ", dummy_span.clone()),
-                    Token::new(TokenKind::String, "\"(sensitive value)\"", dummy_span),
-                ];
-            }
-        }
         for item in &mut doc.items {
-            if let crate::cst::document::DocumentItem::Attribute(a) = item {
-                if sensitive_attrs.contains(&a.name.text.as_str()) {
-                    let dummy_span = crate::span::Span::new(0, 0, 0, 0, 0, 0);
-                    a.expr_tokens = vec![
-                        Token::new(TokenKind::Whitespace, " ", dummy_span.clone()),
-                        Token::new(TokenKind::String, "\"(sensitive value)\"", dummy_span),
-                    ];
+            match item {
+                crate::cst::document::DocumentItem::Attribute(a) => {
+                    if sensitive_attrs.contains(&a.name.text.as_str()) {
+                        let dummy_span = crate::span::Span::new(0, 0, 0, 0, 0, 0);
+                        a.expr_tokens = vec![
+                            Token::new(TokenKind::Whitespace, " ", dummy_span.clone()),
+                            Token::new(TokenKind::String, "\"(sensitive value)\"", dummy_span),
+                        ];
+                    }
                 }
+                crate::cst::document::DocumentItem::Block(block) => {
+                    Self::redact_sensitive(&mut block.body, sensitive_attrs);
+                }
+                crate::cst::document::DocumentItem::Trivia(_) => {}
             }
-        }
-        for block in &mut doc.blocks {
-            Self::redact_sensitive(&mut block.body, sensitive_attrs);
         }
     }
 }
@@ -537,29 +473,25 @@ pub fn format_str(input: &str) -> Result<String, crate::error::HclError> {
     Ok(Formatter::render(&doc))
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::cst::parser::CstParser;
+    use crate::error::HclError;
     #[test]
-    fn test_format_render_exact() {
+    fn test_format_render_exact() -> Result<(), HclError> {
         let input = "  foo = 123 \n";
         let parser = CstParser::new(input);
-        let doc = parser.parse().unwrap();
+        let doc = parser.parse()?;
         let rendered = Formatter::render(&doc);
         assert_eq!(rendered, input);
+        Ok(())
     }
     #[test]
     fn test_format_render_exact_blocks() {
         let span = Span::new(0, 0, 0, 0, 0, 0);
         let mut doc = Document::new();
-        doc.blocks.push(Block {
+        doc.append_block(Block {
             leading: TokenStream::new(),
             type_ident: Token::new(TokenKind::Ident, "block", span.clone()),
             labels: vec![
@@ -595,10 +527,10 @@ mod tests {
             trailing: TokenStream::new(),
         });
         doc2.add_attribute("attr", "val");
-        assert_eq!(Formatter::render(&doc2), "\nattr = valb{}");
+        assert_eq!(Formatter::render(&doc2), "b{}\nattr = val");
     }
     #[test]
-    fn test_block_mutation() {
+    fn test_block_mutation() -> Result<(), HclError> {
         let span = Span::new(0, 0, 0, 0, 0, 0);
         let mut doc = Document::new();
         let block = Block {
@@ -616,7 +548,7 @@ mod tests {
             trailing: TokenStream::new(),
         };
         doc.add_block(block);
-        assert_eq!(doc.blocks.len(), 1);
+        assert_eq!(doc.blocks().len(), 1);
         let removed_none_type = doc.remove_block("data", &[" ", "\"aws_vpc\"", " ", "\"main\""]);
         assert!(removed_none_type.is_none());
         let removed_none_labels = doc.remove_block("resource", &[" ", "\"aws_vpc\""]);
@@ -624,15 +556,19 @@ mod tests {
         let removed_none_label_val =
             doc.remove_block("resource", &[" ", "\"aws_vpc\"", " ", "\"dev\""]);
         assert!(removed_none_label_val.is_none());
-        let block_mut = doc.get_block_mut("resource", &[" ", "\"aws_vpc\"", " ", "\"main\""]);
-        assert!(block_mut.is_some());
-        block_mut.unwrap().type_ident.text = "data".to_string();
-        assert_eq!(doc.blocks("data").count(), 1);
-        assert_eq!(doc.blocks("resource").count(), 0);
-        doc.blocks.first_mut().unwrap().type_ident.text = "resource".to_string();
+        let block_mut = doc
+            .get_block_mut("resource", &[" ", "\"aws_vpc\"", " ", "\"main\""])
+            .ok_or_else(|| HclError::CstNodeNotFound("resource".to_string()))?;
+        block_mut.type_ident.text = "data".to_string();
+        assert_eq!(doc.blocks_by_type("data").count(), 1);
+        assert_eq!(doc.blocks_by_type("resource").count(), 0);
+        let first_block = doc
+            .get_block_mut("data", &[" ", "\"aws_vpc\"", " ", "\"main\""])
+            .ok_or_else(|| HclError::CstNodeNotFound("first".to_string()))?;
+        first_block.type_ident.text = "resource".to_string();
         let removed_block = doc.remove_block("resource", &[" ", "\"aws_vpc\"", " ", "\"main\""]);
         assert!(removed_block.is_some());
-        assert_eq!(doc.blocks.len(), 0);
+        assert_eq!(doc.blocks().len(), 0);
         doc.add_attribute("foo", "bar");
         let block2 = Block {
             leading: TokenStream::new(),
@@ -645,6 +581,7 @@ mod tests {
         };
         doc.add_block(block2);
         assert_eq!(Formatter::render(&doc), "foo = bar\nb{}");
+        Ok(())
     }
     #[test]
     fn test_add_block_missing() {
@@ -703,128 +640,135 @@ mod tests {
         doc.add_block(block2);
     }
     #[test]
-    fn test_format_document_display() {
+    fn test_format_document_display() -> Result<(), HclError> {
         let input = "  foo = 123 \n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let doc = parser.parse().unwrap();
+        let doc = parser.parse()?;
         assert_eq!(Formatter::render(&doc), input);
+        Ok(())
     }
     #[test]
-    fn test_format_str() {
+    fn test_format_str() -> Result<(), HclError> {
         let input = "  foo = 123 \n";
-        let out = crate::cst::format::format_str(input).unwrap();
+        let out = crate::cst::format::format_str(input)?;
         assert_eq!(out, input);
+        Ok(())
     }
     #[test]
-    fn test_parse_cst_to_string_property() {
+    fn test_parse_cst_to_string_property() -> Result<(), HclError> {
         let text = "  foo = 123 \n\n resource \"aws\" \"test\" {\n  a = 1\n}\n";
         let parser = crate::cst::parser::CstParser::new(text);
-        let doc = parser.parse().unwrap();
+        let doc = parser.parse()?;
         assert_eq!(Formatter::render(&doc), text);
+        Ok(())
     }
     #[test]
-    fn test_canonical_formatter_coverage() {
+    fn test_canonical_formatter_coverage() -> Result<(), HclError> {
         let input =
             "foo=123\n\nresource \"aws\" \"test\" {\na=1\nb=2\n}\n\nresource \"az\" \"test\" {}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
+        let mut doc = parser.parse()?;
         CanonicalFormatter::format_document(&mut doc);
         let out = Formatter::render(&doc);
         assert!(out.contains("foo = 123"));
         assert!(out.contains("a = 1"));
+        Ok(())
     }
     #[test]
-    fn test_canonical_formatter_edge_cases() {
+    fn test_canonical_formatter_edge_cases() -> Result<(), HclError> {
         let input = "foo=123\nresource\"aws\"{a=1}\nresource\"az\"{b=2}";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
+        let mut doc = parser.parse()?;
         CanonicalFormatter::format_document(&mut doc);
+        Ok(())
     }
     #[test]
-    fn test_canonical_formatter_coverage_extra() {
+    fn test_canonical_formatter_coverage_extra() -> Result<(), HclError> {
         let input = "foo=123\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
-        doc.blocks[0].leading.tokens.clear();
+        let mut doc = parser.parse()?;
+        if let Some(b) = doc.get_block_mut("resource", &["\"aws\""]) {
+            b.leading.tokens.clear();
+        }
         CanonicalFormatter::format_document(&mut doc);
+        Ok(())
     }
     #[test]
-    fn test_canonical_formatter_coverage_extra_2() {
+    fn test_canonical_formatter_coverage_extra_2() -> Result<(), HclError> {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
-        doc.blocks[0].leading.tokens.clear();
-        doc.blocks[0]
-            .leading
-            .tokens
-            .push(crate::lex::token::Token::new(
+        let mut doc = parser.parse()?;
+        if let Some(b) = doc.get_block_mut("resource", &["\"aws\""]) {
+            b.leading.tokens.clear();
+            b.leading.tokens.push(crate::lex::token::Token::new(
                 crate::lex::token::TokenKind::Newline,
                 "\n",
                 crate::span::Span::new(0, 0, 0, 0, 0, 0),
             ));
+        }
         CanonicalFormatter::format_document(&mut doc);
+        Ok(())
     }
     #[test]
-    fn test_canonical_formatter_coverage_extra_3() {
+    fn test_canonical_formatter_coverage_extra_3() -> Result<(), HclError> {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
-        doc.blocks[0].leading.tokens.clear();
-        doc.blocks[0]
-            .leading
-            .tokens
-            .push(crate::lex::token::Token::new(
+        let mut doc = parser.parse()?;
+        if let Some(b) = doc.get_block_mut("resource", &["\"aws\""]) {
+            b.leading.tokens.clear();
+            b.leading.tokens.push(crate::lex::token::Token::new(
                 crate::lex::token::TokenKind::Whitespace,
                 " ",
                 crate::span::Span::new(0, 0, 0, 0, 0, 0),
             ));
-        doc.blocks[0]
-            .leading
-            .tokens
-            .push(crate::lex::token::Token::new(
+            b.leading.tokens.push(crate::lex::token::Token::new(
                 crate::lex::token::TokenKind::Newline,
                 "\n",
                 crate::span::Span::new(0, 0, 0, 0, 0, 0),
             ));
+        }
         CanonicalFormatter::format_document(&mut doc);
+        Ok(())
     }
     #[test]
-    fn test_canonical_formatter_coverage_extra_4() {
+    fn test_canonical_formatter_coverage_extra_4() -> Result<(), HclError> {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
-        doc.blocks[0].leading.tokens.clear();
-        doc.blocks[0]
-            .leading
-            .tokens
-            .push(crate::lex::token::Token::new(
+        let mut doc = parser.parse()?;
+        if let Some(b) = doc.get_block_mut("resource", &["\"aws\""]) {
+            b.leading.tokens.clear();
+            b.leading.tokens.push(crate::lex::token::Token::new(
                 crate::lex::token::TokenKind::Whitespace,
                 "  ",
                 crate::span::Span::new(0, 0, 0, 0, 0, 0),
             ));
-        doc.blocks[0]
-            .leading
-            .tokens
-            .push(crate::lex::token::Token::new(
+            b.leading.tokens.push(crate::lex::token::Token::new(
                 crate::lex::token::TokenKind::Whitespace,
                 "   ",
                 crate::span::Span::new(0, 0, 0, 0, 0, 0),
             ));
+        }
         CanonicalFormatter::format_document(&mut doc);
+        Ok(())
     }
     #[test]
-    fn test_canonical_formatter_coverage_extra_5() {
+    fn test_canonical_formatter_coverage_extra_5() -> Result<(), HclError> {
         let input = "foo=123\n\nresource\"aws\"{}\n";
         let parser = crate::cst::parser::CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
-        doc.blocks[0].leading.tokens.clear();
+        let mut doc = parser.parse()?;
+        if let Some(b) = doc.get_block_mut("resource", &["\"aws\""]) {
+            b.leading.tokens.clear();
+        }
         CanonicalFormatter::format_document(&mut doc);
-        doc.attributes.clear();
-        doc.blocks[0].leading.tokens.clear();
+        doc.remove_attribute("foo");
+        if let Some(b) = doc.get_block_mut("resource", &["\"aws\""]) {
+            b.leading.tokens.clear();
+        }
         CanonicalFormatter::format_document(&mut doc);
+        Ok(())
     }
     #[test]
-    fn test_cst_format_coverage_branches() {
+    fn test_cst_format_coverage_branches() -> Result<(), HclError> {
         let span = Span::new(0, 0, 0, 0, 0, 0);
         let mut doc = Document::new();
         doc.add_attribute("a", "1");
@@ -867,7 +811,7 @@ mod tests {
             close_brace: Token::new(TokenKind::CBrace, "}", span.clone()),
             trailing: TokenStream::new(),
         };
-        doc_lookup.blocks.push(b);
+        doc_lookup.append_block(b);
         assert!(doc_lookup.get_block_mut("nonexistent", &[]).is_none());
         assert!(
             doc_lookup
@@ -884,24 +828,28 @@ mod tests {
                 .get_block_mut("resource", &["\"aws_vpc\"", "\"main\""])
                 .is_some()
         );
-        let mut doc_attr = CstParser::new("key = 1\n").parse().unwrap();
-        doc_attr.attributes[0].expr_tokens.clear();
+        let mut doc_attr = CstParser::new("key = 1\n").parse()?;
+        for item in &mut doc_attr.items {
+            if let crate::cst::document::DocumentItem::Attribute(a) = item {
+                a.expr_tokens.clear();
+            }
+        }
         CanonicalFormatter::format_document(&mut doc_attr);
-        let mut doc_block_double_nl = CstParser::new("foo = 1\n\nresource \"aws\" {}\n")
-            .parse()
-            .unwrap();
-        doc_block_double_nl.blocks[0].leading.tokens.clear();
-        doc_block_double_nl.blocks[0]
-            .leading
-            .tokens
-            .push(Token::new(TokenKind::Newline, "\n\n", span));
+        let mut doc_block_double_nl = CstParser::new("foo = 1\n\nresource \"aws\" {}\n").parse()?;
+        if let Some(b) = doc_block_double_nl.get_block_mut("resource", &[" ", "\"aws\"", " "]) {
+            b.leading.tokens.clear();
+            b.leading
+                .tokens
+                .push(Token::new(TokenKind::Newline, "\n\n", span));
+        }
         CanonicalFormatter::format_document(&mut doc_block_double_nl);
+        Ok(())
     }
     #[test]
-    fn test_render_redacted_and_redact_sensitive() {
+    fn test_render_redacted_and_redact_sensitive() -> Result<(), HclError> {
         let input = "public_val = 123\nsecret_key = \"supersecret\"\n";
         let parser = CstParser::new(input);
-        let mut doc = parser.parse().unwrap();
+        let mut doc = parser.parse()?;
         let redacted_rendered = Formatter::render_redacted(&doc, &["secret_key"]);
         assert!(redacted_rendered.contains("public_val = 123"));
         assert!(redacted_rendered.contains("secret_key = \"(sensitive value)\""));
@@ -913,6 +861,7 @@ mod tests {
         assert!(in_place_rendered.contains("public_val = 123"));
         assert!(in_place_rendered.contains("secret_key = \"(sensitive value)\""));
         assert!(!in_place_rendered.contains("supersecret"));
+        Ok(())
     }
     #[test]
     fn test_cst_interleaved_ordering_and_cluster_alignment() {
@@ -991,10 +940,14 @@ mod tests {
             expr_tokens: vec![Token::new(TokenKind::String, "\"public\"", span.clone())],
             trailing: TokenStream::new(),
         };
-        doc_empty_items.attributes.push(attr_secret);
-        doc_empty_items.attributes.push(attr_public);
+        doc_empty_items
+            .items
+            .push(DocumentItem::Attribute(attr_secret));
+        doc_empty_items
+            .items
+            .push(DocumentItem::Attribute(attr_public));
         let mut inner_doc = Document::new();
-        inner_doc.attributes.push(Attribute {
+        inner_doc.items.push(DocumentItem::Attribute(Attribute {
             leading: TokenStream::new(),
             name: Token::new(TokenKind::Ident, "secret_key", span.clone()),
             equals_leading: TokenStream::new(),
@@ -1005,7 +958,7 @@ mod tests {
                 span.clone(),
             )],
             trailing: TokenStream::new(),
-        });
+        }));
         let block = Block {
             leading: TokenStream::new(),
             type_ident: Token::new(TokenKind::Ident, "server", span.clone()),
@@ -1015,7 +968,7 @@ mod tests {
             close_brace: Token::new(TokenKind::CBrace, "}", span.clone()),
             trailing: TokenStream::new(),
         };
-        doc_empty_items.blocks.push(block.clone());
+        doc_empty_items.append_block(block.clone());
         let redacted = Formatter::render_redacted(&doc_empty_items, &["secret_key"]);
         assert!(redacted.contains("\"(sensitive value)\""));
         assert!(redacted.contains("\"public\""));
@@ -1031,16 +984,20 @@ mod tests {
                 name: Token::new(TokenKind::Ident, "secret_key", span.clone()),
                 equals_leading: TokenStream::new(),
                 equals: Token::new(TokenKind::Assign, "=", span.clone()),
-                expr_tokens: vec![Token::new(
-                    TokenKind::String,
-                    "\"raw_secret\"",
-                    span.clone(),
-                )],
+                expr_tokens: vec![Token::new(TokenKind::String, "\"raw_secret\"", span)],
                 trailing: TokenStream::new(),
             }));
         let redacted_items = Formatter::render_redacted(&doc_with_items, &["secret_key"]);
         assert!(redacted_items.contains("\"(sensitive value)\""));
         assert!(!redacted_items.contains("raw_secret"));
+    }
+
+    #[test]
+    fn test_cst_format_canonical_and_redact_sensitive() {
+        use crate::cst::document::{Attribute, Block, Document, DocumentItem, TokenStream};
+        use crate::lex::token::{Token, TokenKind};
+        use crate::span::Span;
+        let span = Span::new(0, 0, 0, 0, 0, 0);
         let mut doc_fmt = Document::new();
         doc_fmt.items.push(DocumentItem::Trivia(TokenStream::new()));
         doc_fmt.items.push(DocumentItem::Attribute(Attribute {
@@ -1084,14 +1041,6 @@ mod tests {
         CanonicalFormatter::format_attributes_clustered(&mut [attr1, attr2]);
         let mut doc_mutate = Document::new();
         let mut nested_doc = Document::new();
-        nested_doc.attributes.push(Attribute {
-            leading: TokenStream::new(),
-            name: Token::new(TokenKind::Ident, "secret_key", span.clone()),
-            equals_leading: TokenStream::new(),
-            equals: Token::new(TokenKind::Assign, "=", span.clone()),
-            expr_tokens: vec![Token::new(TokenKind::String, "\"val\"", span.clone())],
-            trailing: TokenStream::new(),
-        });
         nested_doc.items.push(DocumentItem::Attribute(Attribute {
             leading: TokenStream::new(),
             name: Token::new(TokenKind::Ident, "secret_key", span.clone()),
@@ -1100,18 +1049,18 @@ mod tests {
             expr_tokens: vec![Token::new(TokenKind::String, "\"val\"", span.clone())],
             trailing: TokenStream::new(),
         }));
-        doc_mutate.blocks.push(Block {
+        doc_mutate.append_block(Block {
             leading: TokenStream::new(),
             type_ident: Token::new(TokenKind::Ident, "blk", span.clone()),
             labels: vec![],
             open_brace: Token::new(TokenKind::OBrace, "{", span.clone()),
             body: Box::new(nested_doc),
-            close_brace: Token::new(TokenKind::CBrace, "}", span.clone()),
+            close_brace: Token::new(TokenKind::CBrace, "}", span),
             trailing: TokenStream::new(),
         });
         CanonicalFormatter::redact_sensitive(&mut doc_mutate, &["secret_key"]);
         assert_eq!(
-            doc_mutate.blocks[0].body.attributes[0].expr_tokens[1].text,
+            doc_mutate.blocks()[0].body.attributes()[0].expr_tokens[1].text,
             "\"(sensitive value)\""
         );
         assert!(format_str("invalid { = }").is_err());
@@ -1122,8 +1071,8 @@ mod tests {
         doc.add_attribute("list", "[1, 2, 3]");
         doc.add_attribute("obj", "{ a = \"b\" }");
         doc.add_attribute("trav", "var.foo[0]");
-        assert_eq!(doc.attributes.len(), 3);
-        let list_toks: Vec<&str> = doc.attributes[0]
+        assert_eq!(doc.attributes().len(), 3);
+        let list_toks: Vec<&str> = doc.attributes()[0]
             .expr_tokens
             .iter()
             .map(|t| t.text.as_str())
@@ -1132,7 +1081,7 @@ mod tests {
             list_toks,
             vec![" ", "[", "1", ",", " ", "2", ",", " ", "3", "]"]
         );
-        let obj_toks: Vec<&str> = doc.attributes[1]
+        let obj_toks: Vec<&str> = doc.attributes()[1]
             .expr_tokens
             .iter()
             .map(|t| t.text.as_str())
@@ -1141,7 +1090,7 @@ mod tests {
             obj_toks,
             vec![" ", "{", " ", "a", " ", "=", " ", "\"b\"", " ", "}"]
         );
-        let trav_toks: Vec<&str> = doc.attributes[2]
+        let trav_toks: Vec<&str> = doc.attributes()[2]
             .expr_tokens
             .iter()
             .map(|t| t.text.as_str())
@@ -1153,16 +1102,11 @@ mod tests {
         assert!(rendered.contains("trav = var.foo[0]"));
         let mut fallback_doc = Document::new();
         fallback_doc.add_attribute("empty", "");
-        assert_eq!(fallback_doc.attributes[0].expr_tokens.len(), 2);
+        assert_eq!(fallback_doc.attributes()[0].expr_tokens.len(), 2);
         fallback_doc.add_attribute("err_char", "@");
-        assert_eq!(fallback_doc.attributes[1].expr_tokens.len(), 2);
+        assert_eq!(fallback_doc.attributes()[1].expr_tokens.len(), 2);
         let mut doc_with_items = Document::new();
         doc_with_items.add_attribute("first", "1");
-        doc_with_items
-            .items
-            .push(crate::cst::document::DocumentItem::Attribute(
-                doc_with_items.attributes[0].clone(),
-            ));
         doc_with_items.add_attribute("second", "2");
         assert_eq!(doc_with_items.items.len(), 2);
     }
@@ -1198,25 +1142,27 @@ mod tests {
         assert_eq!(stream.tokens[0].text, " ");
     }
     #[test]
-    fn test_hclwrite_contiguous_inline_comment_alignment() {
+    fn test_hclwrite_contiguous_inline_comment_alignment() -> Result<(), HclError> {
         let input = r#"
 foo = "short" # First comment
 longer_attr_name = 42 # Second comment
 "#;
-        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
+        let mut doc = crate::cst::parser::CstParser::new(input).parse()?;
         CanonicalFormatter::format_document(&mut doc);
         let rendered = Formatter::render(&doc);
         let lines: Vec<&str> = rendered.lines().filter(|l| l.contains('#')).collect();
         assert_eq!(lines.len(), 2);
-        let col1 = lines[0].find('#').unwrap();
-        let col2 = lines[1].find('#').unwrap();
-        assert_eq!(
-            col1, col2,
-            "Comments should be aligned at the exact same column: \n{rendered}"
-        );
+        let col1 = lines[0]
+            .find('#')
+            .ok_or_else(|| HclError::CstNodeNotFound("#".to_string()))?;
+        let col2 = lines[1]
+            .find('#')
+            .ok_or_else(|| HclError::CstNodeNotFound("#".to_string()))?;
+        assert_eq!(col1, col2);
+        Ok(())
     }
     #[test]
-    fn test_hclwrite_multiline_tuple_and_object_indentation() {
+    fn test_hclwrite_multiline_tuple_and_object_indentation() -> Result<(), HclError> {
         let span = Span::new(0, 0, 0, 0, 0, 0);
         let mut tokens = vec![
             Token::new(TokenKind::OBrack, "[", span.clone()),
@@ -1228,23 +1174,24 @@ longer_attr_name = 42 # Second comment
             Token::new(TokenKind::String, "\"item2\"", span.clone()),
             Token::new(TokenKind::Comma, ",", span.clone()),
             Token::new(TokenKind::Newline, "\n", span.clone()),
-            Token::new(TokenKind::CBrack, "]", span.clone()),
+            Token::new(TokenKind::CBrack, "]", span),
         ];
         CanonicalFormatter::format_expression_tokens(&mut tokens, 2);
         let comma_idx = tokens
             .iter()
             .position(|t| t.kind == TokenKind::Comma)
-            .unwrap();
+            .ok_or_else(|| HclError::CstNodeNotFound("comma".to_string()))?;
         assert_ne!(tokens[comma_idx - 1].kind, TokenKind::Whitespace);
         let cbrack_idx = tokens
             .iter()
             .position(|t| t.kind == TokenKind::CBrack)
-            .unwrap();
+            .ok_or_else(|| HclError::CstNodeNotFound("cbrack".to_string()))?;
         let cbrack_indent = &tokens[cbrack_idx - 1];
         assert_eq!(cbrack_indent.text, "  ");
+        Ok(())
     }
     #[test]
-    fn test_hclwrite_official_fixtures_conformance() {
+    fn test_hclwrite_official_fixtures_conformance() -> Result<(), HclError> {
         let input = r#"
 resource "aws_security_group" "allow_tls" {
   name        = "allow_tls"
@@ -1267,7 +1214,7 @@ resource "aws_security_group" "allow_tls" {
   }
 }
 "#;
-        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
+        let mut doc = crate::cst::parser::CstParser::new(input).parse()?;
         CanonicalFormatter::format_document(&mut doc);
         let formatted = Formatter::render(&doc);
         assert!(formatted.contains("resource \"aws_security_group\" \"allow_tls\" {"));
@@ -1275,32 +1222,38 @@ resource "aws_security_group" "allow_tls" {
         assert!(formatted.contains("description = \"Allow TLS inbound traffic\""));
         assert!(formatted.contains("ingress {"));
         assert!(formatted.contains("egress {"));
+        Ok(())
     }
     #[test]
-    fn test_format_trailing_block_comments_and_alignment() {
+    fn test_format_trailing_block_comments_and_alignment() -> Result<(), HclError> {
         use crate::span::Span;
         let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
         let input = "a = 1 // inline 1\nlonger_name = 2 // inline 2\n";
-        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
-        doc.attributes[0]
-            .leading
-            .push(Token::new(TokenKind::Whitespace, "  ", dummy_span.clone()));
-        doc.attributes[1]
-            .leading
-            .push(Token::new(TokenKind::Whitespace, "  ", dummy_span.clone()));
-        doc.attributes[0].trailing.tokens.insert(
-            0,
-            Token::new(
-                TokenKind::Comment,
-                "/* block comment */",
-                dummy_span.clone(),
-            ),
-        );
+        let mut doc = crate::cst::parser::CstParser::new(input).parse()?;
+        let mut attr_idx = 0usize;
+        for item in &mut doc.items {
+            if let crate::cst::document::DocumentItem::Attribute(attr) = item {
+                attr.leading
+                    .push(Token::new(TokenKind::Whitespace, "  ", dummy_span.clone()));
+                if attr_idx == 0 {
+                    attr.trailing.tokens.insert(
+                        0,
+                        Token::new(
+                            TokenKind::Comment,
+                            "/* block comment */",
+                            dummy_span.clone(),
+                        ),
+                    );
+                }
+                attr_idx += 1;
+            }
+        }
         CanonicalFormatter::format_document(&mut doc);
         CanonicalFormatter::format_document(&mut doc);
         let formatted = Formatter::render(&doc);
         assert!(formatted.contains("/* block comment */"));
         assert!(formatted.contains("// inline 2"));
+        Ok(())
     }
     #[test]
     fn test_format_expression_tokens_edge_cases() {
@@ -1332,19 +1285,35 @@ resource "aws_security_group" "allow_tls" {
             Token::new(TokenKind::Newline, "\n", dummy_span.clone()),
             Token::new(TokenKind::Ident, "a", dummy_span.clone()),
             Token::new(TokenKind::Newline, "\n", dummy_span.clone()),
-            Token::new(TokenKind::CBrace, "}", dummy_span.clone()),
+            Token::new(TokenKind::CBrace, "}", dummy_span),
         ];
         CanonicalFormatter::format_expression_tokens(&mut tokens_multiline_object, 2);
         assert_eq!(tokens_multiline_object.len(), 7);
     }
     #[test]
-    fn test_redact_sensitive_non_matching_attribute() {
+    fn test_redact_sensitive_non_matching_attribute() -> Result<(), HclError> {
         let input = "safe = \"clear text\"\nsecret = \"super secret\"\nblock {\n  inner = 1\n}\n";
-        let mut doc = crate::cst::parser::CstParser::new(input).parse().unwrap();
+        let mut doc = crate::cst::parser::CstParser::new(input).parse()?;
+        doc.items.push(crate::cst::document::DocumentItem::Trivia(
+            crate::cst::document::TokenStream::new(),
+        ));
         CanonicalFormatter::redact_sensitive(&mut doc, &["secret"]);
         let rendered = Formatter::render(&doc);
         assert!(rendered.contains("safe = \"clear text\""));
         assert!(rendered.contains("secret = \"(sensitive value)\""));
         assert!(rendered.contains("block {"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_expression_tokens_newline_end() {
+        use crate::lex::token::{Token, TokenKind};
+        use crate::span::Span;
+        let mut tokens = vec![
+            Token::new(TokenKind::Ident, "foo", Span::new(0, 0, 0, 0, 0, 0)),
+            Token::new(TokenKind::Newline, "\n", Span::new(0, 0, 0, 0, 0, 0)),
+        ];
+        CanonicalFormatter::format_expression_tokens(&mut tokens, 0);
+        assert_eq!(tokens.len(), 2);
     }
 }

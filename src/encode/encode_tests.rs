@@ -1,16 +1,11 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
+//! Unit tests for HCL structural and value encoding.
 #[cfg(test)]
 mod tests {
     use crate::cst::builder::CstBody;
     use crate::decode::DecodeBody;
     use crate::diagnostic::Diagnostics;
     use crate::encode::{EncodeBody, EncodeValue, encode_to_string};
+    use crate::error::HclError;
     use crate::number::Number;
     use crate::types::ty::Type;
     use crate::types::val::{Value, ValueData};
@@ -105,11 +100,12 @@ mod tests {
             unsigned_128.encode_value().data.as_ref(),
             &ValueData::Number(1280_i32.into())
         );
+    }
+
+    #[test]
+    fn test_encode_value_numbers_and_collections() {
         let num = Number::from(123_i64);
-        assert_eq!(
-            num.encode_value().data.as_ref(),
-            &ValueData::Number(num.clone())
-        );
+        assert_eq!(num.encode_value().data.as_ref(), &ValueData::Number(num));
         let val_f32: f32 = 1.25;
         assert!(matches!(
             &*val_f32.encode_value().data,
@@ -165,7 +161,7 @@ mod tests {
         assert_eq!(val.encode_value(), val);
     }
     #[test]
-    fn test_encode_body_and_roundtrip() {
+    fn test_encode_body_and_roundtrip() -> Result<(), HclError> {
         let original = ServerConfig {
             env: "production".to_string(),
             host: "0.0.0.0".to_string(),
@@ -187,7 +183,7 @@ mod tests {
             ],
         };
         let mut body = CstBody::new();
-        original.encode_into_body(&mut body).unwrap();
+        original.encode_into_body(&mut body)?;
         assert!(body.attributes().iter().any(|a| a.name == "host"));
         assert!(body.attributes().iter().any(|a| a.name == "port"));
         assert!(body.attributes().iter().any(|a| a.name == "custom_timeout"));
@@ -198,7 +194,7 @@ mod tests {
         );
         let s_blocks: Vec<_> = body
             .blocks()
-            .iter()
+            .into_iter()
             .filter(|b| b.block_type == "services")
             .collect();
         assert_eq!(s_blocks.len(), 2);
@@ -210,23 +206,24 @@ mod tests {
         assert!(hcl_str.contains("custom_timeout = 30"));
         assert!(hcl_str.contains("nested \"primary\" {"));
         assert!(hcl_str.contains("services \"auth\" {"));
-        let parsed_body = crate::api::parse(&hcl_str).unwrap();
+        let parsed_body = crate::api::parse(&hcl_str)?;
         let mut ctx = crate::eval::context::Context::new();
         let decoded =
-            ServerConfig::decode_body(&parsed_body, &["production".to_string()], &mut ctx).unwrap();
+            ServerConfig::decode_body(&parsed_body, &["production".to_string()], &mut ctx)?;
         assert_eq!(decoded, original);
         let no_timeout = ServerConfig {
             timeout: None,
-            ..original.clone()
+            ..original
         };
         let mut body_no_timeout = CstBody::new();
-        no_timeout.encode_into_body(&mut body_no_timeout).unwrap();
+        no_timeout.encode_into_body(&mut body_no_timeout)?;
         assert!(
             !body_no_timeout
                 .attributes()
                 .iter()
                 .any(|a| a.name == "custom_timeout")
         );
+        Ok(())
     }
     struct MaybeFailingEncode(bool);
     impl EncodeBody for MaybeFailingEncode {
@@ -243,17 +240,18 @@ mod tests {
         }
     }
     #[test]
-    fn test_extract_labels_default() {
+    fn test_extract_labels_default() -> Result<(), HclError> {
         let success = MaybeFailingEncode(false);
         assert_eq!(success.extract_labels(), Vec::<String>::new());
         let mut body = CstBody::new();
         assert!(success.encode_into_body(&mut body).is_ok());
-        let blk = success.encode_into_block("dummy", vec![]).unwrap();
+        let blk = success.encode_into_block("dummy", vec![])?;
         assert_eq!(blk.block_type, "dummy");
         assert!(encode_to_string(&success).is_ok());
         let failure = MaybeFailingEncode(true);
         assert!(failure.encode_into_block("fail", vec![]).is_err());
         assert!(encode_to_string(&failure).is_err());
+        Ok(())
     }
     #[derive(Debug, PartialEq, crate::decode::DecodeValue, crate::encode::EncodeValue)]
     enum TaskPriority {
@@ -275,7 +273,7 @@ mod tests {
         meta: TaskMeta,
     }
     #[test]
-    fn test_derive_encode_value_and_roundtrip() {
+    fn test_derive_encode_value_and_roundtrip() -> Result<(), HclError> {
         let task = TaskItem {
             id: "task-123".to_string(),
             priority: TaskPriority::High,
@@ -290,8 +288,7 @@ mod tests {
         let decoded: TaskItem = crate::decode::DecodeValue::decode_value(
             &encoded,
             crate::span::Span::new(0, 0, 0, 0, 0, 0),
-        )
-        .unwrap();
+        )?;
         assert_eq!(decoded, task);
         let task_no_desc = TaskItem {
             id: "task-456".to_string(),
@@ -306,13 +303,13 @@ mod tests {
         let decoded_no_desc: TaskItem = crate::decode::DecodeValue::decode_value(
             &encoded_no_desc,
             crate::span::Span::new(0, 0, 0, 0, 0, 0),
-        )
-        .unwrap();
+        )?;
         assert_eq!(decoded_no_desc, task_no_desc);
         let low_val = TaskPriority::Low.encode_value();
         assert_eq!(low_val.to_string(), "\"Low\"");
         let high_val = TaskPriority::High.encode_value();
         assert_eq!(high_val.to_string(), "\"high_priority\"");
+        Ok(())
     }
     /// A leaf service definition with attributes.
     #[derive(Debug, Clone, PartialEq, DecodeBody, EncodeBody, hcl_macros::ImpliedBodySchema)]
@@ -344,7 +341,7 @@ mod tests {
     }
     /// Tests round-trip decode -> encode -> decode fidelity on complex nested structures.
     #[test]
-    fn test_complex_nested_structure_roundtrip() {
+    fn test_complex_nested_structure_roundtrip() -> Result<(), HclError> {
         let mut services = BTreeMap::new();
         services.insert(
             "auth".to_string(),
@@ -376,7 +373,7 @@ mod tests {
             version: 2,
             clusters,
         };
-        let rendered = encode_to_string(&infra).unwrap();
+        let rendered = encode_to_string(&infra)?;
         assert!(rendered.contains("project_name = \"global-cloud\""));
         assert!(rendered.contains("version = 2"));
         assert!(rendered.contains("cluster \"prod\" {"));
@@ -388,11 +385,14 @@ mod tests {
         let mut parser = crate::parse::parser::Parser::new(&rendered);
         let body = parser.parse_body();
         let mut ctx = crate::eval::context::Context::new();
-        let decoded = ComplexInfrastructure::decode_body(&body, &[], &mut ctx).unwrap();
+        let decoded = ComplexInfrastructure::decode_body(&body, &[], &mut ctx)?;
         assert_eq!(decoded.project_name, infra.project_name);
         assert_eq!(decoded.version, infra.version);
         assert_eq!(decoded.clusters.len(), infra.clusters.len());
-        let prod = decoded.clusters.get("prod").unwrap();
+        let prod = decoded
+            .clusters
+            .get("prod")
+            .ok_or_else(|| HclError::Eval("missing prod".into()))?;
         assert_eq!(
             prod.meta,
             ComplexCommonMeta {
@@ -401,20 +401,33 @@ mod tests {
             }
         );
         assert_eq!(prod.services.len(), 2);
-        assert_eq!(prod.services.get("auth").unwrap().port, 8080);
-        assert_eq!(prod.services.get("payments").unwrap().port, 9000);
-        let second_rendered = encode_to_string(&decoded).unwrap();
+        assert_eq!(
+            prod.services
+                .get("auth")
+                .ok_or_else(|| HclError::Eval("missing auth".into()))?
+                .port,
+            8080
+        );
+        assert_eq!(
+            prod.services
+                .get("payments")
+                .ok_or_else(|| HclError::Eval("missing payments".into()))?
+                .port,
+            9000
+        );
+        let second_rendered = encode_to_string(&decoded)?;
         let mut second_parser = crate::parse::parser::Parser::new(&second_rendered);
         let second_body = second_parser.parse_body();
         let mut second_ctx = crate::eval::context::Context::new();
         let second_decoded =
-            ComplexInfrastructure::decode_body(&second_body, &[], &mut second_ctx).unwrap();
+            ComplexInfrastructure::decode_body(&second_body, &[], &mut second_ctx)?;
         assert_eq!(decoded.project_name, second_decoded.project_name);
         assert_eq!(decoded.version, second_decoded.version);
         assert_eq!(decoded.clusters, second_decoded.clusters);
+        Ok(())
     }
     #[test]
-    fn test_encode_body_with_block_trailing_comment() {
+    fn test_encode_body_with_block_trailing_comment() -> Result<(), HclError> {
         let span = crate::span::Span::default();
         let mut body = crate::ast::structure::Body::new(span.clone());
         let mut block = crate::ast::structure::Block::new(
@@ -434,15 +447,16 @@ mod tests {
         );
         body.blocks.push(block2);
         let mut cst_body = CstBody::default();
-        body.encode_into_body(&mut cst_body).unwrap();
-        assert_eq!(cst_body.blocks.len(), 2);
+        body.encode_into_body(&mut cst_body)?;
+        assert_eq!(cst_body.blocks().len(), 2);
         assert!(
-            cst_body.blocks[0]
+            cst_body.blocks()[0]
                 .trailing
                 .tokens
                 .iter()
                 .any(|t| t.text.contains("# inline comment"))
         );
-        assert_eq!(cst_body.blocks[1].trailing.tokens.len(), 0);
+        assert_eq!(cst_body.blocks()[1].trailing.tokens.len(), 0);
+        Ok(())
     }
 }

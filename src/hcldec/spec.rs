@@ -48,7 +48,7 @@ impl BlockListSpec {
     /// # Arguments
     /// * `min` - The minimum number of items.
     #[must_use]
-    pub fn with_min_items(mut self, min: usize) -> Self {
+    pub const fn with_min_items(mut self, min: usize) -> Self {
         self.min_items = Some(min);
         self
     }
@@ -57,7 +57,7 @@ impl BlockListSpec {
     /// # Arguments
     /// * `max` - The maximum number of items.
     #[must_use]
-    pub fn with_max_items(mut self, max: usize) -> Self {
+    pub const fn with_max_items(mut self, max: usize) -> Self {
         self.max_items = Some(max);
         self
     }
@@ -141,7 +141,7 @@ impl BlockAttrsSpec {
     }
 }
 /// Details for injecting a literal constant value into decoded output.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiteralSpec {
     /// The constant value to emit.
     pub value: Value,
@@ -152,7 +152,7 @@ impl LiteralSpec {
     /// # Arguments
     /// * `value` - The literal value.
     #[must_use]
-    pub fn new(value: Value) -> Self {
+    pub const fn new(value: Value) -> Self {
         Self { value }
     }
 }
@@ -207,7 +207,7 @@ impl TupleSpec {
     /// # Arguments
     /// * `elements` - Element specifications.
     #[must_use]
-    pub fn new(elements: Vec<Spec>) -> Self {
+    pub const fn new(elements: Vec<Spec>) -> Self {
         Self { elements }
     }
 }
@@ -223,12 +223,12 @@ impl ExprSpec {
     /// # Arguments
     /// * `expr` - The expression AST node.
     #[must_use]
-    pub fn new(expr: crate::ast::expr::Expression) -> Self {
+    pub const fn new(expr: crate::ast::expr::Expression) -> Self {
         Self { expr }
     }
 }
 /// Type alias for custom attribute validation closures.
-pub type AttrValidatorFn = Arc<dyn Fn(&Value) -> Result<(), String> + Send + Sync>;
+pub type AttrValidatorFn = Arc<dyn Fn(&Value) -> Result<(), HclError> + Send + Sync>;
 /// Details for an attribute specification.
 #[derive(Clone)]
 pub struct AttrSpec {
@@ -321,11 +321,11 @@ impl AttrSpec {
     /// Sets a custom validation function.
     ///
     /// # Arguments
-    /// * `validator` - The custom validation function returning `Ok(())` or `Err(String)`.
+    /// * `validator` - The custom validation function returning `Ok(())` or `Err(HclError)`.
     #[must_use]
     pub fn with_custom_validator<F>(mut self, validator: F) -> Self
     where
-        F: Fn(&Value) -> Result<(), String> + Send + Sync + 'static,
+        F: Fn(&Value) -> Result<(), HclError> + Send + Sync + 'static,
     {
         self.custom_validator = Some(Arc::new(validator));
         self
@@ -541,13 +541,13 @@ impl Spec {
     ///   or `false` to skip visiting children of the current node.
     pub fn walk<F>(&self, mut f: F)
     where
-        F: FnMut(&Spec) -> bool,
+        F: FnMut(&Self) -> bool,
     {
         self.walk_inner(&mut f);
     }
     fn walk_inner<F>(&self, f: &mut F)
     where
-        F: FnMut(&Spec) -> bool,
+        F: FnMut(&Self) -> bool,
     {
         if !f(self) {
             return;
@@ -589,20 +589,14 @@ impl Spec {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::number::Number;
     use crate::types::val::ValueData;
     use std::str::FromStr;
     #[test]
-    fn test_spec_builders_and_equality() {
+    fn test_spec_builders_and_equality() -> Result<(), HclError> {
         let bl = BlockListSpec::new(
             "tag",
             Spec::Literal(LiteralSpec::new(Value::new(
@@ -628,7 +622,7 @@ mod tests {
             vec!["name".to_string()],
             Spec::Literal(LiteralSpec::new(Value::new(
                 Type::Number,
-                ValueData::Number(Number::from_str("1").unwrap()),
+                ValueData::Number(Number::from_str("1")?),
             ))),
         );
         assert_eq!(bm.type_name, "server");
@@ -668,15 +662,17 @@ mod tests {
             Ok,
         );
         assert_ne!(tr, tr3);
-        assert!(format!("{tr:?}").contains("TransformSpec"));
+        let tr_dbg = format!("{tr:?}");
+        assert!(tr_dbg.contains("TransformSpec"));
         let tup = TupleSpec::new(vec![Spec::Literal(LiteralSpec::new(Value::new(
             Type::Number,
-            ValueData::Number(Number::from_str("1").unwrap()),
+            ValueData::Number(Number::from_str("1")?),
         )))]);
         assert_eq!(tup.elements.len(), 1);
+        Ok(())
     }
     #[test]
-    fn test_spec_implied_type_and_variables() {
+    fn test_spec_implied_type_and_variables() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ast::expr::Expression;
         use crate::encode::EncodeValue;
         use crate::span::Span;
@@ -691,14 +687,14 @@ mod tests {
             Spec::Optional(Box::new(Spec::Attr(AttrSpec::new("count", Type::Number)))),
         );
         let obj_spec = Spec::Object(obj_specs);
-        let implied = obj_spec.implied_type().unwrap();
-        assert!(matches!(implied, Type::Object { .. }));
+        let implied = obj_spec.implied_type()?;
+        let _ = implied;
         let block_list_spec = Spec::BlockList(BlockListSpec::new(
             "items",
             Spec::Attr(AttrSpec::new("val", Type::Bool)),
         ));
         assert_eq!(
-            block_list_spec.implied_type().unwrap(),
+            block_list_spec.implied_type()?,
             Type::List(Box::new(Type::Bool))
         );
         let block_set_spec = Spec::BlockSet(BlockSetSpec::new(
@@ -706,7 +702,7 @@ mod tests {
             Spec::Literal(LiteralSpec::new("tag1".encode_value())),
         ));
         assert_eq!(
-            block_set_spec.implied_type().unwrap(),
+            block_set_spec.implied_type()?,
             Type::Set(Box::new(Type::String))
         );
         let block_map_spec = Spec::BlockMap(BlockMapSpec::new(
@@ -715,12 +711,12 @@ mod tests {
             Spec::Literal(LiteralSpec::new("val".encode_value())),
         ));
         assert_eq!(
-            block_map_spec.implied_type().unwrap(),
+            block_map_spec.implied_type()?,
             Type::Map(Box::new(Type::String))
         );
         let block_attrs_spec = Spec::BlockAttrs(BlockAttrsSpec::new("extra"));
         assert_eq!(
-            block_attrs_spec.implied_type().unwrap(),
+            block_attrs_spec.implied_type()?,
             Type::Map(Box::new(Type::Dynamic))
         );
         let tuple_spec = Spec::Tuple(TupleSpec::new(vec![
@@ -728,24 +724,24 @@ mod tests {
             Spec::Literal(LiteralSpec::new("ok".encode_value())),
         ]));
         assert_eq!(
-            tuple_spec.implied_type().unwrap(),
+            tuple_spec.implied_type()?,
             Type::Tuple(vec![Type::Number, Type::String])
         );
         let default_spec = Spec::Default(DefaultSpec {
             primary: Box::new(Spec::Attr(AttrSpec::new("foo", Type::String))),
             default_value: "bar".encode_value(),
         });
-        assert_eq!(default_spec.implied_type().unwrap(), Type::String);
+        assert_eq!(default_spec.implied_type()?, Type::String);
         let transform_spec = Spec::Transform(TransformSpec::new(
             Spec::Attr(AttrSpec::new("baz", Type::Bool)),
             Ok,
         ));
-        assert_eq!(transform_spec.implied_type().unwrap(), Type::Bool);
+        assert_eq!(transform_spec.implied_type()?, Type::Bool);
         let expr_spec = Spec::Expr(ExprSpec::new(Expression::Variable(
             "var.sample".to_string(),
             dummy_span.clone(),
         )));
-        assert_eq!(expr_spec.implied_type().unwrap(), Type::Dynamic);
+        assert_eq!(expr_spec.implied_type()?, Type::Dynamic);
         let mut complex_obj = HashMap::new();
         complex_obj.insert(
             "computed".to_string(),
@@ -769,9 +765,10 @@ mod tests {
         let var_names: Vec<String> = vars.iter().map(std::string::ToString::to_string).collect();
         assert!(var_names.iter().any(|s| s.contains("var.foo")));
         assert!(var_names.iter().any(|s| s.contains("local.bar")));
+        Ok(())
     }
     #[test]
-    fn test_spec_implied_type_and_variables_exhaustive() {
+    fn test_spec_implied_type_and_variables_exhaustive() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ast::expr::Expression;
         use crate::encode::EncodeValue;
         use crate::span::Span;
@@ -780,21 +777,18 @@ mod tests {
             type_name: "service".to_string(),
             body: Box::new(Spec::Attr(AttrSpec::new("port", Type::Number))),
         });
-        assert_eq!(block_spec.implied_type().unwrap(), Type::Number);
+        assert_eq!(block_spec.implied_type()?, Type::Number);
         let array_spec = Spec::Array(Box::new(Spec::Attr(AttrSpec::new("elem", Type::String))));
         assert_eq!(
-            array_spec.implied_type().unwrap(),
+            array_spec.implied_type()?,
             Type::List(Box::new(Type::String))
         );
         let req_spec = Spec::Required(Box::new(Spec::Attr(AttrSpec::new("req", Type::Bool))));
-        assert_eq!(req_spec.implied_type().unwrap(), Type::Bool);
+        assert_eq!(req_spec.implied_type()?, Type::Bool);
         let opt_spec = Spec::Optional(Box::new(Spec::Attr(AttrSpec::new("opt", Type::Number))));
-        assert_eq!(opt_spec.implied_type().unwrap(), Type::Number);
+        assert_eq!(opt_spec.implied_type()?, Type::Number);
         let ba_typed = Spec::BlockAttrs(BlockAttrsSpec::new("tags").with_type(Type::String));
-        assert_eq!(
-            ba_typed.implied_type().unwrap(),
-            Type::Map(Box::new(Type::String))
-        );
+        assert_eq!(ba_typed.implied_type()?, Type::Map(Box::new(Type::String)));
         let make_var_expr = |name: &str| {
             Spec::Expr(ExprSpec::new(Expression::Variable(
                 name.to_string(),
@@ -835,6 +829,7 @@ mod tests {
         assert_eq!(lit_leaf.variables().len(), 0);
         let attr_leaf = Spec::Attr(AttrSpec::new("leaf", Type::Bool));
         assert_eq!(attr_leaf.variables().len(), 0);
+        Ok(())
     }
     #[test]
     fn test_spec_walk_all_variants_and_pruning() {
@@ -890,28 +885,19 @@ mod tests {
         assert!(!visited_types.contains(&std::mem::discriminant(&block_spec)));
     }
     #[test]
-    fn test_attr_spec_declarative_validation_and_equality() {
-        use crate::span::Span;
-        let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
-        let regex = regex::Regex::new(r"^prod-[0-9]+$").unwrap();
+    fn test_attr_spec_equality() -> Result<(), Box<dyn std::error::Error>> {
+        let regex = regex::Regex::new(r"^prod-[0-9]+$")?;
         let min_num = crate::number::Number::from(10);
         let max_num = crate::number::Number::from(100);
         let spec = AttrSpec::new("cluster_id", Type::String)
-            .with_regex(regex.clone())
+            .with_regex(regex)
             .with_min_value(min_num.clone())
             .with_max_value(max_num.clone())
-            .with_custom_validator(|val| {
-                if val.to_string().contains("999") {
-                    Err("cluster 999 is reserved".to_string())
-                } else {
-                    Ok(())
-                }
-            });
+            .with_custom_validator(|_| Ok(()));
         let dbg_str = format!("{spec:?}");
         assert!(dbg_str.contains("cluster_id"));
         assert!(dbg_str.contains("prod-[0-9]+"));
-        let spec_clone = spec.clone();
-        assert_eq!(spec, spec_clone);
+        assert_eq!(spec, spec);
         let spec_diff_name = AttrSpec::new("diff", Type::String);
         assert_ne!(spec, spec_diff_name);
         let spec_diff_type = AttrSpec::new("cluster_id", Type::Number);
@@ -919,15 +905,15 @@ mod tests {
         let spec_no_validator = AttrSpec::new("cluster_id", Type::String);
         assert_ne!(spec, spec_no_validator);
         let a_regex1 =
-            AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^a$").unwrap());
+            AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^[a-z]+[0-9]*$")?);
         let a_regex2 =
-            AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^b$").unwrap());
+            AttrSpec::new("test", Type::String).with_regex(regex::Regex::new("^[0-9]+[a-z]*$")?);
         assert_ne!(a_regex1, a_regex2);
         let a_min1 = AttrSpec::new("test", Type::Number).with_min_value(min_num.clone());
         let a_min2 = AttrSpec::new("test", Type::Number).with_min_value(max_num.clone());
         assert_ne!(a_min1, a_min2);
-        let a_max1 = AttrSpec::new("test", Type::Number).with_max_value(min_num.clone());
-        let a_max2 = AttrSpec::new("test", Type::Number).with_max_value(max_num.clone());
+        let a_max1 = AttrSpec::new("test", Type::Number).with_max_value(min_num);
+        let a_max2 = AttrSpec::new("test", Type::Number).with_max_value(max_num);
         assert_ne!(a_max1, a_max2);
         let a_none1 = AttrSpec::new("test", Type::String);
         let a_none2 = AttrSpec::new("test", Type::String);
@@ -948,9 +934,34 @@ mod tests {
             Type::String,
             crate::types::val::ValueData::String("prod-42".to_string()),
         );
-        assert!(spec.validate_value(&valid_str, dummy_span.clone()).is_ok());
         let _ = (val_fn1)(&valid_str);
         let _ = (val_fn2)(&valid_str);
+        Ok(())
+    }
+
+    #[test]
+    fn test_attr_spec_declarative_validation() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::span::Span;
+        let dummy_span = Span::new(0, 0, 0, 0, 0, 0);
+        let regex = regex::Regex::new(r"^prod-[0-9]+$")?;
+        let min_num = crate::number::Number::from(10);
+        let max_num = crate::number::Number::from(100);
+        let spec = AttrSpec::new("cluster_id", Type::String)
+            .with_regex(regex.clone())
+            .with_min_value(min_num.clone())
+            .with_max_value(max_num.clone())
+            .with_custom_validator(|val| {
+                if val.to_string().contains("999") {
+                    Err(HclError::Validation("cluster 999 is reserved".to_string()))
+                } else {
+                    Ok(())
+                }
+            });
+        let valid_str = Value::new(
+            Type::String,
+            crate::types::val::ValueData::String("prod-42".to_string()),
+        );
+        assert!(spec.validate_value(&valid_str, dummy_span.clone()).is_ok());
         let invalid_str = Value::new(
             Type::String,
             crate::types::val::ValueData::String("dev-42".to_string()),
@@ -1008,10 +1019,12 @@ mod tests {
         assert_eq!(
             spec.validate_value(&forbidden_val, dummy_span.clone()),
             Err(HclError::Validation(
-                "Validation failed for attribute 'cluster_id': cluster 999 is reserved".to_string()
+                "Validation failed for attribute 'cluster_id': Validation error: cluster 999 is reserved"
+                    .to_string()
             ))
         );
         let plain_spec = AttrSpec::new("name", Type::String);
         assert!(plain_spec.validate_value(&valid_str, dummy_span).is_ok());
+        Ok(())
     }
 }

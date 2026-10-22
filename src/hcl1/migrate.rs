@@ -62,35 +62,24 @@ fn translate_body(
     for item in &hcl1_body.items {
         match item {
             Hcl1Item::Attribute(attr) => {
-                if let Hcl1Expression::Map(_pairs, map_span) = &attr.expr {
-                    let expr = translate_expression(&attr.expr, diags)?;
-                    body.attributes.insert(
-                        attr.name.clone(),
-                        Attribute {
-                            name: attr.name.clone(),
-                            expr,
-                            span: attr.span.clone(),
-                            name_span: attr.span.clone(),
-                            equals_span: map_span.clone(),
-                            leading_comments: Vec::new(),
-                            trailing_comment: None,
-                        },
-                    );
+                let expr = translate_expression(&attr.expr, diags)?;
+                let equals_span = if let Hcl1Expression::Map(_pairs, map_span) = &attr.expr {
+                    map_span.clone()
                 } else {
-                    let expr = translate_expression(&attr.expr, diags)?;
-                    body.attributes.insert(
-                        attr.name.clone(),
-                        Attribute {
-                            name: attr.name.clone(),
-                            expr,
-                            span: attr.span.clone(),
-                            name_span: attr.span.clone(),
-                            equals_span: attr.span.clone(),
-                            leading_comments: Vec::new(),
-                            trailing_comment: None,
-                        },
-                    );
-                }
+                    attr.span.clone()
+                };
+                body.attributes.insert(
+                    attr.name.clone(),
+                    Attribute {
+                        name: attr.name.clone(),
+                        expr,
+                        span: attr.span.clone(),
+                        name_span: attr.span.clone(),
+                        equals_span,
+                        leading_comments: Vec::new(),
+                        trailing_comment: None,
+                    },
+                );
             }
             Hcl1Item::Block(block) => {
                 let hcl2_block = translate_block(block, diags)?;
@@ -202,10 +191,7 @@ fn translate_expression(
     }
 }
 pub(crate) fn compile_regex(pattern: &str) -> regex::Regex {
-    match regex::Regex::new(pattern) {
-        Ok(re) => re,
-        Err(_) => compile_regex("$^"),
-    }
+    regex::Regex::new(pattern).unwrap_or_else(|_| compile_regex("$^"))
 }
 static RE_USER: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| compile_regex(r"\{\{\s*user\s*`([^`]+)`\s*\}\}"));
@@ -274,152 +260,17 @@ pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnos
         match k.as_str() {
             "variables" => {
                 if let serde_json::Value::Object(vars) = v {
-                    for (var_name, var_val) in vars {
-                        let mut var_body = Body::new(empty_span.clone());
-                        let default_expr = json_to_expr(&var_val, &empty_span, &mut diags);
-                        var_body.attributes.insert(
-                            "default".to_string(),
-                            Attribute {
-                                name: "default".to_string(),
-                                expr: default_expr,
-                                span: empty_span.clone(),
-                                name_span: empty_span.clone(),
-                                equals_span: empty_span.clone(),
-                                leading_comments: Vec::new(),
-                                trailing_comment: None,
-                            },
-                        );
-                        body.blocks.push(Block {
-                            block_type: "variable".to_string(),
-                            labels: vec![var_name.clone()],
-                            body: var_body,
-                            span: empty_span.clone(),
-                            type_span: empty_span.clone(),
-                            label_spans: vec![empty_span.clone()],
-                            open_brace_span: empty_span.clone(),
-                            close_brace_span: empty_span.clone(),
-                            leading_comments: Vec::new(),
-                            trailing_comment: None,
-                        });
-                        diags
-                            .push(
-                                MigrationDiagnostic::new(
-                                    format!(
-                                        "Migrated legacy variable '{var_name}' into HCL2 'variable \"{var_name}\"' block"
-                                    ),
-                                    empty_span.clone(),
-                                    None::<String>,
-                                ),
-                            );
-                    }
+                    migrate_json_variables(vars, &empty_span, &mut body, &mut diags);
                 }
             }
             "builders" => {
                 if let serde_json::Value::Array(builders) = v {
-                    for b_val in builders {
-                        if let serde_json::Value::Object(b_map) = b_val {
-                            let builder_type = b_map
-                                .get("type")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("unknown")
-                                .to_string();
-                            let builder_name = b_map
-                                .get("name")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or(&builder_type)
-                                .to_string();
-                            let mut b_body = Body::new(empty_span.clone());
-                            for (bk, bv) in b_map {
-                                if bk != "type" && bk != "name" {
-                                    let expr = json_to_expr(&bv, &empty_span, &mut diags);
-                                    b_body.attributes.insert(
-                                        bk.clone(),
-                                        Attribute {
-                                            name: bk.clone(),
-                                            expr,
-                                            span: empty_span.clone(),
-                                            name_span: empty_span.clone(),
-                                            equals_span: empty_span.clone(),
-                                            leading_comments: Vec::new(),
-                                            trailing_comment: None,
-                                        },
-                                    );
-                                }
-                            }
-                            body.blocks.push(Block {
-                                block_type: "source".to_string(),
-                                labels: vec![builder_type.clone(), builder_name.clone()],
-                                body: b_body,
-                                span: empty_span.clone(),
-                                type_span: empty_span.clone(),
-                                label_spans: vec![empty_span.clone(), empty_span.clone()],
-                                open_brace_span: empty_span.clone(),
-                                close_brace_span: empty_span.clone(),
-                                leading_comments: Vec::new(),
-                                trailing_comment: None,
-                            });
-                            diags
-                                .push(
-                                    MigrationDiagnostic::new(
-                                        format!(
-                                            "Migrated legacy builder '{builder_type}.{builder_name}' into HCL2 'source' block"
-                                        ),
-                                        empty_span.clone(),
-                                        None::<String>,
-                                    ),
-                                );
-                        }
-                    }
+                    migrate_json_builders(builders, &empty_span, &mut body, &mut diags);
                 }
             }
             "provisioners" => {
                 if let serde_json::Value::Array(provisioners) = v {
-                    for p_val in provisioners {
-                        if let serde_json::Value::Object(p_map) = p_val {
-                            let prov_type = p_map
-                                .get("type")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("shell")
-                                .to_string();
-                            let mut p_body = Body::new(empty_span.clone());
-                            for (pk, pv) in p_map {
-                                if pk != "type" {
-                                    let expr = json_to_expr(&pv, &empty_span, &mut diags);
-                                    p_body.attributes.insert(
-                                        pk.clone(),
-                                        Attribute {
-                                            name: pk.clone(),
-                                            expr,
-                                            span: empty_span.clone(),
-                                            name_span: empty_span.clone(),
-                                            equals_span: empty_span.clone(),
-                                            leading_comments: Vec::new(),
-                                            trailing_comment: None,
-                                        },
-                                    );
-                                }
-                            }
-                            body.blocks.push(Block {
-                                block_type: "provisioner".to_string(),
-                                labels: vec![prov_type.clone()],
-                                body: p_body,
-                                span: empty_span.clone(),
-                                type_span: empty_span.clone(),
-                                label_spans: vec![empty_span.clone()],
-                                open_brace_span: empty_span.clone(),
-                                close_brace_span: empty_span.clone(),
-                                leading_comments: Vec::new(),
-                                trailing_comment: None,
-                            });
-                            diags.push(MigrationDiagnostic::new(
-                                format!(
-                                    "Migrated legacy provisioner '{prov_type}' into HCL2 block"
-                                ),
-                                empty_span.clone(),
-                                None::<String>,
-                            ));
-                        }
-                    }
+                    migrate_json_provisioners(provisioners, &empty_span, &mut body, &mut diags);
                 }
             }
             other => {
@@ -441,6 +292,161 @@ pub fn migrate_legacy_json(json_str: &str) -> Result<(Body, Vec<MigrationDiagnos
     }
     Ok((body, diags))
 }
+
+fn migrate_json_variables(
+    vars: serde_json::Map<String, serde_json::Value>,
+    empty_span: &Span,
+    body: &mut Body,
+    diags: &mut Vec<MigrationDiagnostic>,
+) {
+    for (var_name, var_val) in vars {
+        let mut var_body = Body::new(empty_span.clone());
+        let default_expr = json_to_expr(&var_val, empty_span, diags);
+        var_body.attributes.insert(
+            "default".to_string(),
+            Attribute {
+                name: "default".to_string(),
+                expr: default_expr,
+                span: empty_span.clone(),
+                name_span: empty_span.clone(),
+                equals_span: empty_span.clone(),
+                leading_comments: Vec::new(),
+                trailing_comment: None,
+            },
+        );
+        body.blocks.push(Block {
+            block_type: "variable".to_string(),
+            labels: vec![var_name.clone()],
+            body: var_body,
+            span: empty_span.clone(),
+            type_span: empty_span.clone(),
+            label_spans: vec![empty_span.clone()],
+            open_brace_span: empty_span.clone(),
+            close_brace_span: empty_span.clone(),
+            leading_comments: Vec::new(),
+            trailing_comment: None,
+        });
+        diags.push(MigrationDiagnostic::new(
+            format!(
+                "Migrated legacy variable '{var_name}' into HCL2 'variable \"{var_name}\"' block"
+            ),
+            empty_span.clone(),
+            None::<String>,
+        ));
+    }
+}
+
+fn migrate_json_builders(
+    builders: Vec<serde_json::Value>,
+    empty_span: &Span,
+    body: &mut Body,
+    diags: &mut Vec<MigrationDiagnostic>,
+) {
+    for b_val in builders {
+        if let serde_json::Value::Object(b_map) = b_val {
+            let builder_type = b_map
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown")
+                .to_string();
+            let builder_name = b_map
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(&builder_type)
+                .to_string();
+            let mut b_body = Body::new(empty_span.clone());
+            for (bk, bv) in b_map {
+                if bk != "type" && bk != "name" {
+                    let expr = json_to_expr(&bv, empty_span, diags);
+                    b_body.attributes.insert(
+                        bk.clone(),
+                        Attribute {
+                            name: bk,
+                            expr,
+                            span: empty_span.clone(),
+                            name_span: empty_span.clone(),
+                            equals_span: empty_span.clone(),
+                            leading_comments: Vec::new(),
+                            trailing_comment: None,
+                        },
+                    );
+                }
+            }
+            body.blocks.push(Block {
+                block_type: "source".to_string(),
+                labels: vec![builder_type.clone(), builder_name.clone()],
+                body: b_body,
+                span: empty_span.clone(),
+                type_span: empty_span.clone(),
+                label_spans: vec![empty_span.clone(), empty_span.clone()],
+                open_brace_span: empty_span.clone(),
+                close_brace_span: empty_span.clone(),
+                leading_comments: Vec::new(),
+                trailing_comment: None,
+            });
+            diags.push(MigrationDiagnostic::new(
+                format!(
+                    "Migrated legacy builder '{builder_type}.{builder_name}' into HCL2 'source' block"
+                ),
+                empty_span.clone(),
+                None::<String>,
+            ));
+        }
+    }
+}
+
+fn migrate_json_provisioners(
+    provisioners: Vec<serde_json::Value>,
+    empty_span: &Span,
+    body: &mut Body,
+    diags: &mut Vec<MigrationDiagnostic>,
+) {
+    for p_val in provisioners {
+        if let serde_json::Value::Object(p_map) = p_val {
+            let prov_type = p_map
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("shell")
+                .to_string();
+            let mut p_body = Body::new(empty_span.clone());
+            for (pk, pv) in p_map {
+                if pk != "type" {
+                    let expr = json_to_expr(&pv, empty_span, diags);
+                    p_body.attributes.insert(
+                        pk.clone(),
+                        Attribute {
+                            name: pk,
+                            expr,
+                            span: empty_span.clone(),
+                            name_span: empty_span.clone(),
+                            equals_span: empty_span.clone(),
+                            leading_comments: Vec::new(),
+                            trailing_comment: None,
+                        },
+                    );
+                }
+            }
+            body.blocks.push(Block {
+                block_type: "provisioner".to_string(),
+                labels: vec![prov_type.clone()],
+                body: p_body,
+                span: empty_span.clone(),
+                type_span: empty_span.clone(),
+                label_spans: vec![empty_span.clone()],
+                open_brace_span: empty_span.clone(),
+                close_brace_span: empty_span.clone(),
+                leading_comments: Vec::new(),
+                trailing_comment: None,
+            });
+            diags.push(MigrationDiagnostic::new(
+                format!("Migrated legacy provisioner '{prov_type}' into HCL2 block"),
+                empty_span.clone(),
+                None::<String>,
+            ));
+        }
+    }
+}
+
 fn json_to_expr(
     val: &serde_json::Value,
     span: &Span,
@@ -450,7 +456,8 @@ fn json_to_expr(
         serde_json::Value::Null => Expression::Null(span.clone()),
         serde_json::Value::Bool(b) => Expression::Bool(*b, span.clone()),
         serde_json::Value::Number(n) => {
-            let num = Number::from_str(&n.to_string()).unwrap_or(Number::from(0_i64));
+            let zero = Number::from(0_i64);
+            let num = Number::from_str(&n.to_string()).unwrap_or(zero);
             Expression::Number(num, span.clone())
         }
         serde_json::Value::String(s) => {
@@ -470,9 +477,7 @@ fn json_to_expr(
                 if single_interp {
                     let inner = &trimmed[2..trimmed.len() - 1].trim();
                     let mut parser = crate::parse::parser::Parser::new(inner);
-                    if let Some(parsed) = parser.parse_expression() {
-                        parsed
-                    } else {
+                    parser.parse_expression().unwrap_or_else(|| {
                         let mut p_diags = crate::diagnostic::Diagnostics::new();
                         let quoted = format!("\"{translated}\"");
                         let parts = crate::parse::parser::Parser::parse_template(
@@ -481,7 +486,7 @@ fn json_to_expr(
                             span,
                         );
                         Expression::Template(parts, span.clone())
-                    }
+                    })
                 } else {
                     let mut p_diags = crate::diagnostic::Diagnostics::new();
                     let quoted = format!("\"{translated}\"");

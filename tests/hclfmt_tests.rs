@@ -1,26 +1,21 @@
 //! Integration tests for the `hclfmt` command-line binary.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
+#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-fn temp_test_dir(prefix: &str) -> std::path::PathBuf {
+fn temp_test_dir(prefix: &str) -> std::io::Result<std::path::PathBuf> {
     let dir = std::env::temp_dir().join(format!("hclfmt_test_{prefix}_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
 }
 
 #[test]
 fn test_hclfmt_write_modifies_file_in_place() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = temp_test_dir("write");
+    let dir = temp_test_dir("write")?;
     let file_path = dir.join("test.hcl");
     let unformatted = "a=1
 b=2
@@ -44,7 +39,7 @@ b=2
 #[test]
 fn test_hclfmt_list_reports_unformatted_without_modifying() -> Result<(), Box<dyn std::error::Error>>
 {
-    let dir = temp_test_dir("list");
+    let dir = temp_test_dir("list")?;
     let file_path = dir.join("test.hcl");
     let unformatted = "a=1
 b=2
@@ -70,7 +65,7 @@ b=2
 
 #[test]
 fn test_hclfmt_diff_outputs_unified_diff() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = temp_test_dir("diff");
+    let dir = temp_test_dir("diff")?;
     let file_path = dir.join("test.hcl");
     let unformatted = "a=1
 b=2
@@ -94,7 +89,7 @@ b=2
 
 #[test]
 fn test_hclfmt_check_exit_code() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = temp_test_dir("check");
+    let dir = temp_test_dir("check")?;
     let file_path = dir.join("test.hcl");
     let unformatted = "a=1
 b=2
@@ -153,7 +148,7 @@ fn test_hclfmt_stdin_stdout_streaming() -> Result<(), Box<dyn std::error::Error>
 
 #[test]
 fn test_hclfmt_directory_traversal_filtering() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = temp_test_dir("dir_walk");
+    let dir = temp_test_dir("dir_walk")?;
     let hcl_file = dir.join("a.hcl");
     let tf_file = dir.join("b.tf");
     let txt_file = dir.join("c.txt");

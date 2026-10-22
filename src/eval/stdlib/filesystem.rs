@@ -1,6 +1,7 @@
 //! Filesystem and template standard library functions.
 use crate::ast::expr::Expression;
 use crate::diagnostic::Diagnostics;
+use crate::error::HclError;
 use crate::eval::context::Context;
 use crate::eval::evaluator::Evaluator;
 use crate::eval::fs::{FileSystem, OsFileSystem};
@@ -42,19 +43,23 @@ pub fn functions_with_fs(fs: Arc<dyn FileSystem>) -> Vec<Function> {
 fn file_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "file".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("file expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "file expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("file expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "file expects a string path argument".to_string(),
+                ));
             };
             let content = fs
                 .read_to_string(Path::new(path))
-                .map_err(|e| format!("Failed to read file '{path}': {e}"))?;
+                .map_err(|e| HclError::FileSystem(format!("Failed to read file '{path}': {e}")))?;
             Ok(Value::new(Type::String, ValueData::String(content)))
         }),
         signature: None,
@@ -63,15 +68,19 @@ fn file_func(fs: Arc<dyn FileSystem>) -> Function {
 fn fileexists_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "fileexists".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("fileexists expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "fileexists expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("fileexists expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "fileexists expects a string path argument".to_string(),
+                ));
             };
             let exists = fs.is_file(Path::new(path));
             Ok(Value::new(Type::Bool, ValueData::Bool(exists)))
@@ -82,25 +91,32 @@ fn fileexists_func(fs: Arc<dyn FileSystem>) -> Function {
 fn fileset_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "fileset".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("fileset expects 2 arguments: base_path and glob_pattern".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "fileset expects 2 arguments: base_path and glob_pattern".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Set(Box::new(Type::String))));
             }
             let ValueData::String(base_path) = &*args[0].data else {
-                return Err("First argument to fileset must be a string path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "First argument to fileset must be a string path".to_string(),
+                ));
             };
             let ValueData::String(pattern) = &*args[1].data else {
-                return Err("Second argument to fileset must be a glob pattern string".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "Second argument to fileset must be a glob pattern string".to_string(),
+                ));
             };
             let regex = glob_to_regex(pattern)
-                .map_err(|e| format!("Invalid glob pattern '{pattern}': {e}"))?;
+                .map_err(|e| HclError::Eval(format!("Invalid glob pattern '{pattern}': {e}")))?;
             let mut matches = BTreeSet::new();
             let base_p = Path::new(base_path);
-            walk_dir_recursive(&*fs, base_p, base_p, &regex, &mut matches)
-                .map_err(|e| format!("Error traversing '{base_path}': {e}"))?;
+            walk_dir_recursive(&*fs, base_p, base_p, &regex, &mut matches).map_err(|e| {
+                HclError::FileSystem(format!("Error traversing '{base_path}': {e}"))
+            })?;
             Ok(Value::new(
                 Type::Set(Box::new(Type::String)),
                 ValueData::Set(matches),
@@ -112,19 +128,23 @@ fn fileset_func(fs: Arc<dyn FileSystem>) -> Function {
 fn filebase64_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "filebase64".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("filebase64 expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filebase64 expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("filebase64 expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filebase64 expects a string path argument".to_string(),
+                ));
             };
             let bytes = fs
                 .read(Path::new(path))
-                .map_err(|e| format!("Failed to read file '{path}': {e}"))?;
+                .map_err(|e| HclError::FileSystem(format!("Failed to read file '{path}': {e}")))?;
             let b64 = BASE64_STANDARD.encode(&bytes);
             Ok(Value::new(Type::String, ValueData::String(b64)))
         }),
@@ -134,19 +154,23 @@ fn filebase64_func(fs: Arc<dyn FileSystem>) -> Function {
 fn filemd5_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "filemd5".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("filemd5 expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filemd5 expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("filemd5 expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filemd5 expects a string path argument".to_string(),
+                ));
             };
             let bytes = fs
                 .read(Path::new(path))
-                .map_err(|e| format!("Failed to read file '{path}': {e}"))?;
+                .map_err(|e| HclError::FileSystem(format!("Failed to read file '{path}': {e}")))?;
             let digest = md5::compute(&bytes);
             Ok(Value::new(
                 Type::String,
@@ -167,19 +191,23 @@ fn hex_encode(bytes: &[u8]) -> String {
 fn filesha1_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "filesha1".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("filesha1 expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filesha1 expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("filesha1 expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filesha1 expects a string path argument".to_string(),
+                ));
             };
             let bytes = fs
                 .read(Path::new(path))
-                .map_err(|e| format!("Failed to read file '{path}': {e}"))?;
+                .map_err(|e| HclError::FileSystem(format!("Failed to read file '{path}': {e}")))?;
             let mut hasher = Sha1::new();
             hasher.update(&bytes);
             let digest = hasher.finalize();
@@ -194,19 +222,23 @@ fn filesha1_func(fs: Arc<dyn FileSystem>) -> Function {
 fn filesha256_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "filesha256".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("filesha256 expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filesha256 expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("filesha256 expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filesha256 expects a string path argument".to_string(),
+                ));
             };
             let bytes = fs
                 .read(Path::new(path))
-                .map_err(|e| format!("Failed to read file '{path}': {e}"))?;
+                .map_err(|e| HclError::FileSystem(format!("Failed to read file '{path}': {e}")))?;
             let mut hasher = Sha256::new();
             hasher.update(&bytes);
             let digest = hasher.finalize();
@@ -221,19 +253,23 @@ fn filesha256_func(fs: Arc<dyn FileSystem>) -> Function {
 fn filesha512_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "filesha512".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("filesha512 expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filesha512 expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("filesha512 expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filesha512 expects a string path argument".to_string(),
+                ));
             };
             let bytes = fs
                 .read(Path::new(path))
-                .map_err(|e| format!("Failed to read file '{path}': {e}"))?;
+                .map_err(|e| HclError::FileSystem(format!("Failed to read file '{path}': {e}")))?;
             let mut hasher = Sha512::new();
             hasher.update(&bytes);
             let digest = hasher.finalize();
@@ -248,19 +284,23 @@ fn filesha512_func(fs: Arc<dyn FileSystem>) -> Function {
 fn filebase64sha256_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "filebase64sha256".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("filebase64sha256 expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filebase64sha256 expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path) = &*args[0].data else {
-                return Err("filebase64sha256 expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "filebase64sha256 expects a string path argument".to_string(),
+                ));
             };
             let bytes = fs
                 .read(Path::new(path))
-                .map_err(|e| format!("Failed to read file '{path}': {e}"))?;
+                .map_err(|e| HclError::FileSystem(format!("Failed to read file '{path}': {e}")))?;
             let mut hasher = Sha256::new();
             hasher.update(&bytes);
             let digest = hasher.finalize();
@@ -275,33 +315,33 @@ fn filebase64sha256_func(fs: Arc<dyn FileSystem>) -> Function {
 /// # Arguments
 /// * `cwd_fn` - A closure returning the current directory result.
 fn resolve_current_dir(cwd_fn: &dyn Fn() -> std::io::Result<PathBuf>) -> PathBuf {
-    match cwd_fn() {
-        Ok(dir) => dir,
-        Err(_) => PathBuf::from("."),
-    }
+    cwd_fn().unwrap_or_else(|_| PathBuf::from("."))
 }
 fn abspath_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "abspath".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("abspath expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "abspath expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path_str) = &*args[0].data else {
-                return Err("abspath expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "abspath expects a string path argument".to_string(),
+                ));
             };
             let p = Path::new(path_str);
-            let abs_path = if let Ok(canon) = fs.canonicalize(p) {
-                canon
-            } else if p.is_absolute() {
-                p.to_path_buf()
-            } else {
-                let cwd = resolve_current_dir(&std::env::current_dir);
-                cwd.join(p)
-            };
+            let abs_path = fs.canonicalize(p).unwrap_or_else(|_| {
+                if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    resolve_current_dir(&std::env::current_dir).join(p)
+                }
+            });
             let res = abs_path.to_string_lossy().replace('\\', "/");
             Ok(Value::new(Type::String, ValueData::String(res)))
         }),
@@ -311,15 +351,19 @@ fn abspath_func(fs: Arc<dyn FileSystem>) -> Function {
 fn dirname_func() -> Function {
     Function {
         name: "dirname".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("dirname expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "dirname expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path_str) = &*args[0].data else {
-                return Err("dirname expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "dirname expects a string path argument".to_string(),
+                ));
             };
             let p = Path::new(path_str);
             let dir = p.parent().map_or(".", |par| {
@@ -335,15 +379,19 @@ fn dirname_func() -> Function {
 fn basename_func() -> Function {
     Function {
         name: "basename".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("basename expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "basename expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path_str) = &*args[0].data else {
-                return Err("basename expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "basename expects a string path argument".to_string(),
+                ));
             };
             let p = Path::new(path_str);
             let name = p
@@ -362,23 +410,26 @@ fn basename_func() -> Function {
 /// # Arguments
 /// * `var_fn` - An environment variable lookup closure.
 fn resolve_home_dir(var_fn: &dyn Fn(&str) -> Result<String, std::env::VarError>) -> String {
-    match var_fn("HOME").or_else(|_| var_fn("USERPROFILE")) {
-        Ok(dir) => dir,
-        Err(_) => ".".to_string(),
-    }
+    var_fn("HOME")
+        .or_else(|_| var_fn("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string())
 }
 fn pathexpand_func(_fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "pathexpand".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("pathexpand expects 1 argument: path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "pathexpand expects 1 argument: path".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path_str) = &*args[0].data else {
-                return Err("pathexpand expects a string path argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "pathexpand expects a string path argument".to_string(),
+                ));
             };
             if path_str == "~" || path_str.starts_with("~/") || path_str.starts_with("~\\") {
                 let home = resolve_home_dir(&|k| std::env::var(k));
@@ -403,24 +454,28 @@ fn pathexpand_func(_fs: Arc<dyn FileSystem>) -> Function {
 fn templatefile_func(fs: Arc<dyn FileSystem>) -> Function {
     Function {
         name: "templatefile".to_string(),
-        func: Arc::new(move |args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(move |args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("templatefile expects 2 arguments: path and vars".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "templatefile expects 2 arguments: path and vars".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::String));
             }
             let ValueData::String(path_str) = &*args[0].data else {
-                return Err("First argument to templatefile must be a string path".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "First argument to templatefile must be a string path".to_string(),
+                ));
             };
-            let content = fs
-                .read_to_string(Path::new(path_str))
-                .map_err(|e| format!("Failed to read template file '{path_str}': {e}"))?;
+            let content = fs.read_to_string(Path::new(path_str)).map_err(|e| {
+                HclError::FileSystem(format!("Failed to read template file '{path_str}': {e}"))
+            })?;
             let mut ctx = Context::with_stdlib().with_filesystem(fs.clone());
             let ValueData::Object(map) = &*args[1].data else {
-                return Err(
+                return Err(HclError::FunctionArgMismatch(
                     "Second argument to templatefile must be an object of variables".to_string(),
-                );
+                ));
             };
             for (k, v) in map {
                 ctx.set_variable(k, v.clone());
@@ -431,20 +486,25 @@ fn templatefile_func(fs: Arc<dyn FileSystem>) -> Function {
             let parts =
                 crate::parse::parser::Parser::parse_template(&mut diags, &quoted, &dummy_span);
             if diags.has_errors() {
-                return Err(format!("Failed to parse template: {:?}", diags.errors()));
+                return Err(HclError::Template(format!(
+                    "Failed to parse template: {:?}",
+                    diags.errors()
+                )));
             }
             let expr = Expression::Template(parts, dummy_span);
-            let (val, _eval_diags) = Evaluator::new(&ctx)
-                .evaluate(&expr)
-                .map_err(|d| format!("Failed to evaluate template: {:?}", d.errors()))?;
+            let (val, _eval_diags) = Evaluator::new(&ctx).evaluate(&expr).map_err(|d| {
+                HclError::Template(format!("Failed to evaluate template: {:?}", d.errors()))
+            })?;
             Ok(val)
         }),
         signature: None,
     }
 }
-fn glob_to_regex(pattern: &str) -> Result<regex::Regex, String> {
+fn glob_to_regex(pattern: &str) -> Result<regex::Regex, HclError> {
     if pattern.contains("***") {
-        return Err("glob pattern cannot contain '***'".to_string());
+        return Err(HclError::Eval(
+            "glob pattern cannot contain '***'".to_string(),
+        ));
     }
     let mut regex_pattern = String::from("^");
     let mut chars = pattern.chars().peekable();
@@ -472,7 +532,7 @@ fn glob_to_regex(pattern: &str) -> Result<regex::Regex, String> {
         }
     }
     regex_pattern.push('$');
-    regex::Regex::new(&regex_pattern).map_err(|e| e.to_string())
+    regex::Regex::new(&regex_pattern).map_err(|e| HclError::Eval(e.to_string()))
 }
 fn walk_dir_recursive(
     fs: &dyn FileSystem,
@@ -480,18 +540,15 @@ fn walk_dir_recursive(
     base: &Path,
     regex: &regex::Regex,
     matches: &mut BTreeSet<Value>,
-) -> Result<(), String> {
-    let entries = fs
-        .read_dir(dir)
-        .map_err(|e| format!("Failed to read directory '{}': {e}", dir.display()))?;
+) -> Result<(), HclError> {
+    let entries = fs.read_dir(dir).map_err(|e| {
+        HclError::FileSystem(format!("Failed to read directory '{}': {e}", dir.display()))
+    })?;
     for path in entries {
         if fs.is_dir(&path) {
             walk_dir_recursive(fs, &path, base, regex, matches)?;
         } else {
-            let rel = match path.strip_prefix(base) {
-                Ok(r) => r,
-                Err(_) => &path,
-            };
+            let rel = path.strip_prefix(base).unwrap_or(&path);
             let rel_str = rel.to_string_lossy().replace('\\', "/");
             if regex.is_match(&rel_str) {
                 matches.insert(Value::new(Type::String, ValueData::String(rel_str)));
@@ -502,40 +559,34 @@ fn walk_dir_recursive(
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::error::HclError;
     use std::collections::BTreeMap;
-    fn eval_fs_func(name: &str, args: &[Value]) -> Result<Value, String> {
-        let func = functions().into_iter().find(|f| f.name == name).unwrap();
+    fn eval_fs_func(name: &str, args: &[Value]) -> Result<Value, HclError> {
+        let func = functions()
+            .into_iter()
+            .find(|f| f.name == name)
+            .ok_or_else(|| HclError::Eval(format!("Function {name} not found")))?;
         (func.func)(args)
     }
-    fn unwrap_val(res: Result<Value, String>) -> Value {
-        match res {
-            Ok(v) => v,
-            Err(_) => Value::null(Type::Dynamic),
-        }
+    fn unwrap_val(res: Result<Value, HclError>) -> Value {
+        res.unwrap_or_else(|_| Value::null(Type::Dynamic))
     }
     #[test]
-    fn test_filesystem_functions() {
-        let temp_dir = std::env::temp_dir().join(format!("hcl_test_fs_{}", std::process::id()));
+    fn test_filesystem_functions() -> Result<(), HclError> {
+        let temp_dir =
+            std::env::temp_dir().join(format!("hcl_test_fs_basic_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&temp_dir);
         let file_path = temp_dir.join("test_file.txt");
-        std::fs::write(&file_path, "Hello Filesystem!").unwrap();
-        let path_str = file_path.to_str().unwrap();
+        std::fs::write(&file_path, "Hello Filesystem!")?;
+        let path_str = file_path.to_str().unwrap_or_default();
         let p_val = Value::new(Type::String, ValueData::String(path_str.to_string()));
-        let content = eval_fs_func("file", std::slice::from_ref(&p_val)).unwrap();
+        let content = eval_fs_func("file", std::slice::from_ref(&p_val))?;
         assert_eq!(
             content.data.as_ref(),
             &ValueData::String("Hello Filesystem!".into())
         );
-        let exists = eval_fs_func("fileexists", std::slice::from_ref(&p_val)).unwrap();
+        let exists = eval_fs_func("fileexists", std::slice::from_ref(&p_val))?;
         assert_eq!(exists.data.as_ref(), &ValueData::Bool(true));
         let not_exists = eval_fs_func(
             "fileexists",
@@ -543,15 +594,14 @@ mod tests {
                 Type::String,
                 ValueData::String("nonexistent.txt".into()),
             )],
-        )
-        .unwrap();
+        )?;
         assert_eq!(not_exists.data.as_ref(), &ValueData::Bool(false));
-        let b64 = eval_fs_func("filebase64", std::slice::from_ref(&p_val)).unwrap();
+        let b64 = eval_fs_func("filebase64", std::slice::from_ref(&p_val))?;
         assert_eq!(
             b64.data.as_ref(),
             &ValueData::String(BASE64_STANDARD.encode("Hello Filesystem!"))
         );
-        let b64sha = eval_fs_func("filebase64sha256", std::slice::from_ref(&p_val)).unwrap();
+        let b64sha = eval_fs_func("filebase64sha256", std::slice::from_ref(&p_val))?;
         let mut hasher = Sha256::new();
         hasher.update(b"Hello Filesystem!");
         let expected_hash = BASE64_STANDARD.encode(hasher.finalize());
@@ -611,32 +661,43 @@ mod tests {
                 ),
                 vars_val,
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(
             tpl_res.data.as_ref(),
             &ValueData::String("Hello, Rust! Port: 8080".into())
         );
-        let fmd5 = eval_fs_func("filemd5", std::slice::from_ref(&p_val)).unwrap();
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+    #[test]
+    fn test_filesystem_hash_functions() -> Result<(), HclError> {
+        let temp_dir =
+            std::env::temp_dir().join(format!("hcl_test_fs_hashes_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let file_path = temp_dir.join("test_file.txt");
+        std::fs::write(&file_path, "Hello Filesystem!")?;
+        let path_str = file_path.to_str().unwrap_or_default();
+        let p_val = Value::new(Type::String, ValueData::String(path_str.to_string()));
+        let fmd5 = eval_fs_func("filemd5", std::slice::from_ref(&p_val))?;
         assert_eq!(
             fmd5.data.as_ref(),
             &ValueData::String(format!("{:x}", md5::compute(b"Hello Filesystem!")))
         );
-        let fsha1 = eval_fs_func("filesha1", std::slice::from_ref(&p_val)).unwrap();
+        let fsha1 = eval_fs_func("filesha1", std::slice::from_ref(&p_val))?;
         let mut hasher1 = Sha1::new();
         hasher1.update(b"Hello Filesystem!");
         assert_eq!(
             fsha1.data.as_ref(),
             &ValueData::String(hex_encode(&hasher1.finalize()))
         );
-        let fsha256 = eval_fs_func("filesha256", std::slice::from_ref(&p_val)).unwrap();
+        let fsha256 = eval_fs_func("filesha256", std::slice::from_ref(&p_val))?;
         let mut hasher256 = Sha256::new();
         hasher256.update(b"Hello Filesystem!");
         assert_eq!(
             fsha256.data.as_ref(),
             &ValueData::String(hex_encode(&hasher256.finalize()))
         );
-        let fsha512 = eval_fs_func("filesha512", std::slice::from_ref(&p_val)).unwrap();
+        let fsha512 = eval_fs_func("filesha512", std::slice::from_ref(&p_val))?;
         let mut hasher512 = Sha512::new();
         hasher512.update(b"Hello Filesystem!");
         assert_eq!(
@@ -644,26 +705,10 @@ mod tests {
             &ValueData::String(hex_encode(&hasher512.finalize()))
         );
         let unk_str = Value::unknown(Type::String);
-        assert!(
-            eval_fs_func("filemd5", std::slice::from_ref(&unk_str))
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            eval_fs_func("filesha1", std::slice::from_ref(&unk_str))
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            eval_fs_func("filesha256", std::slice::from_ref(&unk_str))
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            eval_fs_func("filesha512", std::slice::from_ref(&unk_str))
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_fs_func("filemd5", std::slice::from_ref(&unk_str))?.is_unknown());
+        assert!(eval_fs_func("filesha1", std::slice::from_ref(&unk_str))?.is_unknown());
+        assert!(eval_fs_func("filesha256", std::slice::from_ref(&unk_str))?.is_unknown());
+        assert!(eval_fs_func("filesha512", std::slice::from_ref(&unk_str))?.is_unknown());
         let missing = Value::new(
             Type::String,
             ValueData::String("non_existent_file_987654.txt".into()),
@@ -673,9 +718,11 @@ mod tests {
         assert!(eval_fs_func("filesha256", std::slice::from_ref(&missing)).is_err());
         assert!(eval_fs_func("filesha512", std::slice::from_ref(&missing)).is_err());
         let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
     }
     #[test]
     fn test_filesystem_error_handling() {
+        assert!(eval_fs_func("notexist", &[]).is_err());
         assert!(eval_fs_func("file", &[]).is_err());
         assert!(
             eval_fs_func(
@@ -712,8 +759,6 @@ mod tests {
     }
     #[test]
     fn test_filesystem_exhaustive_coverage() {
-        let temp_dir = std::env::temp_dir().join(format!("hcl_test_fs_ex_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&temp_dir);
         let fs_funcs = [
             "file",
             "fileexists",
@@ -773,11 +818,16 @@ mod tests {
                 "fileset",
                 &[
                     Value::new(Type::String, ValueData::String(".".into())),
-                    num_arg.clone()
+                    num_arg
                 ]
             )
             .is_err()
         );
+    }
+    #[test]
+    fn test_filesystem_exhaustive_coverage_fileset() {
+        let temp_dir = std::env::temp_dir().join(format!("hcl_test_fs_ex_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
         assert!(
             eval_fs_func(
                 "fileset",
@@ -835,19 +885,20 @@ mod tests {
                 Value::new(Type::String, ValueData::String("**/*.txt".into())),
             ],
         );
-        let check_set = |res: &Result<Value, String>| -> usize {
-            match res {
-                Ok(val) => match &*val.data {
-                    ValueData::Set(s) => s.len(),
-                    _ => 0,
-                },
-                Err(_) => 0,
-            }
+        let check_set = |res: &Result<Value, HclError>| -> usize {
+            res.as_ref().map_or(0, |val| match &*val.data {
+                ValueData::Set(s) => s.len(),
+                _ => 0,
+            })
         };
         assert!(check_set(&glob_res) > 0);
         assert!(check_set(&glob_star) > 0);
         assert_eq!(check_set(&Ok(Value::null(Type::Dynamic))), 0);
-        assert_eq!(check_set(&Err("err".into())), 0);
+        assert_eq!(check_set(&Err(HclError::Eval("err".into()))), 0);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+    #[test]
+    fn test_filesystem_exhaustive_paths() {
         let abs_rel = eval_fs_func(
             "abspath",
             &[Value::new(
@@ -936,6 +987,15 @@ mod tests {
                 .as_ref(),
             &ValueData::String("foo/bar/baz".into())
         );
+    }
+    #[test]
+    fn test_filesystem_exhaustive_templates() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("hcl_test_fs_ex_paths_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let nested_file = temp_dir.join("fa.txt");
+        let _ = std::fs::write(&nested_file, "content");
+        let num_arg = Value::new(Type::Number, ValueData::Number(1.into()));
         let tpl_unk = eval_fs_func(
             "templatefile",
             &[
@@ -1005,7 +1065,10 @@ mod tests {
             )
             .is_err()
         );
-        assert_eq!(unwrap_val(Err("err".into())).ty(), &Type::Dynamic);
+        assert_eq!(
+            unwrap_val(Err(HclError::Eval("err".into()))).ty(),
+            &Type::Dynamic
+        );
         assert_eq!(
             resolve_current_dir(&|| Err(std::io::Error::other("mock error"))),
             PathBuf::from(".")
@@ -1014,6 +1077,10 @@ mod tests {
             resolve_current_dir(&|| Ok(PathBuf::from("/mock/dir"))),
             PathBuf::from("/mock/dir")
         );
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+    #[test]
+    fn test_filesystem_exhaustive_mock_fs() {
         #[derive(Debug)]
         struct FailingDirFs;
         impl FileSystem for FailingDirFs {
@@ -1075,6 +1142,5 @@ mod tests {
             assert!(res.is_ok());
             assert_eq!(matches.len(), 1);
         }
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

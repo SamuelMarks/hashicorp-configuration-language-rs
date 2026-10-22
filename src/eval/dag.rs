@@ -27,6 +27,12 @@ struct LocalDeclaration {
     /// Expression computing the local value.
     expr: Expression,
 }
+type DeclarationDag = (
+    HashMap<String, VarDeclaration>,
+    HashMap<String, LocalDeclaration>,
+    HashMap<String, Span>,
+    DependencyGraph,
+);
 /// Topological DAG dependency resolver for configuration definitions.
 #[derive(Debug, Default, Clone)]
 pub struct DagResolver {
@@ -62,6 +68,68 @@ impl DagResolver {
     /// Returns [`Diagnostics`] if a circular dependency is detected, if expression evaluation
     /// fails, or if any variable validation rule is violated.
     pub fn resolve(&self, body: &Body, ctx: &mut Context<'_>) -> Result<(), Diagnostics> {
+        let (var_decls, local_decls, node_spans, dag) = self.build_declaration_dag(body);
+        let Ok(sorted_nodes) = dag.topological_sort() else {
+            let cycle = dag.detect_cycles().unwrap_or_default();
+            let cycle_path = cycle.join(" -> ");
+            let span = cycle
+                .first()
+                .and_then(|node| node_spans.get(node))
+                .cloned()
+                .unwrap_or(Span::new(0, 0, 1, 1, 1, 1));
+            let mut diags = Diagnostics::new();
+            diags.push(
+                Diagnostic::error(
+                    "Circular dependency detected",
+                    format!("Cycle path: {cycle_path}"),
+                    span,
+                )
+                .with_error(crate::error::HclError::CyclicDependency(format!(
+                    "Circular dependency: {cycle_path}"
+                ))),
+            );
+            return Err(diags);
+        };
+        let mut diags = Diagnostics::new();
+        for node in sorted_nodes {
+            if let Some(var_name) = node.strip_prefix("var.") {
+                if let Some(decl) = var_decls.get(var_name) {
+                    self.evaluate_var_node(var_name, decl, ctx, &mut diags);
+                }
+            } else {
+                let local_name = node.strip_prefix("local.").unwrap_or(&node);
+                if let Some(decl) = local_decls.get(local_name) {
+                    let eval = Evaluator::new(ctx);
+                    match eval.evaluate(&decl.expr) {
+                        Ok((v, eval_diags)) => {
+                            diags.extend(eval_diags);
+                            ctx.set_local(local_name, v);
+                        }
+                        Err(e) => {
+                            diags.extend(e);
+                        }
+                    }
+                }
+            }
+        }
+        for pre in &body.preconditions {
+            if let Err(pre_diags) = evaluate_precondition(pre, ctx) {
+                diags.extend(pre_diags);
+            }
+        }
+        for post in &body.postconditions {
+            if let Err(post_diags) = evaluate_postcondition(post, ctx) {
+                diags.extend(post_diags);
+            }
+        }
+        if diags.has_errors() {
+            Err(diags)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn build_declaration_dag(&self, body: &Body) -> DeclarationDag {
         let mut var_decls: HashMap<String, VarDeclaration> = HashMap::new();
         let mut local_decls: HashMap<String, LocalDeclaration> = HashMap::new();
         let mut node_spans: HashMap<String, Span> = HashMap::new();
@@ -104,143 +172,81 @@ impl DagResolver {
             let from_node = format!("var.{var_name}");
             if !self.var_overrides.contains_key(var_name) {
                 if let Some(ref expr) = decl.default_expr {
-                    let refs = extract_static_references(expr).unwrap_or_default();
-                    for r in refs {
-                        let ref_str = r.to_string();
-                        if let Some(dep_var) = ref_str.strip_prefix("var.") {
-                            let dep_name = dep_var.split('.').next().unwrap_or(dep_var);
-                            dag.add_edge(&from_node, format!("var.{dep_name}"));
-                        } else if let Some(dep_local) = ref_str.strip_prefix("local.") {
-                            let dep_name = dep_local.split('.').next().unwrap_or(dep_local);
-                            dag.add_edge(&from_node, format!("local.{dep_name}"));
-                        }
-                    }
+                    Self::add_expr_edges(&mut dag, &from_node, expr);
                 }
             }
         }
         for (local_name, decl) in &local_decls {
             let from_node = format!("local.{local_name}");
-            let refs = extract_static_references(&decl.expr).unwrap_or_default();
-            for r in refs {
-                let ref_str = r.to_string();
-                if let Some(dep_var) = ref_str.strip_prefix("var.") {
-                    let dep_name = dep_var.split('.').next().unwrap_or(dep_var);
-                    dag.add_edge(&from_node, format!("var.{dep_name}"));
-                } else if let Some(dep_local) = ref_str.strip_prefix("local.") {
-                    let dep_name = dep_local.split('.').next().unwrap_or(dep_local);
-                    dag.add_edge(&from_node, format!("local.{dep_name}"));
+            Self::add_expr_edges(&mut dag, &from_node, &decl.expr);
+        }
+        (var_decls, local_decls, node_spans, dag)
+    }
+
+    fn add_expr_edges(dag: &mut DependencyGraph, from_node: &str, expr: &Expression) {
+        let refs = extract_static_references(expr).unwrap_or_default();
+        for r in refs {
+            let ref_str = r.to_string();
+            if let Some(dep_var) = ref_str.strip_prefix("var.") {
+                let dep_name = dep_var.split('.').next().unwrap_or(dep_var);
+                dag.add_edge(from_node, format!("var.{dep_name}"));
+            } else if let Some(dep_local) = ref_str.strip_prefix("local.") {
+                let dep_name = dep_local.split('.').next().unwrap_or(dep_local);
+                dag.add_edge(from_node, format!("local.{dep_name}"));
+            }
+        }
+    }
+
+    fn evaluate_var_node(
+        &self,
+        var_name: &str,
+        decl: &VarDeclaration,
+        ctx: &mut Context<'_>,
+        diags: &mut Diagnostics,
+    ) {
+        let evaluated_val = if let Some(override_val) = self.var_overrides.get(var_name) {
+            override_val.clone()
+        } else if let Some(ref expr) = decl.default_expr {
+            let eval = Evaluator::new(ctx);
+            match eval.evaluate(expr) {
+                Ok((v, eval_diags)) => {
+                    diags.extend(eval_diags);
+                    v
+                }
+                Err(e) => {
+                    diags.extend(e);
+                    return;
                 }
             }
-        }
-        let Ok(sorted_nodes) = dag.topological_sort() else {
-            let cycle = dag.detect_cycles().unwrap_or_default();
-            let cycle_path = cycle.join(" -> ");
-            let span = cycle
-                .first()
-                .and_then(|node| node_spans.get(node))
-                .cloned()
-                .unwrap_or(Span::new(0, 0, 1, 1, 1, 1));
-            let mut diags = Diagnostics::new();
-            diags.push(
-                Diagnostic::error(
-                    "Circular dependency detected",
-                    format!("Cycle path: {cycle_path}"),
-                    span,
-                )
-                .with_error(crate::error::HclError::CyclicDependency(format!(
-                    "Circular dependency: {cycle_path}"
-                ))),
-            );
-            return Err(diags);
-        };
-        let mut diags = Diagnostics::new();
-        for node in sorted_nodes {
-            if let Some(var_name) = node.strip_prefix("var.") {
-                if let Some(decl) = var_decls.get(var_name) {
-                    let evaluated_val = if let Some(override_val) = self.var_overrides.get(var_name)
-                    {
-                        override_val.clone()
-                    } else if let Some(ref expr) = decl.default_expr {
-                        let eval = Evaluator::new(ctx);
-                        match eval.evaluate(expr) {
-                            Ok((v, eval_diags)) => {
-                                diags.extend(eval_diags);
-                                v
-                            }
-                            Err(e) => {
-                                diags.extend(e);
-                                continue;
-                            }
-                        }
-                    } else {
-                        Value::unknown(crate::types::Type::Dynamic)
-                    };
-                    ctx.set_var(var_name, evaluated_val);
-                    for val_block in &decl.validations {
-                        let eval = Evaluator::new(ctx);
-                        match eval.evaluate(&val_block.condition) {
-                            Ok((cond_val, _)) => {
-                                let passed = match &*cond_val.data {
-                                    crate::types::ValueData::Bool(b) => *b,
-                                    _ => false,
-                                };
-                                if !passed {
-                                    let sub_evaluator = Evaluator::new(ctx);
-                                    let err_msg =
-                                        match sub_evaluator.evaluate(&val_block.error_message) {
-                                            Ok((text_val, _)) => {
-                                                text_val.to_string().trim_matches('"').to_string()
-                                            }
-                                            Err(_) => {
-                                                "Variable validation assertion failed".to_string()
-                                            }
-                                        };
-                                    diags.push(
-                                        Diagnostic::error(
-                                            format!("Validation failed for variable '{var_name}'"),
-                                            err_msg.clone(),
-                                            val_block.span.clone(),
-                                        )
-                                        .with_error(crate::error::HclError::Validation(err_msg)),
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                diags.extend(e);
-                            }
-                        }
-                    }
-                }
-            } else {
-                let local_name = node.strip_prefix("local.").unwrap_or(&node);
-                if let Some(decl) = local_decls.get(local_name) {
-                    let eval = Evaluator::new(ctx);
-                    match eval.evaluate(&decl.expr) {
-                        Ok((v, eval_diags)) => {
-                            diags.extend(eval_diags);
-                            ctx.set_local(local_name, v);
-                        }
-                        Err(e) => {
-                            diags.extend(e);
-                        }
-                    }
-                }
-            }
-        }
-        for pre in &body.preconditions {
-            if let Err(pre_diags) = evaluate_precondition(pre, ctx) {
-                diags.extend(pre_diags);
-            }
-        }
-        for post in &body.postconditions {
-            if let Err(post_diags) = evaluate_postcondition(post, ctx) {
-                diags.extend(post_diags);
-            }
-        }
-        if diags.has_errors() {
-            Err(diags)
         } else {
-            Ok(())
+            Value::unknown(crate::types::Type::Dynamic)
+        };
+        ctx.set_var(var_name, evaluated_val);
+        for val_block in &decl.validations {
+            let eval = Evaluator::new(ctx);
+            match eval.evaluate(&val_block.condition) {
+                Ok((cond_val, _)) => {
+                    let passed = matches!(&*cond_val.data, crate::types::ValueData::Bool(true));
+                    if !passed {
+                        let sub_evaluator = Evaluator::new(ctx);
+                        let err_msg = match sub_evaluator.evaluate(&val_block.error_message) {
+                            Ok((text_val, _)) => text_val.to_string().trim_matches('"').to_string(),
+                            Err(_) => "Variable validation assertion failed".to_string(),
+                        };
+                        diags.push(
+                            Diagnostic::error(
+                                format!("Validation failed for variable '{var_name}'"),
+                                err_msg.clone(),
+                                val_block.span.clone(),
+                            )
+                            .with_error(crate::error::HclError::Validation(err_msg)),
+                        );
+                    }
+                }
+                Err(e) => {
+                    diags.extend(e);
+                }
+            }
         }
     }
 }
@@ -256,18 +262,13 @@ pub fn resolve_definitions(body: &Body, ctx: &mut Context<'_>) -> Result<(), Dia
     DagResolver::new().resolve(body, ctx)
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::api::parse;
+    use crate::error::HclError;
     #[test]
-    fn test_dag_resolver_acyclic_and_overrides() {
+    fn test_dag_resolver_acyclic_and_overrides() -> Result<(), HclError> {
         let src = r#"
             variable "region" {
                 default = "us-east-1"
@@ -295,12 +296,16 @@ mod tests {
                 default = "${local.name_prefix}.internal"
             }
         "#;
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let mut ctx = Context::new();
         ctx.stdlib_enabled = true;
-        resolve_definitions(&body, &mut ctx).unwrap();
-        let var_obj = ctx.get_variable("var").unwrap();
-        let local_obj = ctx.get_variable("local").unwrap();
+        resolve_definitions(&body, &mut ctx)?;
+        let var_obj = ctx
+            .get_variable("var")
+            .ok_or_else(|| HclError::Eval("missing var".to_string()))?;
+        let local_obj = ctx
+            .get_variable("local")
+            .ok_or_else(|| HclError::Eval("missing local".to_string()))?;
         assert!(var_obj.to_string().contains("us-east-1"));
         assert!(local_obj.to_string().contains("my-cluster-us-east-1"));
         let mut overrides = HashMap::new();
@@ -315,38 +320,43 @@ mod tests {
         ctx2.stdlib_enabled = true;
         DagResolver::new()
             .with_var_overrides(overrides)
-            .resolve(&body, &mut ctx2)
-            .unwrap();
-        let local_obj2 = ctx2.get_variable("local").unwrap();
+            .resolve(&body, &mut ctx2)?;
+        let local_obj2 = ctx2
+            .get_variable("local")
+            .ok_or_else(|| HclError::Eval("missing local".to_string()))?;
         assert!(local_obj2.to_string().contains("my-cluster-eu-west-1"));
         let bad_src = r#"
             variable "bad_default" {
                 default = 10 / 0
             }
         "#;
-        let bad_body = parse(bad_src).unwrap();
+        let bad_body = parse(bad_src)?;
         let mut bad_ctx = Context::new();
         assert!(resolve_definitions(&bad_body, &mut bad_ctx).is_err());
+        Ok(())
     }
     #[test]
-    fn test_dag_resolver_circular_dependency() {
+    fn test_dag_resolver_circular_dependency() -> Result<(), HclError> {
         let src = r"
             locals {
                 a = local.b + 1
                 b = local.a + 1
             }
         ";
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
+        let Err(errs) = resolve_definitions(&body, &mut ctx) else {
+            return Err(HclError::Eval("expected error".to_string()));
+        };
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
         assert!(diag.error.to_string().contains("Circular dependency"));
         assert!(diag.detail.as_deref().unwrap_or("").contains("local.a"));
         assert!(diag.detail.as_deref().unwrap_or("").contains("local.b"));
+        Ok(())
     }
     #[test]
-    fn test_dag_resolver_validation_failure() {
+    fn test_dag_resolver_validation_failure() -> Result<(), HclError> {
         let src = r#"
             variable "port" {
                 default = 80
@@ -356,9 +366,11 @@ mod tests {
                 }
             }
         "#;
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
+        let Err(errs) = resolve_definitions(&body, &mut ctx) else {
+            return Err(HclError::Eval("expected error".to_string()));
+        };
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
         assert!(
@@ -373,9 +385,10 @@ mod tests {
                 .unwrap_or("")
                 .contains("Port must be non-privileged")
         );
+        Ok(())
     }
     #[test]
-    fn test_dag_resolver_undefined_and_errors() {
+    fn test_dag_resolver_undefined_and_errors() -> Result<(), HclError> {
         let src = r#"
             variable "no_default" {}
 
@@ -398,15 +411,20 @@ mod tests {
                 error_message = "postcondition failed"
             }
         "#;
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
+        let Err(errs) = resolve_definitions(&body, &mut ctx) else {
+            return Err(HclError::Eval("expected error".to_string()));
+        };
         assert!(errs.has_errors());
-        let var_val = ctx.get_variable("var").unwrap();
+        let var_val = ctx
+            .get_variable("var")
+            .ok_or_else(|| HclError::Eval("missing var".to_string()))?;
         assert!(var_val.to_string().contains("no_default"));
+        Ok(())
     }
     #[test]
-    fn test_dag_resolver_validation_non_bool_and_msg_error() {
+    fn test_dag_resolver_validation_non_bool_and_msg_error() -> Result<(), HclError> {
         let src = r#"
             variable "bad_val" {
                 default = 10
@@ -416,13 +434,16 @@ mod tests {
                 }
             }
         "#;
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let mut ctx = Context::new();
-        let errs = resolve_definitions(&body, &mut ctx).err().unwrap();
+        let Err(errs) = resolve_definitions(&body, &mut ctx) else {
+            return Err(HclError::Eval("expected error".to_string()));
+        };
         assert!(errs.has_errors());
+        Ok(())
     }
     #[test]
-    fn test_dag_resolver_coverage_gaps() {
+    fn test_dag_resolver_coverage_gaps() -> Result<(), HclError> {
         let src = r#"
             output "out1" {
                 value = "hello"
@@ -468,7 +489,7 @@ mod tests {
                 error_message = "should not fail"
             }
         "#;
-        let mut body = parse(src).unwrap();
+        let mut body = parse(src)?;
         body.blocks.push(crate::ast::structure::Block {
             block_type: "variable".to_string(),
             labels: Vec::new(),
@@ -495,17 +516,19 @@ mod tests {
                 }
             }
         "#;
-        let cond_err_body = parse(cond_err_src).unwrap();
+        let cond_err_body = parse(cond_err_src)?;
         let mut cond_err_ctx = Context::new();
         let cond_err_res = resolve_definitions(&cond_err_body, &mut cond_err_ctx);
         assert!(cond_err_res.is_err());
         let resolver = DagResolver::new();
         let cloned_resolver = resolver.clone();
+        drop(resolver);
         let debug_str = format!("{cloned_resolver:?}");
         assert!(debug_str.contains("DagResolver"));
+        Ok(())
     }
     #[test]
-    fn test_dag_resolver_missing_references() {
+    fn test_dag_resolver_missing_references() -> Result<(), HclError> {
         let src = r#"
             variable "ref_missing" {
                 default = var.missing_variable
@@ -515,9 +538,10 @@ mod tests {
                 ref_missing_local = local.missing_local_value
             }
         "#;
-        let body = parse(src).unwrap();
+        let body = parse(src)?;
         let mut ctx = Context::new();
         let res = resolve_definitions(&body, &mut ctx);
         assert!(res.is_err());
+        Ok(())
     }
 }

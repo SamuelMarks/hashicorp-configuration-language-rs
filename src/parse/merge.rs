@@ -61,7 +61,7 @@ impl MergeOptions {
     }
     /// Creates unconstrained `MergeOptions` with no singletons and priority sorting disabled.
     #[must_use]
-    pub fn unconstrained() -> Self {
+    pub const fn unconstrained() -> Self {
         Self {
             extensions: Vec::new(),
             singleton_blocks: Vec::new(),
@@ -99,7 +99,7 @@ impl MergeOptions {
     /// # Arguments
     /// * `enforce` - If true, blocks are sorted by [`block_priority`].
     #[must_use]
-    pub fn with_enforce_priority(mut self, enforce: bool) -> Self {
+    pub const fn with_enforce_priority(mut self, enforce: bool) -> Self {
         self.enforce_priority = enforce;
         self
     }
@@ -322,22 +322,17 @@ fn merge_directory_with_options_impl(
     merge_bodies_with_options(bodies, options)
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::ast::expr::Expression;
     use crate::ast::structure::{Attribute, Block};
-    fn empty_span() -> Span {
+    use crate::error::HclError;
+    const fn empty_span() -> Span {
         Span::new(0, 0, 0, 0, 0, 0)
     }
     #[test]
-    fn test_merge_bodies_success() {
+    fn test_merge_bodies_success() -> Result<(), HclError> {
         let mut b1 = Body::new(empty_span());
         b1.attributes.insert(
             "foo".to_string(),
@@ -376,14 +371,15 @@ mod tests {
             leading_comments: Vec::new(),
             trailing_comment: None,
         });
-        let merged = merge_bodies(vec![b1, b2]).unwrap();
+        let merged = merge_bodies(vec![b1, b2])?;
         assert_eq!(merged.attributes.len(), 2);
         assert_eq!(merged.blocks.len(), 1);
         assert!(merged.attributes.contains_key("foo"));
         assert!(merged.attributes.contains_key("bar"));
+        Ok(())
     }
     #[test]
-    fn test_merge_bodies_duplicate_attribute() {
+    fn test_merge_bodies_duplicate_attribute() -> Result<(), HclError> {
         let mut b1 = Body::new(empty_span());
         b1.attributes.insert(
             "foo".to_string(),
@@ -410,7 +406,9 @@ mod tests {
                 trailing_comment: None,
             },
         );
-        let errs = merge_bodies(vec![b1, b2]).err().unwrap();
+        let errs = merge_bodies(vec![b1, b2])
+            .err()
+            .ok_or_else(|| HclError::Parse("expected duplicate attr error".to_string()))?;
         assert_eq!(errs.errors().len(), 1);
         assert!(
             errs.errors()[0]
@@ -418,9 +416,10 @@ mod tests {
                 .to_string()
                 .contains("defined multiple times")
         );
+        Ok(())
     }
     #[test]
-    fn test_merge_bodies_validations_and_assertions() {
+    fn test_merge_bodies_validations_and_assertions() -> Result<(), HclError> {
         use crate::ast::structure::{PostconditionBlock, PreconditionBlock, ValidationBlock};
         let mut b1 = Body::new(empty_span());
         b1.validations.push(ValidationBlock::new(
@@ -439,24 +438,31 @@ mod tests {
             Expression::Null(empty_span()),
             empty_span(),
         ));
-        let merged = merge_bodies(vec![b1, b2]).unwrap();
+        let merged = merge_bodies(vec![b1, b2])?;
         assert_eq!(merged.validations.len(), 1);
         assert_eq!(merged.preconditions.len(), 1);
         assert_eq!(merged.postconditions.len(), 1);
+        Ok(())
     }
     #[test]
-    fn test_merge_files_success_and_errors() {
+    fn test_merge_files_success_and_errors() -> Result<(), HclError> {
         let f1 = (
             "a.hcl",
             "attr1 = \"val1\"\nservice \"web\" {\n  port = 80\n}\n",
         );
         let f2 = ("b.hcl", "attr2 = 42\nservice \"api\" {\n  port = 8080\n}\n");
-        let merged = merge_files(&[f1, f2]).unwrap();
+        let merged = merge_files(&[f1, f2])?;
         assert_eq!(merged.attributes.len(), 2);
         assert_eq!(merged.blocks.len(), 2);
-        let attr1 = merged.attributes.get("attr1").unwrap();
+        let attr1 = merged
+            .attributes
+            .get("attr1")
+            .ok_or_else(|| HclError::Parse("missing attr1".to_string()))?;
         assert_eq!(attr1.span.file.as_deref(), Some("a.hcl"));
-        let attr2 = merged.attributes.get("attr2").unwrap();
+        let attr2 = merged
+            .attributes
+            .get("attr2")
+            .ok_or_else(|| HclError::Parse("missing attr2".to_string()))?;
         assert_eq!(attr2.span.file.as_deref(), Some("b.hcl"));
         let f_conflict1 = (
             "conf1.hcl",
@@ -468,7 +474,9 @@ mod tests {
             "x = 2
 ",
         );
-        let errs = merge_files(&[f_conflict1, f_conflict2]).err().unwrap();
+        let errs = merge_files(&[f_conflict1, f_conflict2])
+            .err()
+            .ok_or_else(|| HclError::Parse("expected conflict error".to_string()))?;
         assert_eq!(errs.errors().len(), 1);
         let diag = &errs.errors()[0];
         assert_eq!(diag.subject.file.as_deref(), Some("conf2.hcl"));
@@ -481,8 +489,11 @@ mod tests {
             "invalid = =
 ",
         );
-        let bad_errs = merge_files(&[f1, f_bad]).err().unwrap();
+        let bad_errs = merge_files(&[f1, f_bad])
+            .err()
+            .ok_or_else(|| HclError::Parse("expected bad file error".to_string()))?;
         assert!(bad_errs.has_errors());
+        Ok(())
     }
     #[test]
     fn test_block_priority_ordering() {
@@ -514,7 +525,7 @@ mod tests {
         assert!(!unconstrained.enforce_priority);
     }
     #[test]
-    fn test_merge_bodies_with_options_singletons_and_priority() {
+    fn test_merge_bodies_with_options_singletons_and_priority() -> Result<(), HclError> {
         let make_block = |b_type: &str| Block {
             block_type: b_type.to_string(),
             labels: vec![],
@@ -534,7 +545,7 @@ mod tests {
         b2.blocks.push(make_block("variable"));
         b2.blocks.push(make_block("locals"));
         let opts = MergeOptions::default();
-        let merged = merge_bodies_with_options(vec![b1, b2], &opts).unwrap();
+        let merged = merge_bodies_with_options(vec![b1, b2], &opts)?;
         let types: Vec<&str> = merged
             .blocks
             .iter()
@@ -547,7 +558,7 @@ mod tests {
         b4.blocks.push(make_block("packer"));
         let err = merge_bodies_with_options(vec![b3, b4], &opts)
             .err()
-            .unwrap();
+            .ok_or_else(|| HclError::Parse("expected singleton error".to_string()))?;
         assert_eq!(err.errors().len(), 1);
         assert!(
             err.errors()[0]
@@ -555,50 +566,58 @@ mod tests {
                 .to_string()
                 .contains("Singleton block 'packer'")
         );
+        Ok(())
     }
     #[test]
-    fn test_merge_directory_success_and_errors() {
+    fn test_merge_directory_success_and_errors() -> Result<(), HclError> {
         let dir_path = std::env::temp_dir().join(format!("test_merge_dir_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir_path);
-        std::fs::create_dir_all(&dir_path).unwrap();
+        std::fs::create_dir_all(&dir_path)?;
         let sub_dir = dir_path.join("sub_dir");
-        std::fs::create_dir(&sub_dir).unwrap();
+        std::fs::create_dir(&sub_dir)?;
         let f1 = dir_path.join("pkr-variables.pkr.hcl");
-        std::fs::write(&f1, "variable \"foo\" {\n  default = \"bar\"\n}\n").unwrap();
+        std::fs::write(&f1, "variable \"foo\" {\n  default = \"bar\"\n}\n")?;
         let f2 = dir_path.join("pkr-builder.pkr.hcl");
-        std::fs::write(&f2, "build {\n  sources = [\"source.qemu.vm\"]\n}\n").unwrap();
+        std::fs::write(&f2, "build {\n  sources = [\"source.qemu.vm\"]\n}\n")?;
         let f3 = dir_path.join("ignored.txt");
-        std::fs::write(&f3, "attr_txt = 1\n").unwrap();
+        std::fs::write(&f3, "attr_txt = 1\n")?;
         let hidden = dir_path.join(".hidden.hcl");
-        std::fs::write(&hidden, "should be ignored").unwrap();
-        let merged = merge_directory(&dir_path, &["pkr.hcl"]).unwrap();
+        std::fs::write(&hidden, "should be ignored")?;
+        let merged = merge_directory(&dir_path, &["pkr.hcl"])?;
         assert_eq!(merged.blocks.len(), 2);
         assert_eq!(merged.blocks[0].block_type, "variable");
         assert_eq!(merged.blocks[1].block_type, "build");
         assert!(merged.blocks[0].span.file.is_some());
-        let merged_dot = merge_directory(&dir_path, &[".pkr.hcl"]).unwrap();
+        let merged_dot = merge_directory(&dir_path, &[".pkr.hcl"])?;
         assert_eq!(merged_dot.blocks.len(), 2);
-        let merged_all = merge_directory(&dir_path, &[]).unwrap();
+        let merged_all = merge_directory(&dir_path, &[])?;
         assert_eq!(merged_all.blocks.len(), 2);
         assert!(merged_all.attributes.contains_key("attr_txt"));
         let bad_path = dir_path.join("nonexistent_sub_dir");
-        let err_dir = merge_directory(bad_path, &["hcl"]).err().unwrap();
+        let err_dir = merge_directory(bad_path, &["hcl"])
+            .err()
+            .ok_or_else(|| HclError::Parse("expected dir error".to_string()))?;
         assert!(err_dir.has_errors());
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let unreadable = dir_path.join("unreadable.pkr.hcl");
-            std::fs::write(&unreadable, "x = 1\n").unwrap();
-            std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
-            let err_read = merge_directory(&dir_path, &["pkr.hcl"]).err().unwrap();
+            std::fs::write(&unreadable, "x = 1\n")?;
+            std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000))?;
+            let err_read = merge_directory(&dir_path, &["pkr.hcl"])
+                .err()
+                .ok_or_else(|| HclError::Parse("expected read error".to_string()))?;
             assert!(err_read.has_errors());
-            std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+            std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644))?;
             let _ = std::fs::remove_file(&unreadable);
         }
         let bad_file = dir_path.join("bad.pkr.hcl");
-        std::fs::write(&bad_file, "invalid = = syntax").unwrap();
-        let err_parse = merge_directory(&dir_path, &["pkr.hcl"]).err().unwrap();
+        std::fs::write(&bad_file, "invalid = = syntax")?;
+        let err_parse = merge_directory(&dir_path, &["pkr.hcl"])
+            .err()
+            .ok_or_else(|| HclError::Parse("expected parse error".to_string()))?;
         assert!(err_parse.has_errors());
         let _ = std::fs::remove_dir_all(&dir_path);
+        Ok(())
     }
 }

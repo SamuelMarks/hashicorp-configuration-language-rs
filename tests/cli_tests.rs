@@ -1,24 +1,17 @@
 //! Integration tests for CLI binary executables (`hcl2json`, `hcl-repl`, `hcl-validate`).
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
+#![deny(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 /// Creates a unique temporary directory for test file isolation.
-fn temp_test_dir(prefix: &str) -> std::path::PathBuf {
+fn temp_test_dir(prefix: &str) -> std::io::Result<std::path::PathBuf> {
     let dir = std::env::temp_dir().join(format!("hcl_cli_test_{prefix}_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    if let Err(e) = fs::create_dir_all(&dir) {
-        unreachable!("failed to create temp dir: {e}");
-    }
-    dir
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
 }
 
 /// Tests executing the compiled `hcl2json` binary target via CLI arguments and standard input.
@@ -47,7 +40,10 @@ fn test_hcl2json_cli_binary() -> Result<(), Box<dyn std::error::Error>> {
         .spawn()?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(b"key = \"value\"\n")?;
+        stdin.write_all(
+            br#"key = "value"
+"#,
+        )?;
     }
     let output = child.wait_with_output()?;
     assert!(output.status.success());
@@ -83,7 +79,7 @@ fn test_hcl_repl_cli_binary() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("HashiCorp Configuration Language (HCL) REPL"));
-    assert!(stdout.contains("3"));
+    assert!(stdout.contains('3'));
     assert!(stdout.contains("Goodbye!"));
 
     Ok(())
@@ -101,7 +97,7 @@ fn test_hcl_validate_cli_binary() -> Result<(), Box<dyn std::error::Error>> {
     assert!(stderr.contains("Usage: hcl-validate"));
 
     // 2. Validate valid file
-    let dir = temp_test_dir("validate");
+    let dir = temp_test_dir("validate")?;
     let valid_path = dir.join("valid.hcl");
     fs::write(
         &valid_path,
@@ -119,12 +115,22 @@ port = 8080
 
     // 3. Validate invalid file returns failure
     let invalid_path = dir.join("invalid.hcl");
-    fs::write(&invalid_path, "service =\n")?;
+    fs::write(
+        &invalid_path,
+        "service =
+",
+    )?;
 
     let invalid_output = Command::new(env!("CARGO_BIN_EXE_hcl-validate"))
         .arg(&invalid_path)
         .output()?;
     assert!(!invalid_output.status.success());
+
+    // 4. Validate non-existent file returns failure from run_validate
+    let nonexistent_output = Command::new(env!("CARGO_BIN_EXE_hcl-validate"))
+        .arg(dir.join("nonexistent_file_definitely_absent_123.hcl"))
+        .output()?;
+    assert!(!nonexistent_output.status.success());
 
     let _ = fs::remove_dir_all(&dir);
     Ok(())

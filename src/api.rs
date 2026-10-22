@@ -45,10 +45,8 @@ pub fn parse(input: &str) -> Result<Body, Diagnostics> {
 /// # Errors
 /// Returns diagnostics if parsing, dynamic block expansion, or decoding fails.
 pub fn from_str<T: DecodeBody>(input: &str) -> Result<T, Diagnostics> {
-    let body = parse(input)?;
     let mut ctx = Context::with_stdlib();
-    let expanded = expand_dynamic_blocks(&body, &mut ctx)?;
-    T::decode_body(&expanded, &[], &mut ctx)
+    from_str_with_context(input, &mut ctx)
 }
 /// Decode an HCL string directly into a Rust struct without enabling standard library functions.
 ///
@@ -57,10 +55,8 @@ pub fn from_str<T: DecodeBody>(input: &str) -> Result<T, Diagnostics> {
 /// # Errors
 /// Returns diagnostics if parsing, dynamic block expansion, or decoding fails.
 pub fn from_str_without_stdlib<T: DecodeBody>(input: &str) -> Result<T, Diagnostics> {
-    let body = parse(input)?;
     let mut ctx = Context::new();
-    let expanded = expand_dynamic_blocks(&body, &mut ctx)?;
-    T::decode_body(&expanded, &[], &mut ctx)
+    from_str_with_context(input, &mut ctx)
 }
 /// Decode an HCL string into a Rust struct using a specific context.
 ///
@@ -99,15 +95,13 @@ pub fn evaluate_expr(
         ));
         return Err(diags);
     };
-    let default_ctx;
-    let eval_ctx = if let Some(c) = ctx {
-        c
-    } else {
-        default_ctx = Context::with_stdlib();
-        &default_ctx
-    };
-    let eval = crate::eval::evaluator::Evaluator::new(eval_ctx);
-    let (val, _) = eval.evaluate(&expr)?;
+    let (val, _) = ctx.map_or_else(
+        || {
+            let default_ctx = Context::with_stdlib();
+            crate::eval::evaluator::Evaluator::new(&default_ctx).evaluate(&expr)
+        },
+        |c| crate::eval::evaluator::Evaluator::new(c).evaluate(&expr),
+    )?;
     Ok(val)
 }
 /// Parse an HCL string and expand dynamic blocks using the provided context (or stdlib if None).
@@ -116,14 +110,13 @@ pub fn evaluate_expr(
 /// Returns diagnostics if parsing or dynamic block expansion fails.
 pub fn evaluate(input: &str, ctx: Option<&mut Context>) -> Result<Body, Diagnostics> {
     let body = parse(input)?;
-    let mut default_ctx;
-    let eval_ctx = if let Some(c) = ctx {
-        c
-    } else {
-        default_ctx = Context::with_stdlib();
-        &mut default_ctx
-    };
-    expand_dynamic_blocks(&body, eval_ctx)
+    ctx.map_or_else(
+        || {
+            let mut default_ctx = Context::with_stdlib();
+            expand_dynamic_blocks(&body, &mut default_ctx)
+        },
+        |c| expand_dynamic_blocks(&body, c),
+    )
 }
 /// Decode an HCL file from disk directly into a Rust struct using standard library functions by default.
 ///
@@ -175,11 +168,12 @@ pub fn evaluate_file(
     let p_str = path.as_ref().to_string_lossy();
     let mut file_manager = FileManager::new();
     let body = file_manager.parse_hcl_file(&p_str)?.clone();
-    if let Some(c) = ctx {
-        expand_dynamic_blocks(&body, c)
-    } else {
-        let mut default_ctx = Context::with_stdlib();
-        expand_dynamic_blocks(&body, &mut default_ctx)
-    }
+    ctx.map_or_else(
+        || {
+            let mut default_ctx = Context::with_stdlib();
+            expand_dynamic_blocks(&body, &mut default_ctx)
+        },
+        |c| expand_dynamic_blocks(&body, c),
+    )
 }
 mod api_tests;

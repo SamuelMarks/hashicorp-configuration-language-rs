@@ -8,7 +8,7 @@ pub struct Number(pub BigDecimal);
 impl Number {
     /// Create a new `Number` from a `BigDecimal`.
     #[must_use]
-    pub fn new(val: BigDecimal) -> Self {
+    pub const fn new(val: BigDecimal) -> Self {
         Self(val)
     }
     /// Convert to f64 for testing purposes.
@@ -88,7 +88,7 @@ impl std::fmt::Display for Number {
 impl std::ops::Neg for Number {
     type Output = Self;
     fn neg(self) -> Self::Output {
-        Number(-self.0)
+        Self(-self.0)
     }
 }
 impl From<i64> for Number {
@@ -113,20 +113,15 @@ impl From<u32> for Number {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
+    use crate::error::HclError;
     use std::str::FromStr;
     #[test]
-    fn test_number_new() {
-        let val = BigDecimal::from_str("123.456").unwrap();
+    fn test_number_new() -> Result<(), HclError> {
+        let val = BigDecimal::from_str("123.456")?;
         let num = Number::new(val.clone());
         assert_eq!(num.0, val);
+        Ok(())
     }
     #[test]
     fn test_number_conversions() {

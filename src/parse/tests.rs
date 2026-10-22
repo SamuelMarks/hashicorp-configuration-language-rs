@@ -1,11 +1,6 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
+//! Unit tests for the HCL native syntax parser.
 use crate::ast::expr::Expression;
+use crate::error::HclError;
 use crate::parse::parser::Parser;
 #[test]
 fn test_parse_body_empty() {
@@ -16,7 +11,7 @@ fn test_parse_body_empty() {
     assert!(!parser.diags.has_errors());
 }
 #[test]
-fn test_parse_body_attributes() {
+fn test_parse_body_attributes() -> Result<(), HclError> {
     let input = "foo = 1\nbar = \"test\"\n";
     let mut parser = Parser::new(input);
     let body = parser.parse_body();
@@ -25,17 +20,16 @@ fn test_parse_body_attributes() {
     assert_eq!(body.attributes.len(), 2);
     assert!(body.attributes.contains_key("foo"));
     assert!(body.attributes.contains_key("bar"));
-    if let Expression::Number(ref n, _) = body.attributes["foo"].expr {
-        assert_eq!(n.as_f64(), Some(1.0));
-    } else {
-        panic!("Expected Number for foo");
-    }
-    if let Expression::String(ref s, _) = body.attributes["bar"].expr {
-        assert!(s.contains("test"));
-    } else {
-        panic!("Expected String for bar");
-    }
+    let Expression::Number(ref n, _) = body.attributes["foo"].expr else {
+        return Err(HclError::Parse("Expected Number for foo".to_string()));
+    };
+    assert_eq!(n.as_f64(), Some(1.0));
+    let Expression::String(ref s, _) = body.attributes["bar"].expr else {
+        return Err(HclError::Parse("Expected String for bar".to_string()));
+    };
+    assert!(s.contains("test"));
     assert!(!parser.diags.has_errors());
+    Ok(())
 }
 #[test]
 fn test_parse_body_blocks() {
@@ -322,21 +316,23 @@ fn test_parse_block_missing_newline() {
     );
 }
 #[test]
-fn test_parse_expression_pratt() {
+fn test_parse_expression_pratt() -> Result<(), HclError> {
     let input = "foo = 1 + 2 * 3";
     let mut parser = Parser::new(input);
     let body = parser.parse_body();
     let expr = &body.attributes["foo"].expr;
-    if let Expression::BinaryOp(op, left, right, _) = expr {
-        assert_eq!(*op, crate::ast::expr::BinaryOp::Add);
-        assert!(matches!(**left, Expression::Number(..)));
-        assert!(matches!(
-            **right,
-            Expression::BinaryOp(crate::ast::expr::BinaryOp::Mul, _, _, _)
+    let Expression::BinaryOp(op, left, right, _) = expr else {
+        return Err(HclError::Parse(
+            "Expected binary op ADD at top level".to_string(),
         ));
-    } else {
-        panic!("Expected binary op ADD at top level");
-    }
+    };
+    assert_eq!(*op, crate::ast::expr::BinaryOp::Add);
+    assert!(matches!(**left, Expression::Number(..)));
+    assert!(matches!(
+        **right,
+        Expression::BinaryOp(crate::ast::expr::BinaryOp::Mul, _, _, _)
+    ));
+    Ok(())
 }
 #[test]
 fn test_template_directives() {
@@ -921,6 +917,9 @@ fn test_parser_coverage_comprehensive() {
     let mut p_tpl_nested = Parser::new(src_tpl_nested);
     let b_tpl_nested = p_tpl_nested.parse_body();
     assert_eq!(b_tpl_nested.attributes.len(), 1);
+}
+#[test]
+fn test_parser_coverage_comprehensive_templates_and_errors() {
     let src_heredoc = "str = <<EOF\nplain text\nEOF\n";
     let mut p_heredoc = Parser::new(src_heredoc);
     let b_heredoc = p_heredoc.parse_body();
@@ -969,7 +968,7 @@ fn test_parser_coverage_comprehensive() {
     assert_eq!(b_esc_sym.attributes.len(), 1);
 }
 #[test]
-fn test_parse_template_directives_exhaustive() {
+fn test_parse_template_directives_exhaustive() -> Result<(), HclError> {
     use crate::ast::expr::{Directive, Expression, TemplatePart};
     use crate::parse::parser::Parser;
     let src = r#"msg = "Hello %{ if a }A%{ else if b }B%{ elif c }C%{ else }D%{ endif }!""#;
@@ -977,63 +976,59 @@ fn test_parse_template_directives_exhaustive() {
     let body = p.parse_body();
     assert!(!p.errors().has_errors());
     let attr = &body.attributes["msg"];
-    if let Expression::Template(parts, _) = &attr.expr {
-        assert_eq!(parts.len(), 3);
-        if let TemplatePart::Directive(
-            Directive::If {
-                cond,
-                true_expr,
-                else_ifs,
-                false_expr,
-            },
-            _,
-        ) = &parts[1]
-        {
-            assert!(matches!(cond, Expression::Variable(name, _) if name == "a"));
-            assert_eq!(true_expr.len(), 1);
-            assert_eq!(else_ifs.len(), 2);
-            assert!(false_expr.is_some());
-        } else {
-            panic!("expected Directive::If");
-        }
-    } else {
-        panic!("expected Template");
-    }
+    let Expression::Template(parts, _) = &attr.expr else {
+        return Err(HclError::Parse("expected Template".to_string()));
+    };
+    assert_eq!(parts.len(), 3);
+    let TemplatePart::Directive(
+        Directive::If {
+            cond,
+            true_expr,
+            else_ifs,
+            false_expr,
+        },
+        _,
+    ) = &parts[1]
+    else {
+        return Err(HclError::Parse("expected Directive::If".to_string()));
+    };
+    assert!(matches!(cond, Expression::Variable(name, _) if name == "a"));
+    assert_eq!(true_expr.len(), 1);
+    assert_eq!(else_ifs.len(), 2);
+    assert!(false_expr.is_some());
     let src_for1 = r#"msg = "%{ for item in items }${item}%{ endfor }""#;
     let mut p_for1 = Parser::new(src_for1);
     let body_for1 = p_for1.parse_body();
     assert!(!p_for1.errors().has_errors());
     if let Expression::Template(parts, _) = &body_for1.attributes["msg"].expr {
-        if let TemplatePart::Directive(
+        let TemplatePart::Directive(
             Directive::For {
                 key_var, val_var, ..
             },
             _,
         ) = &parts[0]
-        {
-            assert!(key_var.is_none());
-            assert_eq!(val_var, "item");
-        } else {
-            panic!("expected Directive::For");
-        }
+        else {
+            return Err(HclError::Parse("expected Directive::For".to_string()));
+        };
+        assert!(key_var.is_none());
+        assert_eq!(val_var, "item");
     }
     let src_for2 = r#"msg = "%{ for k, v in pairs }${k}=${v}%{ endfor }""#;
     let mut p_for2 = Parser::new(src_for2);
     let body_for2 = p_for2.parse_body();
     assert!(!p_for2.errors().has_errors());
     if let Expression::Template(parts, _) = &body_for2.attributes["msg"].expr {
-        if let TemplatePart::Directive(
+        let TemplatePart::Directive(
             Directive::For {
                 key_var, val_var, ..
             },
             _,
         ) = &parts[0]
-        {
-            assert_eq!(key_var.as_deref(), Some("k"));
-            assert_eq!(val_var, "v");
-        } else {
-            panic!("expected Directive::For");
-        }
+        else {
+            return Err(HclError::Parse("expected Directive::For".to_string()));
+        };
+        assert_eq!(key_var.as_deref(), Some("k"));
+        assert_eq!(val_var, "v");
     }
     let src_err1 = r#"msg = "%{ for x }foo%{ endfor }""#;
     let mut p_err1 = Parser::new(src_err1);
@@ -1070,9 +1065,10 @@ fn test_parse_template_directives_exhaustive() {
             TemplatePart::Literal("hello".to_string(), parts[0].span())
         );
     }
+    Ok(())
 }
 #[test]
-fn test_heredoc_indentation_stripping_and_directives() {
+fn test_heredoc_indentation_stripping_and_directives() -> Result<(), HclError> {
     use crate::ast::expr::TemplatePart;
     use crate::eval::context::Context;
     use crate::eval::evaluator::Evaluator;
@@ -1105,14 +1101,18 @@ fn test_heredoc_indentation_stripping_and_directives() {
         "first\n\tsecond\nthird"
     );
     let mixed_single = "  \tline1\n  \tline2";
-    let err_single = strip_heredoc_indentation(mixed_single).unwrap_err();
+    let err_single = strip_heredoc_indentation(mixed_single)
+        .err()
+        .ok_or_else(|| HclError::Parse("expected mixed_single error".to_string()))?;
     assert!(
         err_single
             .to_string()
             .contains("mixed tabs and spaces in leading whitespace")
     );
     let mixed_lines = "  line1\n\tline2";
-    let err_lines = strip_heredoc_indentation(mixed_lines).unwrap_err();
+    let err_lines = strip_heredoc_indentation(mixed_lines)
+        .err()
+        .ok_or_else(|| HclError::Parse("expected mixed_lines error".to_string()))?;
     assert!(
         err_lines
             .to_string()
@@ -1122,28 +1122,24 @@ fn test_heredoc_indentation_stripping_and_directives() {
     let mut p_ind = Parser::new(src_indented);
     let body_ind = p_ind.parse_body();
     assert!(!p_ind.errors().has_errors());
-    if let Expression::Template(parts, _) = &body_ind.attributes["msg"].expr {
-        let text = match &parts[0] {
-            TemplatePart::Literal(s, _) => s.as_str(),
-            _ => panic!("expected literal"),
-        };
-        assert_eq!(text, "line1\n  nested line2\nline3");
-    } else {
-        panic!("expected template expression");
-    }
+    let Expression::Template(parts, _) = &body_ind.attributes["msg"].expr else {
+        return Err(HclError::Parse("expected template expression".to_string()));
+    };
+    let TemplatePart::Literal(s, _) = &parts[0] else {
+        return Err(HclError::Parse("expected literal".to_string()));
+    };
+    assert_eq!(s.as_str(), "line1\n  nested line2\nline3");
     let src_std = "msg = <<EOF\n  line1\n    nested line2\n  line3\nEOF\n";
     let mut p_std = Parser::new(src_std);
     let body_std = p_std.parse_body();
     assert!(!p_std.errors().has_errors());
-    if let Expression::Template(parts, _) = &body_std.attributes["msg"].expr {
-        let text = match &parts[0] {
-            TemplatePart::Literal(s, _) => s.as_str(),
-            _ => panic!("expected literal"),
-        };
-        assert_eq!(text, "  line1\n    nested line2\n  line3");
-    } else {
-        panic!("expected template expression");
-    }
+    let Expression::Template(parts, _) = &body_std.attributes["msg"].expr else {
+        return Err(HclError::Parse("expected template expression".to_string()));
+    };
+    let TemplatePart::Literal(s, _) = &parts[0] else {
+        return Err(HclError::Parse("expected literal".to_string()));
+    };
+    assert_eq!(s.as_str(), "  line1\n    nested line2\n  line3");
     let src_tpl = "msg = <<-EOF\n  hello, ${~ name ~} world!\n  EOF\n";
     let mut p_tpl = Parser::new(src_tpl);
     let body_tpl = p_tpl.parse_body();
@@ -1153,9 +1149,7 @@ fn test_heredoc_indentation_stripping_and_directives() {
         "name",
         Value::new(Type::String, ValueData::String("Alice".into())),
     );
-    let (val, _) = Evaluator::new(&ctx)
-        .evaluate(&body_tpl.attributes["msg"].expr)
-        .unwrap();
+    let (val, _) = Evaluator::new(&ctx).evaluate(&body_tpl.attributes["msg"].expr)?;
     assert_eq!(
         val.data.as_ref(),
         &ValueData::String("hello,Aliceworld!".into())
@@ -1171,37 +1165,35 @@ fn test_heredoc_indentation_stripping_and_directives() {
             .iter()
             .any(|d| d.error.to_string().contains("Heredoc error"))
     );
+    Ok(())
 }
 #[test]
-fn test_parse_func_call_expand_final_rules() {
+fn test_parse_func_call_expand_final_rules() -> Result<(), HclError> {
     let src_ok = "val = foo(a, b...)";
     let mut p_ok = Parser::new(src_ok);
     let body_ok = p_ok.parse_body();
     assert!(!p_ok.errors().has_errors());
-    if let Expression::FuncCall(fc, _) = &body_ok.attributes["val"].expr {
-        assert!(fc.expand_final);
-        assert_eq!(fc.args.len(), 2);
-    } else {
-        panic!("expected func call");
-    }
+    let Expression::FuncCall(fc, _) = &body_ok.attributes["val"].expr else {
+        return Err(HclError::Parse("expected func call".to_string()));
+    };
+    assert!(fc.expand_final);
+    assert_eq!(fc.args.len(), 2);
     let src_trailing = "val = foo(a, b,)";
     let mut p_trailing = Parser::new(src_trailing);
     let body_trailing = p_trailing.parse_body();
     assert!(!p_trailing.errors().has_errors());
-    if let Expression::FuncCall(fc, _) = &body_trailing.attributes["val"].expr {
-        assert_eq!(fc.args.len(), 2);
-    } else {
-        panic!("expected func call");
-    }
+    let Expression::FuncCall(fc, _) = &body_trailing.attributes["val"].expr else {
+        return Err(HclError::Parse("expected func call".to_string()));
+    };
+    assert_eq!(fc.args.len(), 2);
     let src_newlines = "val = foo(\n  a\n,  b\n)";
     let mut p_newlines = Parser::new(src_newlines);
     let body_newlines = p_newlines.parse_body();
     assert!(!p_newlines.errors().has_errors());
-    if let Expression::FuncCall(fc, _) = &body_newlines.attributes["val"].expr {
-        assert_eq!(fc.args.len(), 2);
-    } else {
-        panic!("expected func call");
-    }
+    let Expression::FuncCall(fc, _) = &body_newlines.attributes["val"].expr else {
+        return Err(HclError::Parse("expected func call".to_string()));
+    };
+    assert_eq!(fc.args.len(), 2);
     let src_bad_pos = "val = foo(a..., b)";
     let mut p_bad_pos = Parser::new(src_bad_pos);
     p_bad_pos.parse_body();
@@ -1224,11 +1216,12 @@ fn test_parse_func_call_expand_final_rules() {
             .iter()
             .any(|d| d.error.to_string().contains("Expected `)` after `...`"))
     );
+    Ok(())
 }
-/// Tests additional parser coverage edge cases including heredoc common prefix,
-/// variadic param variations in function blocks, heredoc directives, and traversal operators.
+/// Tests additional parser coverage edge cases including heredoc common prefix
+/// and basic variadic param variations in function blocks.
 #[test]
-fn test_parser_additional_coverage_gaps() {
+fn test_parser_additional_coverage_gaps_heredoc_and_variadic() {
     let empty_heredoc = "val = <<-EOF\n\nEOF\n";
     let mut p = Parser::new(empty_heredoc);
     let body = p.parse_body();
@@ -1296,6 +1289,10 @@ fn test_parser_additional_coverage_gaps() {
             .map(|vp| vp.name.as_str()),
         Some("args")
     );
+}
+/// Tests variadic param type and label variations in function blocks.
+#[test]
+fn test_parser_additional_coverage_gaps_variadic_types_and_labels() {
     let func_vp_bad_name = r#"
         function "f4" {
             variadic_param {
@@ -1382,6 +1379,10 @@ fn test_parser_additional_coverage_gaps() {
     let body = p.parse_body();
     assert_eq!(body.functions.len(), 1);
     assert!(body.functions[0].variadic_param.is_none());
+}
+/// Tests heredoc directives, splat operators, and traversal error cases.
+#[test]
+fn test_parser_additional_coverage_gaps_splat_and_traversal() {
     let heredoc_directive = "val = <<EOF\n%{ if true }\nhello\n%{ endif }\nEOF\n";
     let mut p = Parser::new(heredoc_directive);
     let body = p.parse_body();
@@ -1436,6 +1437,10 @@ fn test_parser_additional_coverage_gaps() {
             .to_string()
             .contains("Either a quoted string block label or an opening brace")
     }));
+}
+/// Tests unclosed directives and delimiter mismatch syntax errors.
+#[test]
+fn test_parser_additional_coverage_gaps_directives_and_syntax_errors() {
     let func_vp_var = r#"
         function "f9" {
             variadic_param {
@@ -1619,52 +1624,52 @@ fn test_parse_dynamic_block_invalid_arguments_and_missing_content() {
     assert!(p5.errors().has_errors());
 }
 #[test]
-fn test_parse_namespaced_func_call_zero_namespace() {
+fn test_parse_namespaced_func_call_zero_namespace() -> Result<(), HclError> {
     let src = r#"val = upper("foo")"#;
     let mut p = Parser::new(src);
     let body = p.parse_body();
     assert!(!p.errors().has_errors());
-    if let Expression::FuncCall(fc, _) = &body.attributes["val"].expr {
-        assert_eq!(fc.name.namespace.len(), 0);
-        assert_eq!(fc.name.name, "upper");
-        assert_eq!(fc.simple_name(), Some("upper"));
-        assert_eq!(fc.name.to_string(), "upper");
-        assert_eq!(fc.args.len(), 1);
-    } else {
-        panic!("expected func call");
-    }
+    let Expression::FuncCall(fc, _) = &body.attributes["val"].expr else {
+        return Err(HclError::Parse("expected func call".to_string()));
+    };
+    assert_eq!(fc.name.namespace.len(), 0);
+    assert_eq!(fc.name.name, "upper");
+    assert_eq!(fc.simple_name(), Some("upper"));
+    assert_eq!(fc.name.to_string(), "upper");
+    assert_eq!(fc.args.len(), 1);
+    Ok(())
 }
 #[test]
-fn test_parse_namespaced_func_call_single_namespace() {
+fn test_parse_namespaced_func_call_single_namespace() -> Result<(), HclError> {
     let src = r"val = aws::arn_parse(var.arn)";
     let mut p = Parser::new(src);
     let body = p.parse_body();
     assert!(!p.errors().has_errors());
-    if let Expression::FuncCall(fc, _) = &body.attributes["val"].expr {
-        assert_eq!(fc.name.namespace, vec!["aws"]);
-        assert_eq!(fc.name.name, "arn_parse");
-        assert_eq!(fc.simple_name(), None);
-        assert_eq!(fc.name.to_string(), "aws::arn_parse");
-        assert_eq!(fc.args.len(), 1);
-    } else {
-        panic!("expected func call");
-    }
+    let Expression::FuncCall(fc, _) = &body.attributes["val"].expr else {
+        return Err(HclError::Parse("expected func call".to_string()));
+    };
+    assert_eq!(fc.name.namespace, vec!["aws"]);
+    assert_eq!(fc.name.name, "arn_parse");
+    assert_eq!(fc.simple_name(), None);
+    assert_eq!(fc.name.to_string(), "aws::arn_parse");
+    assert_eq!(fc.args.len(), 1);
+    Ok(())
 }
 #[test]
-fn test_parse_namespaced_func_call_multi_namespace() {
+fn test_parse_namespaced_func_call_multi_namespace() -> Result<(), HclError> {
     let src = r#"val = terraform::provider::aws::arn_parse("arn:aws:s3:::my_bucket")"#;
     let mut p = Parser::new(src);
     let body = p.parse_body();
     assert!(!p.errors().has_errors());
-    if let Expression::FuncCall(fc, _) = &body.attributes["val"].expr {
-        assert_eq!(fc.name.namespace, vec!["terraform", "provider", "aws"]);
-        assert_eq!(fc.name.name, "arn_parse");
-        assert_eq!(fc.simple_name(), None);
-        assert_eq!(fc.name.to_string(), "terraform::provider::aws::arn_parse");
-        assert_eq!(fc.args.len(), 1);
-    } else {
-        panic!("expected func call");
-    }
+    let Expression::FuncCall(fc, _) = &body.attributes["val"].expr else {
+        return Err(HclError::Parse("expected func call".to_string()));
+    };
+    assert_eq!(fc.name.namespace, vec!["terraform", "provider", "aws"]);
+    assert_eq!(fc.name.name, "arn_parse");
+    assert_eq!(fc.simple_name(), None);
+    assert_eq!(fc.name.to_string(), "terraform::provider::aws::arn_parse");
+    assert_eq!(fc.args.len(), 1);
+    Ok(())
 }
 #[test]
 fn test_parse_namespaced_func_call_errors() {
@@ -1750,7 +1755,7 @@ fn test_parse_namespaced_func_call_errors() {
     );
 }
 #[test]
-fn test_ast_comment_and_trivia_preservation_roundtrip() {
+fn test_ast_comment_and_trivia_preservation_parse() {
     let input = r#"
 # Leading comment for foo
 // Another leading line for foo
@@ -1797,8 +1802,26 @@ service "web" {
         port_attr.trailing_comment.as_deref(),
         Some("// Inline port comment")
     );
+}
+#[test]
+fn test_ast_comment_and_trivia_preservation_roundtrip() -> Result<(), HclError> {
+    let input = r#"
+# Leading comment for foo
+// Another leading line for foo
+/* Multi-line comment
+   for foo */
+foo = "bar" # Inline comment for foo
+
+# Leading block comment
+service "web" {
+  # Intra-block attribute comment
+  port = 8080 // Inline port comment
+} # Inline block close comment
+"#;
+    let mut parser = Parser::new(input);
+    let body = parser.parse_body();
     let mut cst_body = crate::cst::builder::CstBody::new();
-    crate::encode::EncodeBody::encode_into_body(&body, &mut cst_body).unwrap();
+    crate::encode::EncodeBody::encode_into_body(&body, &mut cst_body)?;
     let mut rendered = String::new();
     cst_body.render(&mut rendered);
     assert!(rendered.contains("# Leading comment for foo"));
@@ -1830,6 +1853,7 @@ service "web" {
         round_port.trailing_comment.as_deref(),
         Some("// Inline port comment")
     );
+    Ok(())
 }
 /// Tests template whitespace stripping and stray directive branches.
 #[test]

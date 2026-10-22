@@ -77,7 +77,7 @@ impl<'a> Lexer<'a> {
         while search_offset < remainder.len() {
             let line_end_offset = remainder[search_offset..]
                 .find('\n')
-                .unwrap_or(remainder[search_offset..].len());
+                .unwrap_or(remainder.len() - search_offset);
             let next_line_end = search_offset + line_end_offset;
             let line_content = &remainder[search_offset..next_line_end];
             let check_content = if is_indented {
@@ -147,35 +147,16 @@ impl<'a> Lexer<'a> {
                 }
                 if b == b'{' {
                     interp_depth += 1;
-                    idx += 1;
                 } else if b == b'}' {
                     interp_depth -= 1;
-                    idx += 1;
-                } else {
-                    idx += 1;
                 }
+                idx += 1;
             } else if b == b'$' || b == b'%' {
-                if idx + 1 < bytes.len() {
-                    if bytes[idx + 1] == b'{' {
-                        if idx > 1 {
-                            if bytes[idx - 1] == b {
-                                if bytes[idx - 2] == b'\\' {
-                                    interp_depth = 1;
-                                    idx += 2;
-                                } else {
-                                    idx += 2;
-                                }
-                            } else {
-                                interp_depth = 1;
-                                idx += 2;
-                            }
-                        } else {
-                            interp_depth = 1;
-                            idx += 2;
-                        }
-                    } else {
-                        idx += 1;
+                if idx + 1 < bytes.len() && bytes[idx + 1] == b'{' {
+                    if idx <= 1 || bytes[idx - 1] != b || bytes[idx - 2] == b'\\' {
+                        interp_depth = 1;
                     }
+                    idx += 2;
                 } else {
                     idx += 1;
                 }
@@ -196,7 +177,6 @@ impl<'a> Lexer<'a> {
                     end_col,
                     self.file.clone(),
                 );
-                println!("parse_quoted_string returning SOME: {}", full_match);
                 return Some(Token::new(TokenKind::String, full_match.to_string(), span));
             } else {
                 idx += 1;
@@ -240,13 +220,14 @@ impl Iterator for Lexer<'_> {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(clippy::unnecessary_wraps)]
     use super::*;
     fn next_tok(lex: &mut Lexer<'_>) -> Result<Token, crate::error::HclError> {
-        lex.next()
-            .ok_or_else(|| crate::error::HclError::Lex("EOF".to_string()))?
-            .map_err(|e| crate::error::HclError::Lex(e.text.clone()))
+        match lex.next() {
+            Some(Ok(tok)) => Ok(tok),
+            _ => Err(crate::error::HclError::Lex("EOF or Err".to_string())),
+        }
     }
     #[test]
     fn test_lexer() -> Result<(), crate::error::HclError> {
@@ -299,15 +280,10 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_lexer_error() -> Result<(), crate::error::HclError> {
+    fn test_lexer_error() {
         let input = "`";
         let mut lex = Lexer::new(input);
-        let res = lex.next().unwrap_or(Err(LexError {
-            span: crate::span::Span::default(),
-            text: String::new(),
-        }));
-        assert!(res.is_err());
-        Ok(())
+        assert!(next_tok(&mut lex).is_err());
     }
     #[test]
     fn test_heredoc_standard() -> Result<(), crate::error::HclError> {
@@ -367,20 +343,16 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_heredoc_parser_bails_if_not_starts_with_lt_lt() -> Result<(), crate::error::HclError> {
+    fn test_heredoc_parser_bails_if_not_starts_with_lt_lt() {
         let input = "abc";
         let mut lex = Lexer::new(input);
         assert_eq!(lex.parse_heredoc(), None);
-        Ok(())
     }
     #[test]
     fn test_lexer_colon_colon_isolated() -> Result<(), crate::error::HclError> {
         let input = "::";
         let mut lex = Lexer::new(input);
-        let tok = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("token"))
-            .unwrap_or_else(|_| unreachable!("no lex error"));
+        let tok = next_tok(&mut lex)?;
         assert_eq!(tok.kind, TokenKind::ColonColon);
         assert_eq!(tok.text, "::");
         assert_eq!(tok.span.start_byte, 0);
@@ -396,32 +368,20 @@ mod tests {
     fn test_lexer_colon_colon_chained_and_odd() -> Result<(), crate::error::HclError> {
         let input = ":::";
         let mut lex = Lexer::new(input);
-        let t1 = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("token 1"))
-            .unwrap_or_else(|_| unreachable!("ok 1"));
+        let t1 = next_tok(&mut lex)?;
         assert_eq!(t1.kind, TokenKind::ColonColon);
         assert_eq!(t1.span.start_byte, 0);
         assert_eq!(t1.span.end_byte, 2);
-        let t2 = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("token 2"))
-            .unwrap_or_else(|_| unreachable!("ok 2"));
+        let t2 = next_tok(&mut lex)?;
         assert_eq!(t2.kind, TokenKind::Colon);
         assert_eq!(t2.span.start_byte, 2);
         assert_eq!(t2.span.end_byte, 3);
         assert!(lex.next().is_none());
         let input4 = "::::";
         let mut lex4 = Lexer::new(input4);
-        let t1 = lex4
-            .next()
-            .unwrap_or_else(|| unreachable!("token 1"))
-            .unwrap_or_else(|_| unreachable!("ok 1"));
+        let t1 = next_tok(&mut lex4)?;
         assert_eq!(t1.kind, TokenKind::ColonColon);
-        let t2 = lex4
-            .next()
-            .unwrap_or_else(|| unreachable!("token 2"))
-            .unwrap_or_else(|_| unreachable!("ok 2"));
+        let t2 = next_tok(&mut lex4)?;
         assert_eq!(t2.kind, TokenKind::ColonColon);
         assert!(lex4.next().is_none());
         Ok(())
@@ -430,40 +390,25 @@ mod tests {
     fn test_lexer_namespaced_identifier_stream() -> Result<(), crate::error::HclError> {
         let input = "aws::s3::bucket_name";
         let mut lex = Lexer::new(input);
-        let t1 = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("aws"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let t1 = next_tok(&mut lex)?;
         assert_eq!(t1.kind, TokenKind::Ident);
         assert_eq!(t1.text, "aws");
         assert_eq!(t1.span.start_byte, 0);
         assert_eq!(t1.span.end_byte, 3);
-        let t2 = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("::"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let t2 = next_tok(&mut lex)?;
         assert_eq!(t2.kind, TokenKind::ColonColon);
         assert_eq!(t2.span.start_byte, 3);
         assert_eq!(t2.span.end_byte, 5);
-        let t3 = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("s3"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let t3 = next_tok(&mut lex)?;
         assert_eq!(t3.kind, TokenKind::Ident);
         assert_eq!(t3.text, "s3");
         assert_eq!(t3.span.start_byte, 5);
         assert_eq!(t3.span.end_byte, 7);
-        let t4 = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("::"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let t4 = next_tok(&mut lex)?;
         assert_eq!(t4.kind, TokenKind::ColonColon);
         assert_eq!(t4.span.start_byte, 7);
         assert_eq!(t4.span.end_byte, 9);
-        let t5 = lex
-            .next()
-            .unwrap_or_else(|| unreachable!("bucket_name"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let t5 = next_tok(&mut lex)?;
         assert_eq!(t5.kind, TokenKind::Ident);
         assert_eq!(t5.text, "bucket_name");
         assert_eq!(t5.span.start_byte, 9);
@@ -481,10 +426,7 @@ mod tests {
         assert!(lex_trailing_slash.parse_quoted_string().is_none());
         let input_escaped = "\"prefix-${ \"hello \\\" world\" }-suffix\"";
         let mut lex_escaped = Lexer::new(input_escaped);
-        let tok = lex_escaped
-            .next()
-            .unwrap_or_else(|| unreachable!("some"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let tok = next_tok(&mut lex_escaped)?;
         assert_eq!(tok.kind, TokenKind::String);
         assert_eq!(tok.text, input_escaped);
         let mut lex_inner_slash = Lexer::new("\"${ \"unterminated\\");
@@ -493,33 +435,21 @@ mod tests {
         assert!(lex_inner_plain.parse_quoted_string().is_none());
         let input_escaped_interp = "\"prefix $${escaped} and %%{directive}\"";
         let mut lex_interp = Lexer::new(input_escaped_interp);
-        let tok_interp = lex_interp
-            .next()
-            .unwrap_or_else(|| unreachable!("some"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let tok_interp = next_tok(&mut lex_interp)?;
         assert_eq!(tok_interp.kind, TokenKind::String);
         let input_bs_dollar = "\"bs \\$${not_escaped}\"";
         let mut lex_bs = Lexer::new(input_bs_dollar);
-        let tok_bs = lex_bs
-            .next()
-            .unwrap_or_else(|| unreachable!("some"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let tok_bs = next_tok(&mut lex_bs)?;
         assert_eq!(tok_bs.kind, TokenKind::String);
         let input_directive = "\"%{if true}content%{endif}\"";
         let mut lex_dir = Lexer::new(input_directive);
-        let tok_dir = lex_dir
-            .next()
-            .unwrap_or_else(|| unreachable!("some"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let tok_dir = next_tok(&mut lex_dir)?;
         assert_eq!(tok_dir.kind, TokenKind::String);
         let mut lex_unclosed_interp = Lexer::new("\"${unclosed");
         assert!(lex_unclosed_interp.parse_quoted_string().is_none());
         let input_dollar = "\"cost is $100 and 50% off or trailing $\"";
         let mut lex_dollar = Lexer::new(input_dollar);
-        let tok_dollar = lex_dollar
-            .next()
-            .unwrap_or_else(|| unreachable!("some"))
-            .unwrap_or_else(|_| unreachable!("ok"));
+        let tok_dollar = next_tok(&mut lex_dollar)?;
         assert_eq!(tok_dollar.kind, TokenKind::String);
         assert_eq!(tok_dollar.text, input_dollar);
         let mut lex_unclosed_dollar = Lexer::new("\"unclosed $");
@@ -530,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_extra_coverage() -> Result<(), crate::error::HclError> {
+    fn test_lexer_extra_coverage() {
         let mut lex = Lexer::new("\"foo $\" \"bar %\" \"baz $x %y\"");
         assert!(next_tok(&mut lex).is_ok());
         assert!(next_tok(&mut lex).is_ok());
@@ -541,6 +471,5 @@ mod tests {
         assert!(lex2.next().is_some());
         let mut lex_empty = Lexer::new("");
         assert!(next_tok(&mut lex_empty).is_err());
-        Ok(())
     }
 }

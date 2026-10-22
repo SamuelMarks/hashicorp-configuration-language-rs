@@ -39,14 +39,14 @@ pub struct ExpressionSpy {
 impl ExpressionSpy {
     /// Create a new `ExpressionSpy` from an expression.
     #[must_use]
-    pub fn new(expr: Expression) -> Self {
+    pub const fn new(expr: Expression) -> Self {
         Self { expr }
     }
 }
 
 impl CustomDecodeExpression for ExpressionSpy {
     fn custom_decode_expr(expr: &Expression, _ctx: &mut Context<'_>) -> Result<Self, Diagnostics> {
-        Ok(ExpressionSpy::new(expr.clone()))
+        Ok(Self::new(expr.clone()))
     }
 }
 
@@ -155,7 +155,7 @@ impl StaticExpressionInspector {
                     }
                     Directive::Strip { .. } => {}
                 },
-                _ => {}
+                TemplatePart::Literal(..) => {}
             }
         }
     }
@@ -163,23 +163,23 @@ impl StaticExpressionInspector {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
     use super::*;
     use crate::ast::expr::BinaryOp;
+    use crate::error::HclError;
     use crate::eval::context::Context;
     use crate::span::Span;
 
     #[test]
-    fn test_expression_spy() {
+    fn test_expression_spy() -> Result<(), HclError> {
         let span = Span::new(0, 0, 1, 1, 1, 5);
-        let expr = Expression::Variable("foo".to_string(), span.clone());
+        let expr = Expression::Variable("foo".to_string(), span);
         let spy = ExpressionSpy::new(expr.clone());
         assert_eq!(spy.expr, expr);
 
         let mut ctx = Context::new();
-        let decoded = ExpressionSpy::custom_decode_expr(&expr, &mut ctx).unwrap();
+        let decoded = ExpressionSpy::custom_decode_expr(&expr, &mut ctx)?;
         assert_eq!(decoded.expr, expr);
+        Ok(())
     }
 
     #[test]
@@ -208,14 +208,14 @@ mod tests {
             }),
             span.clone(),
         );
-        let tup = Expression::Tuple(vec![trav.clone(), fncall.clone()], span.clone());
-        let obj = Expression::Object(vec![(var3.clone(), tup.clone())], span.clone());
+        let tup = Expression::Tuple(vec![trav, fncall], span.clone());
+        let obj = Expression::Object(vec![(var3.clone(), tup)], span.clone());
         let null_expr = Expression::Null(span.clone());
-        let un = Expression::UnaryOp(UnaryOp::Not, Box::new(obj.clone()), span.clone());
-        let paren = Expression::Parentheses(Box::new(un.clone()), span.clone());
+        let un = Expression::UnaryOp(UnaryOp::Not, Box::new(obj), span.clone());
+        let paren = Expression::Parentheses(Box::new(un), span.clone());
         let cond = Expression::Conditional(
             Box::new(Conditional {
-                cond_expr: paren.clone(),
+                cond_expr: paren,
                 true_expr: var4.clone(),
                 false_expr: var5.clone(),
             }),
@@ -225,7 +225,7 @@ mod tests {
             Box::new(ForExpr {
                 key_var: None,
                 val_var: "x".into(),
-                collection: Box::new(cond.clone()),
+                collection: Box::new(cond),
                 key_expr: Some(Box::new(var6.clone())),
                 val_expr: Box::new(var1.clone()),
                 cond_expr: Some(Box::new(var2.clone())),
@@ -237,19 +237,16 @@ mod tests {
             vec![
                 TemplatePart::Literal("a".into(), span.clone()),
                 TemplatePart::Interpolation(null_expr, span.clone()),
-                TemplatePart::Interpolation(for_e.clone(), span.clone()),
+                TemplatePart::Interpolation(for_e, span.clone()),
                 TemplatePart::Directive(
                     Directive::If {
                         cond: var3.clone(),
-                        true_expr: vec![TemplatePart::Interpolation(var4.clone(), span.clone())],
+                        true_expr: vec![TemplatePart::Interpolation(var4, span.clone())],
                         else_ifs: vec![(
-                            var5.clone(),
-                            vec![TemplatePart::Interpolation(var6.clone(), span.clone())],
+                            var5,
+                            vec![TemplatePart::Interpolation(var6, span.clone())],
                         )],
-                        false_expr: Some(vec![TemplatePart::Interpolation(
-                            var1.clone(),
-                            span.clone(),
-                        )]),
+                        false_expr: Some(vec![TemplatePart::Interpolation(var1, span.clone())]),
                     },
                     span.clone(),
                 ),
@@ -257,8 +254,8 @@ mod tests {
                     Directive::For {
                         key_var: None,
                         val_var: "y".into(),
-                        collection: var2.clone(),
-                        body: vec![TemplatePart::Interpolation(var3.clone(), span.clone())],
+                        collection: var2,
+                        body: vec![TemplatePart::Interpolation(var3, span.clone())],
                     },
                     span.clone(),
                 ),
@@ -270,10 +267,46 @@ mod tests {
                     span.clone(),
                 ),
             ],
-            span.clone(),
+            span,
         );
         let extracted = StaticExpressionInspector::extract_referenced_variables(&tpl);
         assert_eq!(extracted.len(), 6);
+    }
+
+    #[test]
+    fn test_walk_expr_simple_template() {
+        use crate::ast::expr::*;
+        let span = Span::new(0, 0, 1, 1, 1, 1);
+        let for_simple = Expression::ForExpr(
+            Box::new(ForExpr {
+                key_var: None,
+                val_var: "v".into(),
+                collection: Box::new(Expression::Variable("coll".into(), span.clone())),
+                key_expr: None,
+                val_expr: Box::new(Expression::Variable("val".into(), span.clone())),
+                cond_expr: None,
+                grouping: false,
+            }),
+            span.clone(),
+        );
+        let tpl_no_else = Expression::Template(
+            vec![
+                TemplatePart::Interpolation(for_simple, span.clone()),
+                TemplatePart::Directive(
+                    Directive::If {
+                        cond: Expression::Variable("cond_v".into(), span.clone()),
+                        true_expr: vec![],
+                        else_ifs: vec![],
+                        false_expr: None,
+                    },
+                    span.clone(),
+                ),
+            ],
+            span,
+        );
+        let extracted_simple =
+            StaticExpressionInspector::extract_referenced_variables(&tpl_no_else);
+        assert_eq!(extracted_simple.len(), 3);
     }
     #[test]
     fn test_static_expression_inspector_variables() {
@@ -285,7 +318,7 @@ mod tests {
             BinaryOp::Add,
             Box::new(var_expr),
             Box::new(local_expr),
-            span.clone(),
+            span,
         );
 
         let extracted = StaticExpressionInspector::extract_referenced_variables(&binary_expr);

@@ -1,4 +1,5 @@
 //! Type Conversion standard library functions.
+use crate::error::HclError;
 use crate::eval::func::Function;
 use crate::types::unify::unify;
 use crate::types::{Type, Value, ValueData, ValueMark};
@@ -26,9 +27,11 @@ pub fn functions() -> Vec<Function> {
 fn can_func() -> Function {
     Function {
         name: "can".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("can expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "can expects 1 argument".to_string(),
+                ));
             }
             Ok(Value::new(Type::Bool, ValueData::Bool(true)))
         }),
@@ -38,9 +41,11 @@ fn can_func() -> Function {
 fn try_func() -> Function {
     Function {
         name: "try".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.is_empty() {
-                return Err("try expects at least 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "try expects at least 1 argument".to_string(),
+                ));
             }
             Ok(args[0].clone())
         }),
@@ -50,9 +55,11 @@ fn try_func() -> Function {
 fn type_func() -> Function {
     Function {
         name: "type".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("type expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "type expects 1 argument".to_string(),
+                ));
             }
             Ok(Value::new(
                 Type::String,
@@ -65,9 +72,11 @@ fn type_func() -> Function {
 fn tobool_func() -> Function {
     Function {
         name: "tobool".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("tobool expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "tobool expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Bool));
@@ -75,7 +84,7 @@ fn tobool_func() -> Function {
             args[0]
                 .clone()
                 .coerce(&Type::Bool)
-                .map_err(|_| format!("cannot convert {} to bool", args[0].ty()))
+                .map_err(|_| HclError::Type(format!("cannot convert {} to bool", args[0].ty())))
         }),
         signature: None,
     }
@@ -83,9 +92,11 @@ fn tobool_func() -> Function {
 fn tolist_func() -> Function {
     Function {
         name: "tolist".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("tolist expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "tolist expects 1 argument".to_string(),
+                ));
             }
             let val = &args[0];
             if val.is_unknown() {
@@ -120,9 +131,11 @@ fn tolist_func() -> Function {
 fn tomap_func() -> Function {
     Function {
         name: "tomap".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("tomap expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "tomap expects 1 argument".to_string(),
+                ));
             }
             let val = &args[0];
             if val.is_unknown() {
@@ -131,12 +144,11 @@ fn tomap_func() -> Function {
             match &*val.data {
                 ValueData::Object(obj) => {
                     if let Type::Object { attrs, .. } = val.ty() {
-                        let mut res_ty = None;
+                        let mut res_ty: Option<Type> = None;
                         for t in attrs.values() {
-                            res_ty = match res_ty {
-                                None => Some(t.clone()),
-                                Some(ref current) => unify(current, t),
-                            };
+                            res_ty = res_ty
+                                .as_ref()
+                                .map_or_else(|| Some(t.clone()), |current| unify(current, t));
                         }
                         let t = res_ty.unwrap_or(Type::Dynamic);
                         let mut map = BTreeMap::new();
@@ -144,11 +156,11 @@ fn tomap_func() -> Function {
                             if let Ok(coerced) = v.clone().coerce(&t) {
                                 map.insert(k.clone(), coerced);
                             } else {
-                                return Err(format!(
+                                return Err(HclError::Type(format!(
                                     "cannot convert object value {} to {}",
                                     v.ty(),
                                     t
-                                ));
+                                )));
                             }
                         }
                         Ok(Value::new(Type::Map(Box::new(t)), ValueData::Object(map)))
@@ -156,7 +168,7 @@ fn tomap_func() -> Function {
                         Ok(val.clone())
                     }
                 }
-                _ => Err("cannot convert to map".to_string()),
+                _ => Err(HclError::Type("cannot convert to map".to_string())),
             }
         }),
         signature: None,
@@ -165,9 +177,11 @@ fn tomap_func() -> Function {
 fn tonumber_func() -> Function {
     Function {
         name: "tonumber".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("tonumber expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "tonumber expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::Number));
@@ -175,7 +189,7 @@ fn tonumber_func() -> Function {
             args[0]
                 .clone()
                 .coerce(&Type::Number)
-                .map_err(|_| format!("cannot convert {} to number", args[0].ty()))
+                .map_err(|_| HclError::Type(format!("cannot convert {} to number", args[0].ty())))
         }),
         signature: None,
     }
@@ -183,9 +197,11 @@ fn tonumber_func() -> Function {
 fn toset_func() -> Function {
     Function {
         name: "toset".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("toset expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "toset expects 1 argument".to_string(),
+                ));
             }
             let val = &args[0];
             if val.is_unknown() {
@@ -219,9 +235,11 @@ fn toset_func() -> Function {
 fn sensitive_func() -> Function {
     Function {
         name: "sensitive".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("sensitive expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "sensitive expects 1 argument".to_string(),
+                ));
             }
             Ok(args[0].mark(ValueMark::Sensitive))
         }),
@@ -231,9 +249,11 @@ fn sensitive_func() -> Function {
 fn nonsensitive_func() -> Function {
     Function {
         name: "nonsensitive".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("nonsensitive expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "nonsensitive expects 1 argument".to_string(),
+                ));
             }
             Ok(args[0].unmark_sensitive())
         }),
@@ -243,9 +263,11 @@ fn nonsensitive_func() -> Function {
 fn issensitive_func() -> Function {
     Function {
         name: "issensitive".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("issensitive expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "issensitive expects 1 argument".to_string(),
+                ));
             }
             Ok(Value::new(
                 Type::Bool,
@@ -258,9 +280,11 @@ fn issensitive_func() -> Function {
 fn tostring_func() -> Function {
     Function {
         name: "tostring".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 1 {
-                return Err("tostring expects 1 argument".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "tostring expects 1 argument".to_string(),
+                ));
             }
             if args[0].is_unknown() {
                 return Ok(Value::unknown(Type::String));
@@ -268,33 +292,27 @@ fn tostring_func() -> Function {
             args[0]
                 .clone()
                 .coerce(&Type::String)
-                .map_err(|_| format!("cannot convert {} to string", args[0].ty()))
+                .map_err(|_| HclError::Type(format!("cannot convert {} to string", args[0].ty())))
         }),
         signature: None,
     }
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
+    use crate::error::HclError;
     use crate::eval::stdlib::conversion::*;
     use crate::number::Number;
     use crate::types::{Type, Value, ValueData};
     use std::collections::{BTreeMap, BTreeSet};
     use std::str::FromStr;
-    fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
+    fn eval_func(name: &str, args: &[Value]) -> Result<Value, HclError> {
         let funcs = functions();
         for f in funcs {
             if f.name == name {
                 return (f.func)(args);
             }
         }
-        panic!("Function {name} not found");
+        Err(HclError::Eval(format!("Function {name} not found")))
     }
     #[test]
     fn test_can() {
@@ -308,55 +326,47 @@ mod tests {
         assert!(eval_func("can", &[]).is_err());
     }
     #[test]
-    fn test_try() {
+    fn test_try() -> Result<(), HclError> {
         assert!(eval_func("try", &[]).is_err());
         let val = Value::new(Type::String, ValueData::String("hello".to_string()));
-        let res = eval_func("try", std::slice::from_ref(&val)).unwrap();
+        let res = eval_func("try", std::slice::from_ref(&val))?;
         assert_eq!(res, val);
+        Ok(())
     }
     #[test]
-    fn test_type() {
+    fn test_type() -> Result<(), HclError> {
         assert!(eval_func("type", &[]).is_err());
         let val = Value::new(Type::String, ValueData::String("hello".to_string()));
-        let res = eval_func("type", &[val]).unwrap();
+        let res = eval_func("type", &[val])?;
         assert_eq!(
             res,
             Value::new(Type::String, ValueData::String("string".to_string()))
         );
+        Ok(())
     }
     #[test]
-    fn test_tobool() {
+    fn test_tobool() -> Result<(), HclError> {
         assert!(eval_func("tobool", &[]).is_err());
-        assert!(
-            eval_func("tobool", &[Value::unknown(Type::String)])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("tobool", &[Value::unknown(Type::String)])?.is_unknown());
         let val = Value::new(Type::String, ValueData::String("true".to_string()));
-        let res = eval_func("tobool", &[val]).unwrap();
+        let res = eval_func("tobool", &[val])?;
         assert_eq!(res, Value::new(Type::Bool, ValueData::Bool(true)));
         let val = Value::new(Type::String, ValueData::String("abc".to_string()));
         assert!(eval_func("tobool", &[val]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_tolist() {
+    fn test_tolist() -> Result<(), HclError> {
         assert!(eval_func("tolist", &[]).is_err());
-        assert!(
-            eval_func("tolist", &[Value::unknown(Type::String)])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("tolist", &[Value::unknown(Type::String)])?.is_unknown());
         let arr = vec![Value::new(Type::String, ValueData::String("a".to_string()))];
-        let val = Value::new(
-            Type::List(Box::new(Type::String)),
-            ValueData::Array(arr.clone()),
-        );
-        let res = eval_func("tolist", &[val]).unwrap();
+        let val = Value::new(Type::List(Box::new(Type::String)), ValueData::Array(arr));
+        let res = eval_func("tolist", &[val])?;
         assert_eq!(res.ty(), &Type::List(Box::new(Type::String)));
         let mut set = BTreeSet::new();
         set.insert(Value::new(Type::String, ValueData::String("a".to_string())));
         let val = Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set));
-        let res = eval_func("tolist", &[val]).unwrap();
+        let res = eval_func("tolist", &[val])?;
         assert_eq!(res.ty(), &Type::List(Box::new(Type::String)));
         let mut set_multi = BTreeSet::new();
         set_multi.insert(Value::new(Type::String, ValueData::String("a".to_string())));
@@ -366,11 +376,12 @@ mod tests {
             Type::Set(Box::new(Type::Dynamic)),
             ValueData::Set(set_multi),
         );
-        let res_multi = eval_func("tolist", &[val_multi]).unwrap();
+        let res_multi = eval_func("tolist", &[val_multi])?;
         assert_eq!(res_multi.ty(), &Type::List(Box::new(Type::String)));
         let val = Value::new(Type::String, ValueData::String("a".to_string()));
-        let res = eval_func("tolist", &[val]).unwrap();
+        let res = eval_func("tolist", &[val])?;
         assert_eq!(res.ty(), &Type::List(Box::new(Type::String)));
+        Ok(())
     }
     #[test]
     fn test_tomap_no_conversion_needed() {
@@ -386,13 +397,9 @@ mod tests {
         assert!(res.is_ok());
     }
     #[test]
-    fn test_tomap() {
+    fn test_tomap() -> Result<(), HclError> {
         assert!(eval_func("tomap", &[]).is_err());
-        assert!(
-            eval_func("tomap", &[Value::unknown(Type::String)])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("tomap", &[Value::unknown(Type::String)])?.is_unknown());
         let mut obj = BTreeMap::new();
         obj.insert(
             "k".to_string(),
@@ -401,13 +408,14 @@ mod tests {
         let mut type_obj = BTreeMap::new();
         type_obj.insert("k".to_string(), Type::String);
         let val = Value::new(Type::object(type_obj), ValueData::Object(obj));
-        let res = eval_func("tomap", &[val]).unwrap();
+        let res = eval_func("tomap", &[val])?;
         assert_eq!(res.ty(), &Type::Map(Box::new(Type::String)));
         let val = Value::new(Type::String, ValueData::String("a".to_string()));
         assert!(eval_func("tomap", &[val]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_tomap_coercion_error() {
+    fn test_tomap_coercion_error() -> Result<(), HclError> {
         let mut obj = BTreeMap::new();
         obj.insert(
             "k".to_string(),
@@ -415,16 +423,13 @@ mod tests {
         );
         obj.insert(
             "k2".to_string(),
-            Value::new(
-                Type::Number,
-                ValueData::Number(Number::from_str("1").unwrap()),
-            ),
+            Value::new(Type::Number, ValueData::Number(Number::from_str("1")?)),
         );
         let mut type_obj = BTreeMap::new();
         type_obj.insert("k".to_string(), Type::String);
         type_obj.insert("k2".to_string(), Type::Number);
         let val = Value::new(Type::object(type_obj), ValueData::Object(obj));
-        let res = eval_func("tomap", &[val]).unwrap();
+        let res = eval_func("tomap", &[val])?;
         assert_eq!(res.ty(), &Type::Map(Box::new(Type::String)));
         let mut obj2 = BTreeMap::new();
         obj2.insert(
@@ -446,37 +451,31 @@ mod tests {
         type_obj2.insert("k2".to_string(), Type::Tuple(vec![Type::String]));
         let val2 = Value::new(Type::object(type_obj2), ValueData::Object(obj2));
         assert!(eval_func("tomap", &[val2]).is_ok());
+        Ok(())
     }
     #[test]
-    fn test_tonumber() {
+    fn test_tonumber() -> Result<(), HclError> {
         assert!(eval_func("tonumber", &[]).is_err());
-        assert!(
-            eval_func("tonumber", &[Value::unknown(Type::String)])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("tonumber", &[Value::unknown(Type::String)])?.is_unknown());
         let val = Value::new(Type::String, ValueData::String("1".to_string()));
-        let res = eval_func("tonumber", &[val]).unwrap();
+        let res = eval_func("tonumber", &[val])?;
         assert_eq!(res.ty(), &Type::Number);
         let val = Value::new(Type::String, ValueData::String("abc".to_string()));
         assert!(eval_func("tonumber", &[val]).is_err());
+        Ok(())
     }
     #[test]
-    fn test_toset() {
+    fn test_toset() -> Result<(), HclError> {
         assert!(eval_func("toset", &[]).is_err());
-        assert!(
-            eval_func("toset", &[Value::unknown(Type::String)])
-                .unwrap()
-                .is_unknown()
-        );
+        assert!(eval_func("toset", &[Value::unknown(Type::String)])?.is_unknown());
         let mut set = BTreeSet::new();
         set.insert(Value::new(Type::String, ValueData::String("a".to_string())));
         let val = Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set));
-        let res = eval_func("toset", &[val]).unwrap();
+        let res = eval_func("toset", &[val])?;
         assert_eq!(res.ty(), &Type::Set(Box::new(Type::String)));
         let arr = vec![Value::new(Type::String, ValueData::String("a".to_string()))];
         let val = Value::new(Type::List(Box::new(Type::String)), ValueData::Array(arr));
-        let res = eval_func("toset", &[val]).unwrap();
+        let res = eval_func("toset", &[val])?;
         assert_eq!(res.ty(), &Type::Set(Box::new(Type::String)));
         let arr_multi = vec![
             Value::new(Type::String, ValueData::String("a".to_string())),
@@ -486,45 +485,39 @@ mod tests {
             Type::List(Box::new(Type::String)),
             ValueData::Array(arr_multi),
         );
-        let res_multi = eval_func("toset", &[val_multi]).unwrap();
+        let res_multi = eval_func("toset", &[val_multi])?;
         assert_eq!(res_multi.ty(), &Type::Set(Box::new(Type::String)));
         let val = Value::new(Type::String, ValueData::String("a".to_string()));
-        let res = eval_func("toset", &[val]).unwrap();
+        let res = eval_func("toset", &[val])?;
         assert_eq!(res.ty(), &Type::Set(Box::new(Type::String)));
+        Ok(())
     }
     #[test]
-    fn test_tostring() {
+    fn test_tostring() -> Result<(), HclError> {
         assert!(eval_func("tostring", &[]).is_err());
-        assert!(
-            eval_func("tostring", &[Value::unknown(Type::Number)])
-                .unwrap()
-                .is_unknown()
-        );
-        let val = Value::new(
-            Type::Number,
-            ValueData::Number(Number::from_str("1").unwrap()),
-        );
-        let res = eval_func("tostring", &[val]).unwrap();
+        assert!(eval_func("tostring", &[Value::unknown(Type::Number)])?.is_unknown());
+        let val = Value::new(Type::Number, ValueData::Number(Number::from_str("1")?));
+        let res = eval_func("tostring", &[val])?;
         assert_eq!(res.ty(), &Type::String);
         let val = Value::new(Type::Tuple(vec![]), ValueData::Array(vec![]));
         assert!(eval_func("tostring", &[val]).is_err());
+        Ok(())
     }
     #[test]
-    #[should_panic(expected = "Function notexist not found")]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).unwrap();
+        assert!(eval_func("notexist", &[]).is_err());
     }
     #[test]
-    fn test_tomap_errors() {
+    fn test_tomap_errors() -> Result<(), HclError> {
         use crate::number::Number;
         use bigdecimal::BigDecimal;
         use std::collections::BTreeMap;
         use std::str::FromStr;
-        let num_val = |s: &str| -> Value {
-            Value::new(
+        let num_val = |s: &str| -> Result<Value, HclError> {
+            Ok(Value::new(
                 Type::Number,
-                ValueData::Number(Number::new(BigDecimal::from_str(s).unwrap())),
-            )
+                ValueData::Number(Number::new(BigDecimal::from_str(s)?)),
+            ))
         };
         let list_val = |vals: Vec<Value>| -> Value {
             Value::new(Type::List(Box::new(Type::Dynamic)), ValueData::Array(vals))
@@ -538,27 +531,28 @@ mod tests {
             "b".to_string(),
             Value::new(
                 Type::Tuple(vec![Type::Number]),
-                ValueData::Array(vec![num_val("1")]),
+                ValueData::Array(vec![num_val("1")?]),
             ),
         );
         let val = Value::new(Type::object(attrs), ValueData::Object(obj));
         let res = eval_func("tomap", &[val]);
         assert!(res.is_err());
         let unk_obj = Value::unknown(Type::object(BTreeMap::new()));
-        let res2 = eval_func("tomap", std::slice::from_ref(&unk_obj)).unwrap();
+        let res2 = eval_func("tomap", std::slice::from_ref(&unk_obj))?;
         assert!(res2.is_unknown());
+        Ok(())
     }
     #[test]
-    fn test_sensitivity_functions() {
+    fn test_sensitivity_functions() -> Result<(), HclError> {
         let val = Value::new(Type::String, ValueData::String("secret".to_string()));
-        let is_sens = eval_func("issensitive", std::slice::from_ref(&val)).unwrap();
+        let is_sens = eval_func("issensitive", std::slice::from_ref(&val))?;
         assert_eq!(is_sens, Value::new(Type::Bool, ValueData::Bool(false)));
-        let sens_val = eval_func("sensitive", std::slice::from_ref(&val)).unwrap();
+        let sens_val = eval_func("sensitive", std::slice::from_ref(&val))?;
         assert!(sens_val.has_mark(&ValueMark::Sensitive));
         assert!(sens_val.is_sensitive());
-        let is_sens2 = eval_func("issensitive", std::slice::from_ref(&sens_val)).unwrap();
+        let is_sens2 = eval_func("issensitive", std::slice::from_ref(&sens_val))?;
         assert_eq!(is_sens2, Value::new(Type::Bool, ValueData::Bool(true)));
-        let non_sens = eval_func("nonsensitive", std::slice::from_ref(&sens_val)).unwrap();
+        let non_sens = eval_func("nonsensitive", std::slice::from_ref(&sens_val))?;
         assert!(!non_sens.has_mark(&ValueMark::Sensitive));
         assert!(!non_sens.is_sensitive());
         assert_eq!(non_sens, val);
@@ -567,6 +561,7 @@ mod tests {
         assert!(eval_func("nonsensitive", &[]).is_err());
         assert!(eval_func("nonsensitive", &[val.clone(), val.clone()]).is_err());
         assert!(eval_func("issensitive", &[]).is_err());
-        assert!(eval_func("issensitive", &[val.clone(), val.clone()]).is_err());
+        assert!(eval_func("issensitive", &[val.clone(), val]).is_err());
+        Ok(())
     }
 }

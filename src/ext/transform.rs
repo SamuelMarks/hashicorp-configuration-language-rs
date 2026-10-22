@@ -77,7 +77,7 @@ impl TransformedBody {
         for mut block in body.blocks {
             transformer.transform_block(&mut block)?;
             // Apply recursively
-            let inner_transformed = TransformedBody::new(block.body, transformer)?;
+            let inner_transformed = Self::new(block.body, transformer)?;
             block.body = inner_transformed.body;
             transformed_blocks.push(block);
         }
@@ -86,7 +86,7 @@ impl TransformedBody {
         let mut transformed_dyn = Vec::with_capacity(body.dynamic_blocks.len());
         for mut dyn_block in body.dynamic_blocks {
             transformer.transform_dynamic_block(&mut dyn_block)?;
-            let inner_transformed = TransformedBody::new(dyn_block.content, transformer)?;
+            let inner_transformed = Self::new(dyn_block.content, transformer)?;
             dyn_block.content = inner_transformed.body;
             transformed_dyn.push(dyn_block);
         }
@@ -150,7 +150,7 @@ where
     ///
     /// # Arguments
     /// * `renamer` - A closure that optionally returns a new name for an attribute.
-    pub fn new(renamer: F) -> Self {
+    pub const fn new(renamer: F) -> Self {
         Self { renamer }
     }
 }
@@ -183,7 +183,7 @@ where
     ///
     /// # Arguments
     /// * `renamer` - A closure that optionally returns a new block type and labels.
-    pub fn new(renamer: F) -> Self {
+    pub const fn new(renamer: F) -> Self {
         Self { renamer }
     }
 }
@@ -225,7 +225,7 @@ where
     /// * `attr_filter` - Closure returning true if the attribute should be kept.
     /// * `block_filter` - Closure returning true if the block should be kept.
     /// * `dyn_block_filter` - Closure returning true if the dynamic block should be kept.
-    pub fn new(attr_filter: A, block_filter: B, dyn_block_filter: D) -> Self {
+    pub const fn new(attr_filter: A, block_filter: B, dyn_block_filter: D) -> Self {
         Self {
             attr_filter,
             block_filter,
@@ -245,10 +245,7 @@ impl TransformedBody {
     ///
     /// # Errors
     /// Returns an `HclError` if any step fails.
-    pub fn filter<A, B, D>(
-        mut body: Body,
-        filter_transformer: &FilterTransformer<A, B, D>,
-    ) -> Result<Self, HclError>
+    pub fn filter<A, B, D>(mut body: Body, filter_transformer: &FilterTransformer<A, B, D>) -> Self
     where
         A: Fn(&Attribute) -> bool,
         B: Fn(&Block) -> bool,
@@ -263,7 +260,7 @@ impl TransformedBody {
 
         let mut transformed_blocks = Vec::with_capacity(body.blocks.len());
         for mut block in body.blocks {
-            let inner_transformed = TransformedBody::filter(block.body, filter_transformer)?;
+            let inner_transformed = Self::filter(block.body, filter_transformer);
             block.body = inner_transformed.body;
             transformed_blocks.push(block);
         }
@@ -271,13 +268,13 @@ impl TransformedBody {
 
         let mut transformed_dyn = Vec::with_capacity(body.dynamic_blocks.len());
         for mut dyn_block in body.dynamic_blocks {
-            let inner_transformed = TransformedBody::filter(dyn_block.content, filter_transformer)?;
+            let inner_transformed = Self::filter(dyn_block.content, filter_transformer);
             dyn_block.content = inner_transformed.body;
             transformed_dyn.push(dyn_block);
         }
         body.dynamic_blocks = transformed_dyn;
 
-        Ok(Self { body })
+        Self { body }
     }
 }
 
@@ -369,25 +366,19 @@ impl BodyTransformer for CompositeTransformer<'_> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::ast::expr::Expression;
     use crate::ast::structure::Body;
     use crate::span::Span;
 
-    fn dummy_span() -> Span {
+    const fn dummy_span() -> Span {
         Span::new(0, 0, 1, 1, 1, 1)
     }
 
     #[test]
-    fn test_rename_attribute() {
+    fn test_rename_attribute() -> Result<(), HclError> {
         let mut body = Body::new(dummy_span());
         body.attributes.insert(
             "untouched_key".to_string(),
@@ -422,13 +413,14 @@ mod tests {
             }
         });
 
-        let tb = TransformedBody::new(body, &mut renamer).unwrap();
+        let tb = TransformedBody::new(body, &mut renamer)?;
         assert!(tb.body.attributes.contains_key("new_key"));
         assert!(!tb.body.attributes.contains_key("old_key"));
+        Ok(())
     }
 
     #[test]
-    fn test_rename_block() {
+    fn test_rename_block() -> Result<(), HclError> {
         let mut body = Body::new(dummy_span());
         body.blocks.push(Block {
             block_type: "untouched_block".to_string(),
@@ -466,17 +458,37 @@ mod tests {
             }
         });
 
-        let tb = TransformedBody::new(body, &mut renamer).unwrap();
+        let tb = TransformedBody::new(body, &mut renamer)?;
         assert_eq!(tb.body.blocks[0].block_type, "untouched_block");
         assert_eq!(tb.body.blocks[1].block_type, "compute_instance");
         assert_eq!(
             tb.body.blocks[1].labels,
             vec!["gcp_instance".to_string(), "web".to_string()]
         );
+        Ok(())
+    }
+
+    fn keep_non_drop_attr(attr: &Attribute) -> bool {
+        attr.name != "drop"
+    }
+
+    fn keep_non_drop_block(block: &Block) -> bool {
+        block.block_type != "drop_block"
+    }
+
+    const fn keep_all_dyn(_dyn_block: &DynamicBlock) -> bool {
+        true
+    }
+
+    type TestFilter =
+        FilterTransformer<fn(&Attribute) -> bool, fn(&Block) -> bool, fn(&DynamicBlock) -> bool>;
+
+    fn make_test_filter() -> TestFilter {
+        FilterTransformer::new(keep_non_drop_attr, keep_non_drop_block, keep_all_dyn)
     }
 
     #[test]
-    fn test_filter_transformer() {
+    fn test_filter_transformer_attributes_and_dynamic() {
         let mut body = Body::new(dummy_span());
         let mut db = crate::ast::structure::DynamicBlock {
             iterator: None,
@@ -517,7 +529,7 @@ mod tests {
             "keep".to_string(),
             Attribute {
                 name: "keep".to_string(),
-                expr: Expression::String("".to_string(), dummy_span()),
+                expr: Expression::String(String::new(), dummy_span()),
                 span: dummy_span(),
                 name_span: dummy_span(),
                 equals_span: dummy_span(),
@@ -529,7 +541,7 @@ mod tests {
             "drop".to_string(),
             Attribute {
                 name: "drop".to_string(),
-                expr: Expression::String("".to_string(), dummy_span()),
+                expr: Expression::String(String::new(), dummy_span()),
                 span: dummy_span(),
                 name_span: dummy_span(),
                 equals_span: dummy_span(),
@@ -538,6 +550,29 @@ mod tests {
             },
         );
 
+        let filter = make_test_filter();
+
+        let tb = TransformedBody::filter(body, &filter);
+        assert!(tb.body.attributes.contains_key("keep"));
+        assert!(!tb.body.attributes.contains_key("drop"));
+        assert_eq!(tb.body.dynamic_blocks.len(), 1);
+        assert!(
+            tb.body.dynamic_blocks[0]
+                .content
+                .attributes
+                .contains_key("keep")
+        );
+        assert!(
+            !tb.body.dynamic_blocks[0]
+                .content
+                .attributes
+                .contains_key("drop")
+        );
+    }
+
+    #[test]
+    fn test_filter_transformer_blocks() {
+        let mut body = Body::new(dummy_span());
         let mut block_keep = Block {
             block_type: "keep_block".to_string(),
             labels: vec![],
@@ -554,7 +589,7 @@ mod tests {
             "drop".to_string(),
             Attribute {
                 name: "drop".to_string(),
-                expr: Expression::String("".to_string(), dummy_span()),
+                expr: Expression::String(String::new(), dummy_span()),
                 span: dummy_span(),
                 name_span: dummy_span(),
                 equals_span: dummy_span(),
@@ -578,28 +613,22 @@ mod tests {
         };
         body.blocks.push(block_drop);
 
-        let filter = FilterTransformer::new(
-            |attr| attr.name != "drop",
-            |block| block.block_type != "drop_block",
-            |_dyn_block| true,
-        );
+        let filter = make_test_filter();
 
-        let tb = TransformedBody::filter(body, &filter).unwrap();
-        assert!(tb.body.attributes.contains_key("keep"));
-        assert!(!tb.body.attributes.contains_key("drop"));
+        let tb = TransformedBody::filter(body, &filter);
         assert_eq!(tb.body.blocks.len(), 1);
         assert_eq!(tb.body.blocks[0].block_type, "keep_block");
         assert!(!tb.body.blocks[0].body.attributes.contains_key("drop"));
     }
 
     #[test]
-    fn test_prefix_transformer() {
+    fn test_prefix_transformer() -> Result<(), HclError> {
         let mut body = Body::new(dummy_span());
         body.attributes.insert(
             "my_attr".to_string(),
             Attribute {
                 name: "my_attr".to_string(),
-                expr: Expression::String("".to_string(), dummy_span()),
+                expr: Expression::String(String::new(), dummy_span()),
                 span: dummy_span(),
                 name_span: dummy_span(),
                 equals_span: dummy_span(),
@@ -622,7 +651,7 @@ mod tests {
 
         let dyn_block = DynamicBlock {
             block_type: "my_dyn".to_string(),
-            for_each: Expression::String("".to_string(), dummy_span()),
+            for_each: Expression::String(String::new(), dummy_span()),
             iterator: None,
             labels: None,
             content: Body::new(dummy_span()),
@@ -632,15 +661,17 @@ mod tests {
         body.dynamic_blocks.push(dyn_block);
 
         let mut prefixer = PrefixTransformer::new("test_");
-        let tb = TransformedBody::new(body, &mut prefixer).unwrap();
+        let tb = TransformedBody::new(body, &mut prefixer)?;
 
         assert!(tb.body.attributes.contains_key("test_my_attr"));
         assert_eq!(tb.body.blocks[0].block_type, "test_my_block");
         assert_eq!(tb.body.dynamic_blocks[0].block_type, "test_my_dyn");
+        Ok(())
     }
 
     #[test]
-    fn test_transformed_body_traits() {
+    fn test_transformed_body_traits() -> Result<(), HclError> {
+        use std::ops::{Deref, DerefMut};
         let mut body = Body::new(dummy_span());
         body.attributes.insert(
             "k".into(),
@@ -654,22 +685,25 @@ mod tests {
                 trailing_comment: None,
             },
         );
-        let mut tb = TransformedBody::new(body, &mut PrefixTransformer::new("pre_")).unwrap();
-        use std::ops::{Deref, DerefMut};
-        assert_eq!(tb.deref().attributes.keys().next().unwrap(), "pre_k");
+        let mut tb = TransformedBody::new(body, &mut PrefixTransformer::new("pre_"))?;
+        assert_eq!(
+            tb.deref().attributes.keys().next().map(String::as_str),
+            Some("pre_k")
+        );
         tb.deref_mut().attributes.clear();
         assert!(tb.as_ref().attributes.is_empty());
         tb.as_mut().attributes.clear();
+        Ok(())
     }
 
     #[test]
-    fn test_composite_transformer() {
+    fn test_composite_transformer() -> Result<(), HclError> {
         let mut body = Body::new(dummy_span());
         body.attributes.insert(
             "attr1".to_string(),
             Attribute {
                 name: "attr1".to_string(),
-                expr: Expression::String("".to_string(), dummy_span()),
+                expr: Expression::String(String::new(), dummy_span()),
                 span: dummy_span(),
                 name_span: dummy_span(),
                 equals_span: dummy_span(),
@@ -692,7 +726,7 @@ mod tests {
 
         let dyn_block = DynamicBlock {
             block_type: "dyn1".to_string(),
-            for_each: Expression::String("".to_string(), dummy_span()),
+            for_each: Expression::String(String::new(), dummy_span()),
             iterator: None,
             labels: None,
             content: Body::new(dummy_span()),
@@ -705,14 +739,29 @@ mod tests {
         let mut prefix2 = PrefixTransformer::new("b_");
 
         let mut composite = CompositeTransformer::default();
+        let mut dummy_attr = Attribute {
+            name: "ok".to_string(),
+            expr: Expression::Null(dummy_span()),
+            span: dummy_span(),
+            name_span: dummy_span(),
+            equals_span: dummy_span(),
+            leading_comments: vec![],
+            trailing_comment: None,
+        };
+        assert!(
+            InnerErrorTransformer
+                .transform_attribute(&mut dummy_attr)
+                .is_ok()
+        );
         composite.add(&mut prefix1);
         composite.add(&mut prefix2);
 
-        let tb = TransformedBody::new(body, &mut composite).unwrap();
+        let tb = TransformedBody::new(body, &mut composite)?;
 
         assert!(tb.body.attributes.contains_key("b_a_attr1"));
         assert_eq!(tb.body.blocks[0].block_type, "b_a_block1");
         assert_eq!(tb.body.dynamic_blocks[0].block_type, "b_a_dyn1");
+        Ok(())
     }
 
     struct ErrorTransformer;
@@ -738,7 +787,7 @@ mod tests {
             "a".to_string(),
             Attribute {
                 name: "a".to_string(),
-                expr: Expression::String("".to_string(), dummy_span()),
+                expr: Expression::String(String::new(), dummy_span()),
                 span: dummy_span(),
                 name_span: dummy_span(),
                 equals_span: dummy_span(),
@@ -764,7 +813,7 @@ mod tests {
         let mut body3 = Body::new(dummy_span());
         body3.dynamic_blocks.push(DynamicBlock {
             block_type: "d".to_string(),
-            for_each: Expression::String("".to_string(), dummy_span()),
+            for_each: Expression::String(String::new(), dummy_span()),
             iterator: None,
             labels: None,
             content: Body::new(dummy_span()),
@@ -785,7 +834,7 @@ mod tests {
         let mut d = DummyTransformer;
         let mut attr = Attribute {
             name: "a".to_string(),
-            expr: Expression::String("".to_string(), dummy_span()),
+            expr: Expression::String(String::new(), dummy_span()),
             span: dummy_span(),
             name_span: dummy_span(),
             equals_span: dummy_span(),
@@ -810,7 +859,7 @@ mod tests {
 
         let mut dyn_block = DynamicBlock {
             block_type: "d".to_string(),
-            for_each: Expression::String("".to_string(), dummy_span()),
+            for_each: Expression::String(String::new(), dummy_span()),
             iterator: None,
             labels: None,
             content: Body::new(dummy_span()),
@@ -818,5 +867,183 @@ mod tests {
             type_span: dummy_span(),
         };
         assert!(d.transform_dynamic_block(&mut dyn_block).is_ok());
+    }
+
+    struct InnerErrorTransformer;
+    impl BodyTransformer for InnerErrorTransformer {
+        fn transform_attribute(&mut self, attr: &mut Attribute) -> Result<(), HclError> {
+            if attr.name == "fail" {
+                Err(HclError::Eval("fail".to_string()))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn test_error_propagation_inner() {
+        let mut inner_body = Body::new(dummy_span());
+        inner_body.attributes.insert(
+            "fail".to_string(),
+            Attribute {
+                name: "fail".to_string(),
+                expr: Expression::String(String::new(), dummy_span()),
+                span: dummy_span(),
+                name_span: dummy_span(),
+                equals_span: dummy_span(),
+                leading_comments: vec![],
+                trailing_comment: None,
+            },
+        );
+
+        let mut body_block = Body::new(dummy_span());
+        body_block.blocks.push(Block {
+            block_type: "b".to_string(),
+            labels: vec![],
+            body: inner_body.clone(),
+            span: dummy_span(),
+            type_span: dummy_span(),
+            label_spans: vec![],
+            open_brace_span: dummy_span(),
+            close_brace_span: dummy_span(),
+            leading_comments: vec![],
+            trailing_comment: None,
+        });
+
+        let mut body_dyn = Body::new(dummy_span());
+        body_dyn.dynamic_blocks.push(DynamicBlock {
+            block_type: "d".to_string(),
+            for_each: Expression::String(String::new(), dummy_span()),
+            iterator: None,
+            labels: None,
+            content: inner_body.clone(),
+            span: dummy_span(),
+            type_span: dummy_span(),
+        });
+
+        assert!(TransformedBody::new(body_block, &mut InnerErrorTransformer).is_err());
+        assert!(TransformedBody::new(body_dyn, &mut InnerErrorTransformer).is_err());
+
+        let mut composite = CompositeTransformer::default();
+        let mut dummy_attr = Attribute {
+            name: "ok".to_string(),
+            expr: Expression::Null(dummy_span()),
+            span: dummy_span(),
+            name_span: dummy_span(),
+            equals_span: dummy_span(),
+            leading_comments: vec![],
+            trailing_comment: None,
+        };
+        assert!(
+            InnerErrorTransformer
+                .transform_attribute(&mut dummy_attr)
+                .is_ok()
+        );
+        let mut iet = InnerErrorTransformer;
+        composite.add(&mut iet);
+
+        let mut body_comp_attr = Body::new(dummy_span());
+        body_comp_attr.attributes.insert(
+            "fail".to_string(),
+            Attribute {
+                name: "fail".to_string(),
+                expr: Expression::String(String::new(), dummy_span()),
+                span: dummy_span(),
+                name_span: dummy_span(),
+                equals_span: dummy_span(),
+                leading_comments: vec![],
+                trailing_comment: None,
+            },
+        );
+
+        let mut body_comp_block = Body::new(dummy_span());
+        body_comp_block.blocks.push(Block {
+            block_type: "b".to_string(),
+            labels: vec![],
+            body: body_comp_attr.clone(),
+            span: dummy_span(),
+            type_span: dummy_span(),
+            label_spans: vec![],
+            open_brace_span: dummy_span(),
+            close_brace_span: dummy_span(),
+            leading_comments: vec![],
+            trailing_comment: None,
+        });
+
+        let mut body_comp_dyn = Body::new(dummy_span());
+        body_comp_dyn.dynamic_blocks.push(DynamicBlock {
+            block_type: "d".to_string(),
+            for_each: Expression::String(String::new(), dummy_span()),
+            iterator: None,
+            labels: None,
+            content: body_comp_attr.clone(),
+            span: dummy_span(),
+            type_span: dummy_span(),
+        });
+
+        assert!(TransformedBody::new(body_comp_attr.clone(), &mut composite).is_err());
+        assert!(TransformedBody::new(body_comp_block, &mut composite).is_err());
+        assert!(TransformedBody::new(body_comp_dyn, &mut composite).is_err());
+    }
+
+    struct BlockErrorTransformer;
+    impl BodyTransformer for BlockErrorTransformer {
+        fn transform_block(&mut self, _block: &mut Block) -> Result<(), HclError> {
+            Err(HclError::Eval("fail".to_string()))
+        }
+        fn transform_dynamic_block(
+            &mut self,
+            _dyn_block: &mut DynamicBlock,
+        ) -> Result<(), HclError> {
+            Err(HclError::Eval("fail".to_string()))
+        }
+    }
+
+    #[test]
+    fn test_error_propagation_composite() {
+        let mut dummy_attr = Attribute {
+            name: "ok".to_string(),
+            expr: Expression::Null(dummy_span()),
+            span: dummy_span(),
+            name_span: dummy_span(),
+            equals_span: dummy_span(),
+            leading_comments: vec![],
+            trailing_comment: None,
+        };
+        assert!(
+            BlockErrorTransformer
+                .transform_attribute(&mut dummy_attr)
+                .is_ok()
+        );
+        let mut composite = CompositeTransformer::default();
+        let mut bet = BlockErrorTransformer;
+        composite.add(&mut bet);
+
+        let mut body_comp_block = Body::new(dummy_span());
+        body_comp_block.blocks.push(Block {
+            block_type: "b".to_string(),
+            labels: vec![],
+            body: Body::new(dummy_span()),
+            span: dummy_span(),
+            type_span: dummy_span(),
+            label_spans: vec![],
+            open_brace_span: dummy_span(),
+            close_brace_span: dummy_span(),
+            leading_comments: vec![],
+            trailing_comment: None,
+        });
+        assert!(TransformedBody::new(body_comp_block, &mut composite).is_err());
+
+        let mut body_comp_dyn = Body::new(dummy_span());
+        body_comp_dyn.dynamic_blocks.push(DynamicBlock {
+            block_type: "d".to_string(),
+            for_each: Expression::String(String::new(), dummy_span()),
+            iterator: None,
+            labels: None,
+            content: Body::new(dummy_span()),
+            span: dummy_span(),
+            type_span: dummy_span(),
+        });
+        assert!(TransformedBody::new(body_comp_dyn, &mut composite).is_err());
     }
 }

@@ -33,7 +33,7 @@ impl AbsTraversal {
     /// * `operators` - The operators applied to the root identifier.
     /// * `span` - The overall source span covering root and operators.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         root: String,
         root_span: Span,
         operators: Vec<TraversalOperator>,
@@ -115,7 +115,7 @@ impl AbsTraversal {
     /// A tuple `(static_prefix, remainder)` where `static_prefix` is an [`AbsTraversal`]
     /// containing only static attribute lookups, and `remainder` contains any trailing operators.
     #[must_use]
-    pub fn split_static_prefix(&self) -> (AbsTraversal, Vec<TraversalOperator>) {
+    pub fn split_static_prefix(&self) -> (Self, Vec<TraversalOperator>) {
         let mut prefix_ops = Vec::new();
         let mut remainder = Vec::new();
         let mut in_remainder = false;
@@ -145,7 +145,7 @@ impl AbsTraversal {
             )
         };
         (
-            AbsTraversal::new(
+            Self::new(
                 self.root.clone(),
                 self.root_span.clone(),
                 prefix_ops,
@@ -195,7 +195,7 @@ impl RelTraversal {
     /// * `operators` - The operators applied to the base expression.
     /// * `span` - The source span covering the relative traversal.
     #[must_use]
-    pub fn new(expr: Box<Expression>, operators: Vec<TraversalOperator>, span: Span) -> Self {
+    pub const fn new(expr: Box<Expression>, operators: Vec<TraversalOperator>, span: Span) -> Self {
         Self {
             expr,
             operators,
@@ -204,7 +204,7 @@ impl RelTraversal {
     }
     /// Returns the base expression.
     #[must_use]
-    pub fn expr(&self) -> &Expression {
+    pub const fn expr(&self) -> &Expression {
         &self.expr
     }
     /// Returns the traversal operators.
@@ -327,20 +327,13 @@ pub fn rel_traversal_for_expr(expr: &Expression) -> Result<RelTraversal, Diagnos
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::number::Number;
     #[test]
-    fn test_abs_traversal_basic() {
+    fn test_abs_traversal_basic() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let var_expr = Expression::Variable("foo".to_string(), span.clone());
-        let abs = abs_traversal_for_expr(&var_expr).unwrap();
+        let abs = abs_traversal_for_expr(&var_expr)?;
         assert_eq!(abs.root(), "foo");
         assert_eq!(abs.root_span(), span);
         assert!(abs.is_empty());
@@ -349,9 +342,10 @@ mod tests {
         assert_eq!(abs.to_string(), "foo");
         let reconverted = abs.to_expression();
         assert_eq!(reconverted, var_expr);
+        Ok(())
     }
     #[test]
-    fn test_abs_traversal_complex() {
+    fn test_abs_traversal_complex() -> Result<(), HclError> {
         let span = Span::new(0, 20, 1, 1, 1, 21);
         let var_span = Span::new(0, 3, 1, 1, 1, 4);
         let op1 = TraversalOperator::GetAttr("bar".to_string(), span.clone());
@@ -367,30 +361,23 @@ mod tests {
         let op7 = TraversalOperator::Index(Expression::Bool(true, span.clone()), span.clone());
         let trav = Traversal {
             expr: Box::new(Expression::Variable("foo".to_string(), var_span.clone())),
-            operators: vec![
-                op1.clone(),
-                op2.clone(),
-                op3.clone(),
-                op4.clone(),
-                op5.clone(),
-                op6.clone(),
-                op7.clone(),
-            ],
+            operators: vec![op1, op2, op3, op4, op5, op6, op7],
         };
         let expr = Expression::Traversal(Box::new(trav.clone()), span.clone());
-        let abs = AbsTraversal::from_expr(&expr).unwrap();
+        let abs = AbsTraversal::from_expr(&expr)?;
         assert_eq!(abs.root(), "foo");
         assert_eq!(abs.root_span(), var_span);
         assert!(!abs.is_empty());
         assert_eq!(abs.operators().len(), 7);
         assert_eq!(abs.to_string(), r#"foo.bar[0].*[*].1["key"][...]"#);
-        let abs_from_trav = AbsTraversal::from_traversal(&trav, span).unwrap();
+        let abs_from_trav = AbsTraversal::from_traversal(&trav, span)?;
         assert_eq!(abs, abs_from_trav);
         let expr_back = abs.to_expression();
         assert_eq!(expr_back, expr);
+        Ok(())
     }
     #[test]
-    fn test_abs_traversal_nested_and_parentheses() {
+    fn test_abs_traversal_nested_and_parentheses() -> Result<(), HclError> {
         let span = Span::new(0, 15, 1, 1, 1, 16);
         let inner_trav = Traversal {
             expr: Box::new(Expression::Variable("foo".to_string(), span.clone())),
@@ -405,10 +392,11 @@ mod tests {
             operators: vec![TraversalOperator::GetAttr("baz".to_string(), span.clone())],
         };
         let outer_expr = Expression::Traversal(Box::new(outer_trav), span);
-        let abs = AbsTraversal::from_expr(&outer_expr).unwrap();
+        let abs = AbsTraversal::from_expr(&outer_expr)?;
         assert_eq!(abs.root(), "foo");
         assert_eq!(abs.operators().len(), 2);
         assert_eq!(abs.to_string(), "foo.bar.baz");
+        Ok(())
     }
     #[test]
     fn test_abs_traversal_errors() {
@@ -463,26 +451,30 @@ mod tests {
                 span.clone(),
             );
             let mut w0 = StepWriter { remaining: 0 };
-            assert!(std::fmt::write(&mut w0, format_args!("{abs}")).is_err());
+            let abs_err_zero = std::fmt::write(&mut w0, format_args!("{abs}"));
+            assert!(abs_err_zero.is_err());
             let mut w1 = StepWriter { remaining: 1 };
-            assert!(std::fmt::write(&mut w1, format_args!("{abs}")).is_err());
+            let abs_err_one = std::fmt::write(&mut w1, format_args!("{abs}"));
+            assert!(abs_err_one.is_err());
             let rel = RelTraversal::new(
                 Box::new(Expression::Variable("v".to_string(), span.clone())),
                 vec![op],
                 span.clone(),
             );
             let mut rw0 = StepWriter { remaining: 0 };
-            assert!(std::fmt::write(&mut rw0, format_args!("{rel}")).is_err());
+            let rel_err_zero = std::fmt::write(&mut rw0, format_args!("{rel}"));
+            assert!(rel_err_zero.is_err());
             let mut rw1 = StepWriter { remaining: 1 };
-            assert!(std::fmt::write(&mut rw1, format_args!("{rel}")).is_err());
+            let rel_err_one = std::fmt::write(&mut rw1, format_args!("{rel}"));
+            assert!(rel_err_one.is_err());
         }
     }
     #[test]
-    fn test_rel_traversal() {
+    fn test_rel_traversal() -> Result<(), HclError> {
         let span = Span::new(0, 15, 1, 1, 1, 16);
         let num = Number::from(10);
         let base_expr = Expression::Number(num, span.clone());
-        let rel1 = RelTraversal::from_expr(&base_expr).unwrap();
+        let rel1 = RelTraversal::from_expr(&base_expr)?;
         assert_eq!(rel1.operators().len(), 0);
         assert_eq!(rel1.expr(), &base_expr);
         assert_eq!(rel1.span(), span);
@@ -503,24 +495,17 @@ mod tests {
         let op7 = TraversalOperator::Index(Expression::Null(span.clone()), span.clone());
         let trav = Traversal {
             expr: Box::new(base_expr.clone()),
-            operators: vec![
-                op1.clone(),
-                op2.clone(),
-                op3.clone(),
-                op4.clone(),
-                op5.clone(),
-                op6.clone(),
-                op7.clone(),
-            ],
+            operators: vec![op1, op2, op3, op4, op5, op6, op7],
         };
         let trav_expr = Expression::Traversal(Box::new(trav.clone()), span.clone());
-        let rel2 = RelTraversal::from_traversal(&trav, span.clone()).unwrap();
+        let rel2 = RelTraversal::from_traversal(&trav, span)?;
         assert_eq!(rel2.operators().len(), 7);
         assert_eq!(rel2.expr(), &base_expr);
         assert_eq!(rel2.to_string(), r#"(...).attr["k"][1].*[*].2[...]"#);
         assert_eq!(rel2.to_expression(), trav_expr);
-        let rel3 = RelTraversal::from_expr(&trav_expr).unwrap();
+        let rel3 = RelTraversal::from_expr(&trav_expr)?;
         assert_eq!(rel3, rel2);
+        Ok(())
     }
     #[test]
     fn test_split_static_prefix() {

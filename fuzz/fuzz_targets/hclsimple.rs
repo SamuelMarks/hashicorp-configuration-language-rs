@@ -1,3 +1,4 @@
+//! Fuzz target for `hclsimple` single-step decoding of HCL and JSON inputs.
 #![no_main]
 use hashicorp_configuration_language_rs::hclsimple;
 use libfuzzer_sys::fuzz_target;

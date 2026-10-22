@@ -10,8 +10,8 @@ repository = "https://github.com/SamuelMarks/hashicorp-configuration-language-rs
 proc-macro = true
 
 [dependencies]
-syn = { version = "2.0", default-features = false, features = ["derive", "parsing", "clone-impls", "proc-macro", "printing", "full", "extra-traits", "visit"] }
-quote = { version = "1.0", default-features = false, features = ["proc-macro"] }
+syn = { version = "3.0", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
+quote = { version = "1.0", default-features = false }
 proc-macro2 = { version = "1.0", default-features = false, features = ["proc-macro"] }
 
 [lints.rust]

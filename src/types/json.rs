@@ -132,11 +132,8 @@ pub fn encode_value_to_json(val: &Value) -> Result<JsonValue, HclError> {
         ValueData::Bool(b) => Ok(JsonValue::Bool(*b)),
         ValueData::Number(n) => {
             let s = n.0.to_string();
-            if let Ok(num) = serde_json::Number::from_str(&s) {
-                Ok(JsonValue::Number(num))
-            } else {
-                Ok(JsonValue::String(s))
-            }
+            Ok(serde_json::Number::from_str(&s)
+                .map_or_else(|_| JsonValue::String(s), JsonValue::Number))
         }
         ValueData::String(s) => Ok(JsonValue::String(s.clone())),
         ValueData::Array(arr) => {
@@ -160,18 +157,19 @@ pub fn encode_value_to_json(val: &Value) -> Result<JsonValue, HclError> {
             }
             Ok(JsonValue::Object(obj))
         }
-        ValueData::Capsule(_) => {
-            if let Ok(coerced) = val.coerce(&Type::String) {
-                encode_value_to_json(&coerced)
-            } else if val.ty().capsule_ops().is_some() {
-                Err(HclError::CtyJson(format!(
-                    "Cannot encode capsule '{}' to JSON without string conversion",
-                    val.ty()
-                )))
-            } else {
-                Ok(JsonValue::String(val.to_string()))
-            }
-        }
+        ValueData::Capsule(_) => val.coerce(&Type::String).map_or_else(
+            |_| {
+                if val.ty().capsule_ops().is_some() {
+                    Err(HclError::CtyJson(format!(
+                        "Cannot encode capsule '{}' to JSON without string conversion",
+                        val.ty()
+                    )))
+                } else {
+                    Ok(JsonValue::String(val.to_string()))
+                }
+            },
+            |coerced| encode_value_to_json(&coerced),
+        ),
     }
 }
 /// Encodes an HCL [`Value`] into a typed JSON envelope `{ "type": ..., "value": ... }`.
@@ -296,7 +294,27 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
                 .ok_or_else(|| HclError::CtyJson(format!("Expected string, got {val:?}")))?;
             Ok(Value::new(Type::String, ValueData::String(s.to_string())))
         }
-        (_, Type::List(elem_ty)) => {
+        (_, Type::List(_) | Type::Set(_) | Type::Map(_) | Type::Tuple(_) | Type::Object { .. }) => {
+            decode_collection_or_object_from_json(val, ty)
+        }
+        (_, Type::Capsule { .. }) => val.as_str().map_or_else(
+            || {
+                Err(HclError::CtyJson(format!(
+                    "Cannot decode capsule value from {val:?}"
+                )))
+            },
+            |s| {
+                Value::new(Type::String, ValueData::String(s.to_string()))
+                    .coerce(ty)
+                    .map_err(|e| HclError::CtyJson(e.to_string()))
+            },
+        ),
+    }
+}
+
+fn decode_collection_or_object_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclError> {
+    match ty {
+        Type::List(elem_ty) => {
             let arr = val.as_array().ok_or_else(|| {
                 HclError::CtyJson(format!("Expected array for list, got {val:?}"))
             })?;
@@ -306,7 +324,7 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
             }
             Ok(Value::new(ty.clone(), ValueData::Array(list)))
         }
-        (_, Type::Set(elem_ty)) => {
+        Type::Set(elem_ty) => {
             let arr = val
                 .as_array()
                 .ok_or_else(|| HclError::CtyJson(format!("Expected array for set, got {val:?}")))?;
@@ -316,7 +334,7 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
             }
             Ok(Value::new(ty.clone(), ValueData::Set(set)))
         }
-        (_, Type::Map(elem_ty)) => {
+        Type::Map(elem_ty) => {
             let obj = val.as_object().ok_or_else(|| {
                 HclError::CtyJson(format!("Expected object for map, got {val:?}"))
             })?;
@@ -326,7 +344,7 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
             }
             Ok(Value::new(ty.clone(), ValueData::Object(map)))
         }
-        (_, Type::Tuple(elem_types)) => {
+        Type::Tuple(elem_types) => {
             let arr = val.as_array().ok_or_else(|| {
                 HclError::CtyJson(format!("Expected array for tuple, got {val:?}"))
             })?;
@@ -343,13 +361,10 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
             }
             Ok(Value::new(ty.clone(), ValueData::Array(tuple_vals)))
         }
-        (
-            _,
-            Type::Object {
-                attrs,
-                optional_attrs,
-            },
-        ) => {
+        Type::Object {
+            attrs,
+            optional_attrs,
+        } => {
             let obj = val
                 .as_object()
                 .ok_or_else(|| HclError::CtyJson(format!("Expected object, got {val:?}")))?;
@@ -367,17 +382,7 @@ pub fn decode_value_from_json(val: &JsonValue, ty: &Type) -> Result<Value, HclEr
             }
             Ok(Value::new(ty.clone(), ValueData::Object(res_map)))
         }
-        (_, Type::Capsule { .. }) => {
-            if let Some(s) = val.as_str() {
-                Value::new(Type::String, ValueData::String(s.to_string()))
-                    .coerce(ty)
-                    .map_err(HclError::CtyJson)
-            } else {
-                Err(HclError::CtyJson(format!(
-                    "Cannot decode capsule value from {val:?}"
-                )))
-            }
-        }
+        _ => Err(HclError::CtyJson(format!("Unexpected type {ty}"))),
     }
 }
 /// Decodes an HCL [`Value`] from a typed JSON envelope `{ "type": ..., "value": ... }`.
@@ -402,16 +407,9 @@ pub fn decode_typed_value(json: &JsonValue) -> Result<Value, HclError> {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     #[test]
-    fn test_cty_json_type_roundtrip() {
+    fn test_cty_json_type_roundtrip() -> Result<(), HclError> {
         let types = vec![
             Type::Dynamic,
             Type::String,
@@ -432,7 +430,7 @@ mod tests {
         ];
         for ty in &types {
             let encoded = encode_type_to_json(ty);
-            let decoded = decode_type_from_json(&encoded).unwrap();
+            let decoded = decode_type_from_json(&encoded)?;
             assert_eq!(ty, &decoded);
         }
         assert!(decode_type_from_json(&json!("unknown_type")).is_err());
@@ -440,9 +438,10 @@ mod tests {
         assert!(decode_type_from_json(&json!(123)).is_err());
         assert!(decode_type_from_json(&json!(["list"])).is_err());
         assert!(decode_type_from_json(&json!(["unsupported", "elem"])).is_err());
+        Ok(())
     }
     #[test]
-    fn test_cty_json_value_roundtrip() {
+    fn test_cty_json_value_roundtrip() -> Result<(), HclError> {
         let mut obj = BTreeMap::new();
         obj.insert(
             "name".to_string(),
@@ -460,61 +459,68 @@ mod tests {
             optional_attrs: BTreeSet::new(),
         };
         let val = Value::new(ty.clone(), ValueData::Object(obj));
-        let encoded = encode_value_to_json(&val).unwrap();
-        let decoded = decode_value_from_json(&encoded, &ty).unwrap();
+        let encoded = encode_value_to_json(&val)?;
+        let decoded = decode_value_from_json(&encoded, &ty)?;
         assert_eq!(val, decoded);
-        let envelope = encode_typed_value(&val).unwrap();
-        let from_env = decode_typed_value(&envelope).unwrap();
+        let envelope = encode_typed_value(&val)?;
+        let from_env = decode_typed_value(&envelope)?;
         assert_eq!(val, from_env);
         let null_val = Value::null(Type::String);
-        let null_env = encode_typed_value(&null_val).unwrap();
-        let from_null = decode_typed_value(&null_env).unwrap();
+        let null_env = encode_typed_value(&null_val)?;
+        let from_null = decode_typed_value(&null_env)?;
         assert!(from_null.is_null());
         let unk_val = Value::unknown(Type::Number);
-        let unk_env = encode_typed_value(&unk_val).unwrap();
-        let from_unk = decode_typed_value(&unk_env).unwrap();
+        let unk_env = encode_typed_value(&unk_val)?;
+        let from_unk = decode_typed_value(&unk_env)?;
         assert!(from_unk.is_unknown());
+        Ok(())
     }
     #[test]
-    fn test_cty_json_collections_and_error_paths() {
+    fn test_cty_json_collections_and_dynamic() -> Result<(), HclError> {
         use crate::encode::EncodeValue;
         let list_val = Value::new(
             Type::List(Box::new(Type::String)),
             ValueData::Array(vec!["a".encode_value(), "b".encode_value()]),
         );
-        let enc_list = encode_value_to_json(&list_val).unwrap();
-        let dec_list = decode_value_from_json(&enc_list, list_val.ty()).unwrap();
+        let enc_list = encode_value_to_json(&list_val)?;
+        let dec_list = decode_value_from_json(&enc_list, list_val.ty())?;
         assert_eq!(list_val, dec_list);
         let mut set = BTreeSet::new();
         set.insert(1_i64.encode_value());
         set.insert(2_i64.encode_value());
         let set_val = Value::new(Type::Set(Box::new(Type::Number)), ValueData::Set(set));
-        let enc_set = encode_value_to_json(&set_val).unwrap();
-        let dec_set = decode_value_from_json(&enc_set, set_val.ty()).unwrap();
+        let enc_set = encode_value_to_json(&set_val)?;
+        let dec_set = decode_value_from_json(&enc_set, set_val.ty())?;
         assert_eq!(set_val, dec_set);
         let mut map = BTreeMap::new();
         map.insert("k1".to_string(), true.encode_value());
         let map_val = Value::new(Type::Map(Box::new(Type::Bool)), ValueData::Object(map));
-        let enc_map = encode_value_to_json(&map_val).unwrap();
-        let dec_map = decode_value_from_json(&enc_map, map_val.ty()).unwrap();
+        let enc_map = encode_value_to_json(&map_val)?;
+        let dec_map = decode_value_from_json(&enc_map, map_val.ty())?;
         assert_eq!(map_val, dec_map);
         let tuple_val = Value::new(
             Type::Tuple(vec![Type::String, Type::Bool]),
             ValueData::Array(vec!["hello".encode_value(), false.encode_value()]),
         );
-        let enc_tup = encode_value_to_json(&tuple_val).unwrap();
-        let dec_tup = decode_value_from_json(&enc_tup, tuple_val.ty()).unwrap();
+        let enc_tup = encode_value_to_json(&tuple_val)?;
+        let dec_tup = decode_value_from_json(&enc_tup, tuple_val.ty())?;
         assert_eq!(tuple_val, dec_tup);
-        let dyn_bool = decode_value_from_json(&json!(true), &Type::Dynamic).unwrap();
+        let dyn_bool = decode_value_from_json(&json!(true), &Type::Dynamic)?;
         assert_eq!(dyn_bool, true.encode_value());
-        let dyn_num = decode_value_from_json(&json!(123), &Type::Dynamic).unwrap();
+        let dyn_num = decode_value_from_json(&json!(123), &Type::Dynamic)?;
         assert_eq!(dyn_num, 123_i64.encode_value());
-        let dyn_str = decode_value_from_json(&json!("dyn"), &Type::Dynamic).unwrap();
+        let dyn_str = decode_value_from_json(&json!("dyn"), &Type::Dynamic)?;
         assert_eq!(dyn_str, "dyn".encode_value());
-        let dyn_arr = decode_value_from_json(&json!([1, 2]), &Type::Dynamic).unwrap();
+        let dyn_arr = decode_value_from_json(&json!([1, 2]), &Type::Dynamic)?;
         assert!(matches!(dyn_arr.data.as_ref(), ValueData::Array(_)));
-        let dyn_obj = decode_value_from_json(&json!({ "a" : true }), &Type::Dynamic).unwrap();
+        let dyn_obj = decode_value_from_json(&json!({ "a" : true }), &Type::Dynamic)?;
         assert!(matches!(dyn_obj.data.as_ref(), ValueData::Object(_)));
+        let dyn_null = decode_value_from_json(&json!(null), &Type::Dynamic)?;
+        assert!(dyn_null.is_null());
+        Ok(())
+    }
+    #[test]
+    fn test_cty_json_error_paths() -> Result<(), HclError> {
         let obj_ty = Type::Object {
             attrs: BTreeMap::from([
                 ("req".to_string(), Type::String),
@@ -523,19 +529,19 @@ mod tests {
             optional_attrs: BTreeSet::from(["opt".to_string()]),
         };
         let partial_json = json!({ "req" : "present" });
-        let dec_opt = decode_value_from_json(&partial_json, &obj_ty).unwrap();
+        let dec_opt = decode_value_from_json(&partial_json, &obj_ty)?;
         assert!(
             dec_opt
                 .get_path(
                     &crate::types::path::Path::empty()
                         .with_step(crate::types::path::PathStep::GetAttr("opt".to_string()))
-                )
-                .unwrap()
+                )?
                 .is_null()
         );
         let missing_json = json!({ "opt" : 10 });
         assert!(decode_value_from_json(&missing_json, &obj_ty).is_err());
-        assert!(decode_value_from_json(&json!(["a"]), tuple_val.ty()).is_err());
+        let tuple_ty = Type::Tuple(vec![Type::String, Type::Bool]);
+        assert!(decode_value_from_json(&json!(["a"]), &tuple_ty).is_err());
         assert!(decode_typed_value(&json!("not_an_obj")).is_err());
         assert!(decode_typed_value(&json!({ "type" : "string" })).is_err());
         assert!(decode_typed_value(&json!({ "value" : "hello" })).is_err());
@@ -553,7 +559,7 @@ mod tests {
         );
         assert!(decode_value_from_json(&json!("not_obj"), &obj_ty).is_err());
         let cap_val = Value::capsule::<()>("test_cap", ());
-        let cap_json = encode_value_to_json(&cap_val).unwrap();
+        let cap_json = encode_value_to_json(&cap_val)?;
         assert!(cap_json.is_string());
         let cap_ty = Type::capsule::<()>("test_cap");
         assert!(decode_value_from_json(&json!(123), &cap_ty).is_err());
@@ -561,11 +567,10 @@ mod tests {
         assert!(decode_type_from_json(&json!(["tuple", 123])).is_err());
         assert!(decode_type_from_json(&json!(["object", 123])).is_err());
         assert!(decode_type_from_json(&json!(["capsule", 123])).is_err());
-        let dyn_null = decode_value_from_json(&json!(null), &Type::Dynamic).unwrap();
-        assert!(dyn_null.is_null());
+        Ok(())
     }
     #[test]
-    fn test_cty_json_coverage_exhaustive() {
+    fn test_cty_json_coverage_capsules() {
         use crate::types::ty::CapsuleOps;
         use std::sync::Arc;
         let mut huge_num = Value::null(Type::Number);
@@ -600,7 +605,6 @@ mod tests {
             }
         });
 
-        // Cover the closures
         let dummy_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new("dummy".to_string());
         let bad_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(123_i32);
         let _ = conv_to(&dummy_any, &Type::String);
@@ -612,7 +616,7 @@ mod tests {
         let _ = conv_from(&dummy_val_num);
 
         let cap_ops = Arc::new(
-            CapsuleOps::new("custom_str_cap", eq_fn.clone(), hash_fn.clone())
+            CapsuleOps::new("custom_str_cap", eq_fn, hash_fn)
                 .with_conversion_to(conv_to)
                 .with_conversion_from(conv_from),
         );
@@ -620,7 +624,6 @@ mod tests {
             Value::capsule_with_ops("custom_str_cap", cap_ops.clone(), "hello_cap".to_string());
         let enc_cap = encode_value_to_json(&cap_val);
         assert_eq!(enc_cap.ok(), Some(json!("hello_cap")));
-        let bad_any: Arc<dyn std::any::Any + Send + Sync> = Arc::new(123_i32);
         assert!(
             cap_ops
                 .conversion_to
@@ -642,11 +645,14 @@ mod tests {
             dec_cap.as_ref().ok().and_then(|v| v.ty().capsule_name()),
             Some("custom_str_cap")
         );
-        let no_str_ops = Arc::new(CapsuleOps::new(
-            "unencodable_cap",
-            eq_fn.clone(),
-            hash_fn.clone(),
-        ));
+    }
+    #[test]
+    fn test_cty_json_coverage_decoding_errors() {
+        use crate::types::ty::CapsuleOps;
+        use std::sync::Arc;
+        let eq_fn: crate::types::ty::CapsuleEqualsFn = Arc::new(|_, _| false);
+        let hash_fn: crate::types::ty::CapsuleHashFn = Arc::new(|_| 0);
+        let no_str_ops = Arc::new(CapsuleOps::new("unencodable_cap", eq_fn, hash_fn));
         let unencodable_cap = Value::capsule_with_ops("unencodable_cap", no_str_ops, ());
         assert!(encode_value_to_json(&unencodable_cap).is_err());
         assert!(
@@ -715,31 +721,31 @@ mod tests {
         assert!(decode_typed_value(&json!({ "type" : ["list", "bad"], "value" : [] })).is_err());
     }
     #[test]
-    fn test_cty_json_marked_values_roundtrip() {
+    fn test_cty_json_marked_values_roundtrip() -> Result<(), HclError> {
         use crate::types::val::ValueMark;
         let val_plain = Value::new(Type::String, ValueData::String("unmarked".into()));
-        let json_plain = encode_value_to_json_with_marks(&val_plain).unwrap();
+        let json_plain = encode_value_to_json_with_marks(&val_plain)?;
         assert_eq!(json_plain, json!("unmarked"));
         let val_sens = val_plain.mark(ValueMark::Sensitive);
-        let json_sens = encode_value_to_json_with_marks(&val_sens).unwrap();
+        let json_sens = encode_value_to_json_with_marks(&val_sens)?;
         assert_eq!(
             json_sens,
             json!({ "@cty.marks" : ["sensitive"], "value" : "unmarked" })
         );
-        let dec_sens = decode_value_from_json(&json_sens, &Type::String).unwrap();
+        let dec_sens = decode_value_from_json(&json_sens, &Type::String)?;
         assert_eq!(
             dec_sens.data.as_ref(),
             &ValueData::String("unmarked".into())
         );
         assert!(dec_sens.has_mark(&ValueMark::Sensitive));
         let val_custom = val_plain.mark(ValueMark::custom("encrypted"));
-        let json_custom = encode_value_to_json_with_marks(&val_custom).unwrap();
-        let dec_custom = decode_value_from_json(&json_custom, &Type::String).unwrap();
+        let json_custom = encode_value_to_json_with_marks(&val_custom)?;
+        let dec_custom = decode_value_from_json(&json_custom, &Type::String)?;
         assert!(dec_custom.has_mark(&ValueMark::custom("encrypted")));
         let json_invalid_marks = json!(
             { "@cty.marks" : "not_an_array", "value" : "unmarked" }
         );
-        let dec_invalid_marks = decode_value_from_json(&json_invalid_marks, &Type::String).unwrap();
+        let dec_invalid_marks = decode_value_from_json(&json_invalid_marks, &Type::String)?;
         assert_eq!(
             dec_invalid_marks.data.as_ref(),
             &ValueData::String("unmarked".into())
@@ -749,11 +755,11 @@ mod tests {
             { "@cty.marks" : [123, null, true, "sensitive", "custom_tag"], "value" :
             "unmarked" }
         );
-        let dec_mixed_marks = decode_value_from_json(&json_mixed_marks, &Type::String).unwrap();
+        let dec_mixed_marks = decode_value_from_json(&json_mixed_marks, &Type::String)?;
         assert!(dec_mixed_marks.has_mark(&ValueMark::Sensitive));
         assert!(dec_mixed_marks.has_mark(&ValueMark::custom("custom_tag")));
         let json_empty_marks = json!({ "@cty.marks" : [], "value" : "unmarked" });
-        let dec_empty_marks = decode_value_from_json(&json_empty_marks, &Type::String).unwrap();
+        let dec_empty_marks = decode_value_from_json(&json_empty_marks, &Type::String)?;
         assert!(dec_empty_marks.marks.is_empty());
         let json_err_inner = json!(
             { "@cty.marks" : ["sensitive"], "value" : "not_a_boolean" }
@@ -765,8 +771,11 @@ mod tests {
         let _ = hash_fn(&());
         let ops = crate::types::ty::CapsuleOps::new("NonJsonCapsule", eq_fn, hash_fn);
         let cap_ty = Type::capsule_with_ops::<()>("NonJsonCapsule", std::sync::Arc::new(ops));
+        assert!(decode_value_from_json(&json!("cannot_coerce"), &cap_ty).is_err());
+        assert!(decode_collection_or_object_from_json(&json!(null), &Type::String).is_err());
         let cap_val = Value::new(cap_ty, ValueData::Capsule(std::sync::Arc::new(())))
             .mark(ValueMark::Sensitive);
         assert!(encode_value_to_json_with_marks(&cap_val).is_err());
+        Ok(())
     }
 }

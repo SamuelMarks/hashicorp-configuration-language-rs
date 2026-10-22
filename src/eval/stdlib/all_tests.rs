@@ -1,13 +1,8 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::pedantic,
-    clippy::nursery
-)]
+//! Comprehensive integration tests for the HCL standard library functions.
 #[cfg(test)]
 mod tests {
     use crate::api::parse;
+    use crate::error::HclError;
     use crate::eval::context::Context;
     use crate::eval::evaluator::Evaluator;
     use crate::eval::stdlib::{all_functions, get_stdlib_function, stdlib_map};
@@ -30,7 +25,7 @@ mod tests {
         assert!(get_stdlib_function("nonexistent_func_12345").is_none());
     }
     #[test]
-    fn test_all_stdlib_evaluation() {
+    fn test_all_stdlib_evaluation() -> Result<(), HclError> {
         let hcl = r#"
             conv = tostring(1)
             crypt = md5("hello")
@@ -41,42 +36,45 @@ mod tests {
             enc = base64encode("test")
             col = length([1, 2, 3])
         "#;
-        let body = parse(hcl).unwrap();
+        let body = parse(hcl)?;
         let ctx = Context::with_stdlib();
-        let eval_attr = |name: &str| -> crate::types::Value {
-            let attr = body.attributes.get(name).unwrap();
+        let eval_attr = |name: &str| -> Result<crate::types::Value, HclError> {
+            let attr = body
+                .attributes
+                .get(name)
+                .ok_or_else(|| HclError::Eval(format!("attribute {name} not found")))?;
             let eval = Evaluator::new(&ctx);
-            let (val, diags) = eval.evaluate(&attr.expr).unwrap();
+            let (val, diags) = eval.evaluate(&attr.expr)?;
             assert!(!diags.has_errors());
-            val
+            Ok(val)
         };
-        let conv_val = eval_attr("conv");
+        let conv_val = eval_attr("conv")?;
         assert_eq!(*conv_val.data, ValueData::String("1".to_string()));
-        let crypt_val = eval_attr("crypt");
+        let crypt_val = eval_attr("crypt")?;
         assert_eq!(
             *crypt_val.data,
             ValueData::String("5d41402abc4b2a76b9719d911017c592".to_string())
         );
-        let dt_val = eval_attr("dt");
+        let dt_val = eval_attr("dt")?;
         assert_eq!(*dt_val.data, ValueData::String("2020-01-01".to_string()));
-        let net_val = eval_attr("net");
+        let net_val = eval_attr("net")?;
         assert_eq!(
             *net_val.data,
             ValueData::String("subnet_stub_10.0.0.0/16".to_string())
         );
-        let num_val = eval_attr("num");
+        let num_val = eval_attr("num")?;
         assert_eq!(*num_val.data, ValueData::Number(42.into()));
-        let str_val = eval_attr("str");
+        let str_val = eval_attr("str")?;
         assert_eq!(*str_val.data, ValueData::String("HELLO".to_string()));
-        let enc_val = eval_attr("enc");
+        let enc_val = eval_attr("enc")?;
         assert_eq!(*enc_val.data, ValueData::String("dGVzdA==".to_string()));
-        let col_val = eval_attr("col");
+        let col_val = eval_attr("col")?;
         assert_eq!(*col_val.data, ValueData::Number(3.into()));
+        Ok(())
     }
     #[test]
-    fn test_refinement_propagation_and_stdlib() {
+    fn test_refinement_propagation_expressions() -> Result<(), HclError> {
         use crate::ast::expr::{BinaryOp, Expression, TemplatePart};
-        use crate::number::Number;
         use crate::span::Span;
         use crate::types::refinement::Refinement;
         use crate::types::{Type, Value};
@@ -84,16 +82,14 @@ mod tests {
         let mut ctx = Context::with_stdlib();
         let r_left = Refinement::not_null()
             .with_prefix("app-")
-            .with_string_length(4, 10)
-            .unwrap();
+            .with_string_length(4, 10)?;
         let r_right = Refinement::not_null()
             .with_suffix("-prod")
-            .with_string_length(5, 15)
-            .unwrap();
+            .with_string_length(5, 15)?;
         let left_val = Value::unknown_refined(Type::String, r_left);
         let right_val = Value::unknown_refined(Type::String, r_right);
-        ctx.set_variable("left", left_val.clone());
-        ctx.set_variable("right", right_val.clone());
+        ctx.set_variable("left", left_val);
+        ctx.set_variable("right", right_val);
         ctx.set_variable(
             "known_str",
             Value::new(Type::String, ValueData::String("env-".to_string())),
@@ -107,7 +103,9 @@ mod tests {
         );
         let result_add = evaluator.eval_expr(&add_expr);
         assert!(result_add.is_unknown());
-        let ref_add = result_add.refinement().unwrap();
+        let ref_add = result_add
+            .refinement()
+            .ok_or_else(|| HclError::Eval("expected refinement".to_string()))?;
         assert!(ref_add.not_null);
         assert_eq!(ref_add.string_prefix.as_deref(), Some("app-"));
         assert_eq!(ref_add.string_suffix.as_deref(), Some("-prod"));
@@ -120,7 +118,9 @@ mod tests {
             span.clone(),
         );
         let result_known = evaluator.eval_expr(&add_known_expr);
-        let ref_known = result_known.refinement().unwrap();
+        let ref_known = result_known
+            .refinement()
+            .ok_or_else(|| HclError::Eval("expected refinement".to_string()))?;
         assert_eq!(ref_known.string_prefix.as_deref(), Some("env-"));
         assert_eq!(ref_known.string_suffix.as_deref(), Some("-prod"));
         let template_expr = Expression::Template(
@@ -136,52 +136,65 @@ mod tests {
         );
         let result_tmpl = evaluator.eval_expr(&template_expr);
         assert!(result_tmpl.is_unknown());
-        let ref_tmpl = result_tmpl.refinement().unwrap();
+        let ref_tmpl = result_tmpl
+            .refinement()
+            .ok_or_else(|| HclError::Eval("expected refinement".to_string()))?;
         assert_eq!(ref_tmpl.string_prefix.as_deref(), Some("prefix-"));
         assert_eq!(ref_tmpl.string_suffix.as_deref(), Some("-suffix"));
-        let r_exact_str = Refinement::not_null().with_string_length(8, 8).unwrap();
+        Ok(())
+    }
+    #[test]
+    fn test_refinement_propagation_stdlib() -> Result<(), HclError> {
+        use crate::number::Number;
+        use crate::types::refinement::Refinement;
+        use crate::types::{Type, Value};
+        let r_exact_str = Refinement::not_null().with_string_length(8, 8)?;
         let exact_str_val = Value::unknown_refined(Type::String, r_exact_str);
-        let length_fn = crate::eval::stdlib::get_stdlib_function("length").unwrap();
-        let len_res = (length_fn.func)(&[exact_str_val]).unwrap();
+        let length_fn = crate::eval::stdlib::get_stdlib_function("length")
+            .ok_or_else(|| HclError::Eval("length not found".to_string()))?;
+        let len_res = (length_fn.func)(&[exact_str_val])?;
         assert!(!len_res.is_unknown());
         assert_eq!(
             len_res,
             Value::new(Type::Number, ValueData::Number(Number::from(8)))
         );
-        let r_bound_str = Refinement::not_null().with_string_length(3, 12).unwrap();
+        let r_bound_str = Refinement::not_null().with_string_length(3, 12)?;
         let bound_str_val = Value::unknown_refined(Type::String, r_bound_str);
-        let len_bound_res = (length_fn.func)(&[bound_str_val]).unwrap();
+        let len_bound_res = (length_fn.func)(&[bound_str_val])?;
         assert!(len_bound_res.is_unknown());
-        let len_num_ref = len_bound_res.refinement().unwrap();
+        let len_num_ref = len_bound_res
+            .refinement()
+            .ok_or_else(|| HclError::Eval("expected refinement".to_string()))?;
         assert_eq!(len_num_ref.number_min, Some(Number::from(3)));
         assert_eq!(len_num_ref.number_max, Some(Number::from(12)));
-        let r_exact_col = Refinement::not_null().with_collection_length(4, 4).unwrap();
+        let r_exact_col = Refinement::not_null().with_collection_length(4, 4)?;
         let exact_col_val = Value::unknown_refined(Type::List(Box::new(Type::String)), r_exact_col);
-        let len_col_res = (length_fn.func)(&[exact_col_val]).unwrap();
+        let len_col_res = (length_fn.func)(&[exact_col_val])?;
         assert!(!len_col_res.is_unknown());
         assert_eq!(
             len_col_res,
             Value::new(Type::Number, ValueData::Number(Number::from(4)))
         );
-        let r_bound_col = Refinement::not_null().with_collection_length(2, 6).unwrap();
+        let r_bound_col = Refinement::not_null().with_collection_length(2, 6)?;
         let bound_col_val = Value::unknown_refined(Type::List(Box::new(Type::String)), r_bound_col);
-        let len_col_bound_res = (length_fn.func)(&[bound_col_val]).unwrap();
+        let len_col_bound_res = (length_fn.func)(&[bound_col_val])?;
         assert!(len_col_bound_res.is_unknown());
-        let len_col_num_ref = len_col_bound_res.refinement().unwrap();
+        let len_col_num_ref = len_col_bound_res
+            .refinement()
+            .ok_or_else(|| HclError::Eval("expected refinement".to_string()))?;
         assert_eq!(len_col_num_ref.number_min, Some(Number::from(2)));
         assert_eq!(len_col_num_ref.number_max, Some(Number::from(6)));
-        let substr_fn = crate::eval::stdlib::get_stdlib_function("substr").unwrap();
+        let substr_fn = crate::eval::stdlib::get_stdlib_function("substr")
+            .ok_or_else(|| HclError::Eval("substr not found".to_string()))?;
         let r_sub = Refinement::not_null()
             .with_prefix("server-node-42")
-            .with_string_length(14, 30)
-            .unwrap();
+            .with_string_length(14, 30)?;
         let sub_val = Value::unknown_refined(Type::String, r_sub);
         let substr_exact = (substr_fn.func)(&[
             sub_val.clone(),
             Value::new(Type::Number, ValueData::Number(Number::from(0))),
             Value::new(Type::Number, ValueData::Number(Number::from(6))),
-        ])
-        .unwrap();
+        ])?;
         assert!(!substr_exact.is_unknown());
         assert_eq!(
             substr_exact,
@@ -191,38 +204,39 @@ mod tests {
             sub_val,
             Value::new(Type::Number, ValueData::Number(Number::from(0))),
             Value::new(Type::Number, ValueData::Number(Number::from(20))),
-        ])
-        .unwrap();
+        ])?;
         assert!(substr_partial.is_unknown());
-        let sub_partial_ref = substr_partial.refinement().unwrap();
+        let sub_partial_ref = substr_partial
+            .refinement()
+            .ok_or_else(|| HclError::Eval("expected refinement".to_string()))?;
         assert_eq!(
             sub_partial_ref.string_prefix.as_deref(),
             Some("server-node-42")
         );
         assert_eq!(sub_partial_ref.string_length_max, Some(20));
+        Ok(())
     }
     #[test]
-    fn test_stdlib_expansion_functions() {
+    fn test_stdlib_expansion_functions() -> Result<(), HclError> {
         use crate::encode::EncodeValue;
         use crate::eval::stdlib::get_stdlib_function;
-        let range_fn = get_stdlib_function("range").unwrap();
-        let r1 = (range_fn.func)(&[3_i64.encode_value()]).unwrap();
+        let range_fn = get_stdlib_function("range")
+            .ok_or_else(|| HclError::Eval("range not found".to_string()))?;
+        let r1 = (range_fn.func)(&[3_i64.encode_value()])?;
         assert_eq!(r1.to_string(), "[0, 1, 2]");
-        let r2 = (range_fn.func)(&[1_i64.encode_value(), 4_i64.encode_value()]).unwrap();
+        let r2 = (range_fn.func)(&[1_i64.encode_value(), 4_i64.encode_value()])?;
         assert_eq!(r2.to_string(), "[1, 2, 3]");
         let r3 = (range_fn.func)(&[
             1_i64.encode_value(),
             8_i64.encode_value(),
             2_i64.encode_value(),
-        ])
-        .unwrap();
+        ])?;
         assert_eq!(r3.to_string(), "[1, 3, 5, 7]");
         let r_rev = (range_fn.func)(&[
             5_i64.encode_value(),
             1_i64.encode_value(),
             (-1_i64).encode_value(),
-        ])
-        .unwrap();
+        ])?;
         assert_eq!(r_rev.to_string(), "[5, 4, 3, 2]");
         assert!(
             (range_fn.func)(&[
@@ -242,13 +256,13 @@ mod tests {
             ])
             .is_err()
         );
-        let regex_replace_fn = get_stdlib_function("regex_replace").unwrap();
+        let regex_replace_fn = get_stdlib_function("regex_replace")
+            .ok_or_else(|| HclError::Eval("regex_replace not found".to_string()))?;
         let rep = (regex_replace_fn.func)(&[
             "hello-123-world".encode_value(),
             "[0-9]+".encode_value(),
             "456".encode_value(),
-        ])
-        .unwrap();
+        ])?;
         assert_eq!(rep.to_string(), "\"hello-456-world\"");
         assert!(
             (regex_replace_fn.func)(&[
@@ -258,29 +272,31 @@ mod tests {
             ])
             .is_err()
         );
-        let b64_256_fn = get_stdlib_function("base64sha256").unwrap();
-        let b256 = (b64_256_fn.func)(&["hello world".encode_value()]).unwrap();
+        let b64_256_fn = get_stdlib_function("base64sha256")
+            .ok_or_else(|| HclError::Eval("base64sha256 not found".to_string()))?;
+        let b256 = (b64_256_fn.func)(&["hello world".encode_value()])?;
         assert_eq!(
             b256.to_string(),
             "\"uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=\""
         );
-        let b64_512_fn = get_stdlib_function("base64sha512").unwrap();
-        let b512 = (b64_512_fn.func)(&["hello world".encode_value()]).unwrap();
+        let b64_512_fn = get_stdlib_function("base64sha512")
+            .ok_or_else(|| HclError::Eval("base64sha512 not found".to_string()))?;
+        let b512 = (b64_512_fn.func)(&["hello world".encode_value()])?;
         assert!(b512.to_string().starts_with("\"MJ7MSJwS1"));
-        let cidrcontains_fn = get_stdlib_function("cidrcontains").unwrap();
+        let cidrcontains_fn = get_stdlib_function("cidrcontains")
+            .ok_or_else(|| HclError::Eval("cidrcontains not found".to_string()))?;
         let c1 = (cidrcontains_fn.func)(&[
             "192.168.1.0/24".encode_value(),
             "192.168.1.50".encode_value(),
-        ])
-        .unwrap();
+        ])?;
         assert_eq!(c1.to_string(), "true");
         let c2 =
-            (cidrcontains_fn.func)(&["192.168.1.0/24".encode_value(), "10.0.0.1".encode_value()])
-                .unwrap();
+            (cidrcontains_fn.func)(&["192.168.1.0/24".encode_value(), "10.0.0.1".encode_value()])?;
         assert_eq!(c2.to_string(), "false");
-        let c3 =
-            (cidrcontains_fn.func)(&["2001:db8::/32".encode_value(), "2001:db8::1".encode_value()])
-                .unwrap();
+        let c3 = (cidrcontains_fn.func)(&[
+            "2001:db8::/32".encode_value(),
+            "2001:db8::1".encode_value(),
+        ])?;
         assert_eq!(c3.to_string(), "true");
         assert!(
             (cidrcontains_fn.func)(&["invalid_cidr".encode_value(), "10.0.0.1".encode_value()])
@@ -290,10 +306,12 @@ mod tests {
             (cidrcontains_fn.func)(&["10.0.0.0/8".encode_value(), "invalid_ip".encode_value()])
                 .is_err()
         );
+        Ok(())
     }
     #[test]
-    fn test_all_filesystem_functions_with_mem_fs() {
+    fn test_all_filesystem_functions_with_mem_fs() -> Result<(), HclError> {
         use crate::eval::fs::MemFileSystem;
+        use base64::prelude::*;
         use sha2::Digest;
         use std::sync::Arc;
         let mut mem_fs = MemFileSystem::new();
@@ -305,26 +323,29 @@ mod tests {
         );
         mem_fs.insert_file("data/bin.dat", vec![0xDE, 0xAD, 0xBE, 0xEF]);
         let ctx = Context::with_stdlib().with_filesystem(Arc::new(mem_fs));
-        let eval_str = |expr_src: &str| -> crate::types::Value {
+        let eval_str = |expr_src: &str| -> Result<crate::types::Value, HclError> {
             let hcl = format!("result = {expr_src}");
-            let body = parse(&hcl).unwrap();
-            let attr = body.attributes.get("result").unwrap();
-            let (val, diags) = Evaluator::new(&ctx).evaluate(&attr.expr).unwrap();
+            let body = parse(&hcl)?;
+            let attr = body
+                .attributes
+                .get("result")
+                .ok_or_else(|| HclError::Eval("attribute result not found".to_string()))?;
+            let (val, diags) = Evaluator::new(&ctx).evaluate(&attr.expr)?;
             assert!(!diags.has_errors());
-            val
+            Ok(val)
         };
-        let file_val = eval_str("file(\"configs/app.hcl\")");
+        let file_val = eval_str("file(\"configs/app.hcl\")")?;
         assert_eq!(
             *file_val.data,
             ValueData::String("port = 8080\nenv = \"prod\"\n".to_string())
         );
-        let exists_true = eval_str("fileexists(\"configs/app.hcl\")");
+        let exists_true = eval_str("fileexists(\"configs/app.hcl\")")?;
         assert_eq!(*exists_true.data, ValueData::Bool(true));
-        let exists_false = eval_str("fileexists(\"nonexistent.hcl\")");
+        let exists_false = eval_str("fileexists(\"nonexistent.hcl\")")?;
         assert_eq!(*exists_false.data, ValueData::Bool(false));
-        let b64_val = eval_str("filebase64(\"data/bin.dat\")");
+        let b64_val = eval_str("filebase64(\"data/bin.dat\")")?;
         assert_eq!(*b64_val.data, ValueData::String("3q2+7w==".to_string()));
-        let md5_val = eval_str("filemd5(\"configs/db.hcl\")");
+        let md5_val = eval_str("filemd5(\"configs/db.hcl\")")?;
         assert_eq!(
             *md5_val.data,
             ValueData::String(format!("{:x}", md5::compute(b"host = \"localhost\"\n")))
@@ -337,62 +358,56 @@ mod tests {
             }
             s
         };
-        let sha1_val = eval_str("filesha1(\"configs/db.hcl\")");
+        let sha1_val = eval_str("filesha1(\"configs/db.hcl\")")?;
         let mut hasher1 = sha1::Sha1::new();
         hasher1.update(b"host = \"localhost\"\n");
         let sha1_expected = to_hex_str(&hasher1.finalize());
         assert_eq!(*sha1_val.data, ValueData::String(sha1_expected));
-        let sha256_val = eval_str("filesha256(\"configs/db.hcl\")");
+        let sha256_val = eval_str("filesha256(\"configs/db.hcl\")")?;
         let mut hasher256 = sha2::Sha256::new();
         hasher256.update(b"host = \"localhost\"\n");
         let sha256_expected = to_hex_str(&hasher256.finalize());
         assert_eq!(*sha256_val.data, ValueData::String(sha256_expected));
-        let sha512_val = eval_str("filesha512(\"configs/db.hcl\")");
+        let sha512_val = eval_str("filesha512(\"configs/db.hcl\")")?;
         let mut hasher512 = sha2::Sha512::new();
         hasher512.update(b"host = \"localhost\"\n");
         let sha512_expected = to_hex_str(&hasher512.finalize());
         assert_eq!(*sha512_val.data, ValueData::String(sha512_expected));
-        let b64sha256_val = eval_str("filebase64sha256(\"configs/db.hcl\")");
+        let b64sha256_val = eval_str("filebase64sha256(\"configs/db.hcl\")")?;
         let mut hasher_b64 = sha2::Sha256::new();
         hasher_b64.update(b"host = \"localhost\"\n");
-        use base64::prelude::*;
         let expected_b64 = BASE64_STANDARD.encode(hasher_b64.finalize());
         assert_eq!(*b64sha256_val.data, ValueData::String(expected_b64));
-        let fileset_val = eval_str("fileset(\"configs\", \"*.hcl\")");
-        if let ValueData::Set(set) = &*fileset_val.data {
+        let fileset_val = eval_str("fileset(\"configs\", \"*.hcl\")")?;
+        assert!(matches!(&*fileset_val.data, ValueData::Set(set) if {
             let files: Vec<String> = set.iter().map(|v| v.to_string().replace('"', "")).collect();
-            assert!(files.contains(&"app.hcl".to_string()));
-            assert!(files.contains(&"db.hcl".to_string()));
-        } else {
-            panic!("expected set from fileset");
-        }
-        let abspath_val = eval_str("abspath(\"configs/app.hcl\")");
+            files.contains(&"app.hcl".to_string()) && files.contains(&"db.hcl".to_string())
+        }));
+        let abspath_val = eval_str("abspath(\"configs/app.hcl\")")?;
         assert_eq!(
             *abspath_val.data,
             ValueData::String("configs/app.hcl".to_string())
         );
-        let pathexpand_val = eval_str("pathexpand(\"configs/app.hcl\")");
+        let pathexpand_val = eval_str("pathexpand(\"configs/app.hcl\")")?;
         assert_eq!(
             *pathexpand_val.data,
             ValueData::String("configs/app.hcl".to_string())
         );
         let template_val = eval_str(
             "templatefile(\"templates/greeting.tftpl\", { \"name\" = \"World\", \"port\" = 8080 })",
-        );
+        )?;
         assert_eq!(
             *template_val.data,
             ValueData::String("Hello, World! Port is 8080.".to_string())
         );
+        Ok(())
     }
     #[test]
-    fn test_stdlib_expansion_parity() {
+    fn test_stdlib_expansion_parity_setsymmetricdifference() -> Result<(), HclError> {
         use crate::types::{Type, Value, ValueMark};
         use std::collections::BTreeSet;
-        let diff_fn = get_stdlib_function("setsymmetricdifference").unwrap();
-        let gunzip_fn = get_stdlib_function("base64gunzip").unwrap();
-        let gzip_fn = get_stdlib_function("base64gzip").unwrap();
-        let regex_fn = get_stdlib_function("regex").unwrap();
-        let regexall_fn = get_stdlib_function("regexall").unwrap();
+        let diff_fn = get_stdlib_function("setsymmetricdifference")
+            .ok_or_else(|| HclError::Eval("setsymmetricdifference not found".to_string()))?;
         let make_set = |items: Vec<&str>| -> Value {
             let mut s = BTreeSet::new();
             for item in items {
@@ -415,45 +430,29 @@ mod tests {
         };
         let empty_a = make_set(vec![]);
         let empty_b = make_set(vec![]);
-        let res_empty = (diff_fn.func)(&[empty_a, empty_b]).unwrap();
-        if let ValueData::Set(s) = &*res_empty.data {
-            assert!(s.is_empty());
-        } else {
-            panic!("expected set");
-        }
+        let res_empty = (diff_fn.func)(&[empty_a, empty_b])?;
+        assert!(matches!(&*res_empty.data, ValueData::Set(s) if s.is_empty()));
         let set_a = make_set(vec!["a", "b"]);
         let set_b = make_set(vec!["c", "d"]);
-        let res_disjoint = (diff_fn.func)(&[set_a, set_b]).unwrap();
-        if let ValueData::Set(s) = &*res_disjoint.data {
-            assert_eq!(s.len(), 4);
-        } else {
-            panic!("expected set");
-        }
+        let res_disjoint = (diff_fn.func)(&[set_a, set_b])?;
+        assert!(matches!(&*res_disjoint.data, ValueData::Set(s) if s.len() == 4));
         let set_1 = make_set(vec!["a", "b", "c"]);
         let set_2 = make_set(vec!["b", "c", "d"]);
-        let res_overlap = (diff_fn.func)(&[set_1, set_2]).unwrap();
-        if let ValueData::Set(s) = &*res_overlap.data {
-            assert_eq!(s.len(), 2);
+        let res_overlap = (diff_fn.func)(&[set_1, set_2])?;
+        assert!(matches!(&*res_overlap.data, ValueData::Set(s) if {
             let strs: Vec<String> = s.iter().map(|v| v.to_string().replace('"', "")).collect();
-            assert!(strs.contains(&"a".to_string()));
-            assert!(strs.contains(&"d".to_string()));
-        } else {
-            panic!("expected set");
-        }
+            s.len() == 2 && strs.contains(&"a".to_string()) && strs.contains(&"d".to_string())
+        }));
         let list_1 = make_list(vec!["x", "y"]);
         let list_2 = make_list(vec!["y", "z"]);
-        let res_lists = (diff_fn.func)(&[list_1, list_2]).unwrap();
-        if let ValueData::Set(s) = &*res_lists.data {
-            assert_eq!(s.len(), 2);
-        } else {
-            panic!("expected set");
-        }
+        let res_lists = (diff_fn.func)(&[list_1, list_2])?;
+        assert!(matches!(&*res_lists.data, ValueData::Set(s) if s.len() == 2));
         let marked_set = make_set(vec!["m"]).mark(ValueMark::Sensitive);
         let plain_set = make_set(vec!["n"]);
-        let res_marked = (diff_fn.func)(&[marked_set, plain_set]).unwrap();
+        let res_marked = (diff_fn.func)(&[marked_set, plain_set])?;
         assert!(res_marked.has_mark(&ValueMark::Sensitive));
         let unk_set = Value::unknown(Type::Set(Box::new(Type::String))).mark(ValueMark::Sensitive);
-        let res_unk = (diff_fn.func)(&[unk_set, make_set(vec![])]).unwrap();
+        let res_unk = (diff_fn.func)(&[unk_set, make_set(vec![])])?;
         assert!(res_unk.is_unknown());
         assert!(res_unk.has_mark(&ValueMark::Sensitive));
         assert!((diff_fn.func)(&[]).is_err());
@@ -465,19 +464,28 @@ mod tests {
             ])
             .is_err()
         );
+        Ok(())
+    }
+    #[test]
+    fn test_stdlib_expansion_parity_gzip() -> Result<(), HclError> {
+        use crate::types::{Type, Value, ValueMark};
+        let gunzip_fn = get_stdlib_function("base64gunzip")
+            .ok_or_else(|| HclError::Eval("base64gunzip not found".to_string()))?;
+        let gzip_fn = get_stdlib_function("base64gzip")
+            .ok_or_else(|| HclError::Eval("base64gzip not found".to_string()))?;
         let input_text = Value::new(
             Type::String,
             ValueData::String("test_data_to_compress".to_string()),
         );
-        let gzipped = (gzip_fn.func)(std::slice::from_ref(&input_text)).unwrap();
-        let gunzipped = (gunzip_fn.func)(&[gzipped]).unwrap();
+        let gzipped = (gzip_fn.func)(std::slice::from_ref(&input_text))?;
+        let gunzipped = (gunzip_fn.func)(&[gzipped])?;
         assert_eq!(*gunzipped.data, *input_text.data);
         let empty_text = Value::new(Type::String, ValueData::String(String::new()));
-        let gzipped_empty = (gzip_fn.func)(std::slice::from_ref(&empty_text)).unwrap();
-        let gunzipped_empty = (gunzip_fn.func)(&[gzipped_empty]).unwrap();
+        let gzipped_empty = (gzip_fn.func)(std::slice::from_ref(&empty_text))?;
+        let gunzipped_empty = (gunzip_fn.func)(&[gzipped_empty])?;
         assert_eq!(*gunzipped_empty.data, *empty_text.data);
         let unk_arg = Value::unknown(Type::String).mark(ValueMark::Sensitive);
-        let res_unk_gunzip = (gunzip_fn.func)(&[unk_arg]).unwrap();
+        let res_unk_gunzip = (gunzip_fn.func)(&[unk_arg])?;
         assert!(res_unk_gunzip.is_unknown());
         assert!(res_unk_gunzip.has_mark(&ValueMark::Sensitive));
         let bad_b64 = Value::new(Type::String, ValueData::String("!@#$notb64".to_string()));
@@ -485,96 +493,74 @@ mod tests {
         let bad_gzip = Value::new(Type::String, ValueData::String("aGVsbG8=".to_string()));
         assert!((gunzip_fn.func)(&[bad_gzip]).is_err());
         assert!((gunzip_fn.func)(&[]).is_err());
+        Ok(())
+    }
+    #[test]
+    fn test_stdlib_expansion_parity_regex() -> Result<(), HclError> {
+        use crate::types::{Type, Value};
+        let regex_fn = get_stdlib_function("regex")
+            .ok_or_else(|| HclError::Eval("regex not found".to_string()))?;
         let str_val = |s: &str| Value::new(Type::String, ValueData::String(s.to_string()));
         let res_named = (regex_fn.func)(&[
             str_val("(?P<proto>https?)://(?P<host>[^/]+)"),
             str_val("https://example.com/index.html"),
-        ])
-        .unwrap();
-        if let ValueData::Object(map) = &*res_named.data {
-            assert_eq!(
-                map.get("proto").map(std::string::ToString::to_string),
-                Some("\"https\"".to_string())
-            );
-            assert_eq!(
-                map.get("host").map(std::string::ToString::to_string),
-                Some("\"example.com\"".to_string())
-            );
-        } else {
-            panic!("expected Object");
-        }
-        let res_unnamed = (regex_fn.func)(&[str_val("(\\d+)-(\\d+)"), str_val("12-34")]).unwrap();
-        if let ValueData::Array(arr) = &*res_unnamed.data {
-            assert_eq!(arr.len(), 2);
-            assert_eq!(arr[0].to_string(), "\"12\"");
-            assert_eq!(arr[1].to_string(), "\"34\"");
-        } else {
-            panic!("expected Array");
-        }
-        let res_no_cap = (regex_fn.func)(&[str_val("\\d+"), str_val("prefix123suffix")]).unwrap();
+        ])?;
+        assert!(matches!(&*res_named.data, ValueData::Object(map) if {
+            map.get("proto").map(std::string::ToString::to_string) == Some("\"https\"".to_string())
+                && map.get("host").map(std::string::ToString::to_string) == Some("\"example.com\"".to_string())
+        }));
+        let res_unnamed = (regex_fn.func)(&[str_val("(\\d+)-(\\d+)"), str_val("12-34")])?;
+        assert!(matches!(&*res_unnamed.data, ValueData::Array(arr) if {
+            arr.len() == 2 && arr[0].to_string() == "\"12\"" && arr[1].to_string() == "\"34\""
+        }));
+        let res_no_cap = (regex_fn.func)(&[str_val("\\d+"), str_val("prefix123suffix")])?;
         assert_eq!(*res_no_cap.data, ValueData::String("123".to_string()));
         assert!((regex_fn.func)(&[str_val("(?P<first>\\d+)-(\\d+)"), str_val("12-34"),]).is_err());
         assert!((regex_fn.func)(&[str_val("nomatch"), str_val("hello"),]).is_err());
+        Ok(())
+    }
+    #[test]
+    fn test_stdlib_expansion_parity_regexall() -> Result<(), HclError> {
+        use crate::types::{Type, Value};
+        let regexall_fn = get_stdlib_function("regexall")
+            .ok_or_else(|| HclError::Eval("regexall not found".to_string()))?;
+        let str_val = |s: &str| Value::new(Type::String, ValueData::String(s.to_string()));
         let res_all_named = (regexall_fn.func)(&[
             str_val("(?P<word>[a-z]+):(?P<num>\\d+)"),
             str_val("foo:1 bar:2"),
-        ])
-        .unwrap();
-        if let ValueData::Array(arr) = &*res_all_named.data {
-            assert_eq!(arr.len(), 2);
-            if let ValueData::Object(first) = &*arr[0].data {
-                assert_eq!(
-                    first.get("word").map(std::string::ToString::to_string),
-                    Some("\"foo\"".to_string())
-                );
-                assert_eq!(
-                    first.get("num").map(std::string::ToString::to_string),
-                    Some("\"1\"".to_string())
-                );
-            } else {
-                panic!("expected Object");
-            }
-        } else {
-            panic!("expected Array");
-        }
+        ])?;
+        assert!(matches!(&*res_all_named.data, ValueData::Array(arr) if {
+            arr.len() == 2 && matches!(&*arr[0].data, ValueData::Object(first) if {
+                first.get("word").map(std::string::ToString::to_string) == Some("\"foo\"".to_string())
+                    && first.get("num").map(std::string::ToString::to_string) == Some("\"1\"".to_string())
+            })
+        }));
         let res_all_unnamed =
-            (regexall_fn.func)(&[str_val("([a-z]+):(\\d+)"), str_val("foo:1 bar:2")]).unwrap();
-        if let ValueData::Array(arr) = &*res_all_unnamed.data {
-            assert_eq!(arr.len(), 2);
-            if let ValueData::Array(first) = &*arr[0].data {
-                assert_eq!(first.len(), 2);
-                assert_eq!(first[0].to_string(), "\"foo\"");
-                assert_eq!(first[1].to_string(), "\"1\"");
-            } else {
-                panic!("expected Array");
-            }
-        } else {
-            panic!("expected Array");
-        }
-        let res_all_no_cap = (regexall_fn.func)(&[str_val("\\d+"), str_val("10 20 30")]).unwrap();
-        if let ValueData::Array(arr) = &*res_all_no_cap.data {
-            assert_eq!(arr.len(), 3);
-            assert_eq!(arr[0].to_string(), "\"10\"");
-            assert_eq!(arr[1].to_string(), "\"20\"");
-            assert_eq!(arr[2].to_string(), "\"30\"");
-        } else {
-            panic!("expected Array");
-        }
-        let res_all_empty = (regexall_fn.func)(&[str_val("nomatch"), str_val("hello")]).unwrap();
-        if let ValueData::Array(arr) = &*res_all_empty.data {
-            assert_eq!(arr.as_slice(), []);
-        } else {
-            panic!("expected Array");
-        }
+            (regexall_fn.func)(&[str_val("([a-z]+):(\\d+)"), str_val("foo:1 bar:2")])?;
+        assert!(matches!(&*res_all_unnamed.data, ValueData::Array(arr) if {
+            arr.len() == 2 && matches!(&*arr[0].data, ValueData::Array(first) if {
+                first.len() == 2 && first[0].to_string() == "\"foo\"" && first[1].to_string() == "\"1\""
+            })
+        }));
+        let res_all_no_cap = (regexall_fn.func)(&[str_val("\\d+"), str_val("10 20 30")])?;
+        assert!(matches!(&*res_all_no_cap.data, ValueData::Array(arr) if {
+            arr.len() == 3 && arr[0].to_string() == "\"10\"" && arr[1].to_string() == "\"20\"" && arr[2].to_string() == "\"30\""
+        }));
+        let res_all_empty = (regexall_fn.func)(&[str_val("nomatch"), str_val("hello")])?;
+        assert!(matches!(&*res_all_empty.data, ValueData::Array(arr) if arr.is_empty()));
         assert!(
             (regexall_fn.func)(&[str_val("(?P<first>\\d+)-(\\d+)"), str_val("12-34"),]).is_err()
         );
+        Ok(())
     }
     #[test]
-    fn test_unicode_uax29_grapheme_parity() {
-        let length_fn = get_stdlib_function("length").unwrap();
-        let substr_fn = get_stdlib_function("substr").unwrap();
-        let strrev_fn = get_stdlib_function("strrev").unwrap();
+    fn test_unicode_uax29_grapheme_parity() -> Result<(), HclError> {
+        let length_fn = get_stdlib_function("length")
+            .ok_or_else(|| HclError::Eval("length not found".to_string()))?;
+        let substr_fn = get_stdlib_function("substr")
+            .ok_or_else(|| HclError::Eval("substr not found".to_string()))?;
+        let strrev_fn = get_stdlib_function("strrev")
+            .ok_or_else(|| HclError::Eval("strrev not found".to_string()))?;
         let str_val = |s: &str| {
             crate::types::Value::new(crate::types::Type::String, ValueData::String(s.to_string()))
         };
@@ -585,60 +571,66 @@ mod tests {
             )
         };
         let flag = "🇺🇸";
-        let len_res = (length_fn.func)(&[str_val(flag)]).unwrap();
+        let len_res = (length_fn.func)(&[str_val(flag)])?;
         assert_eq!(len_res.to_string(), "1");
-        let sub_res = (substr_fn.func)(&[str_val(flag), num_val(0), num_val(1)]).unwrap();
+        let sub_res = (substr_fn.func)(&[str_val(flag), num_val(0), num_val(1)])?;
         assert_eq!(sub_res.to_string(), "\"🇺🇸\"");
         let mixed_flag = "flag: 🇺🇸!";
-        let mixed_len = (length_fn.func)(&[str_val(mixed_flag)]).unwrap();
+        let mixed_len = (length_fn.func)(&[str_val(mixed_flag)])?;
         assert_eq!(mixed_len.to_string(), "8");
-        let sub_flag = (substr_fn.func)(&[str_val(mixed_flag), num_val(6), num_val(1)]).unwrap();
+        let sub_flag = (substr_fn.func)(&[str_val(mixed_flag), num_val(6), num_val(1)])?;
         assert_eq!(sub_flag.to_string(), "\"🇺🇸\"");
-        let strlen_fn = get_stdlib_function("strlen").unwrap();
-        let len_res2 = (strlen_fn.func)(&[str_val(flag)]).unwrap();
+        let strlen_fn = get_stdlib_function("strlen")
+            .ok_or_else(|| HclError::Eval("strlen not found".to_string()))?;
+        let len_res2 = (strlen_fn.func)(&[str_val(flag)])?;
         assert_eq!(len_res2.to_string(), "1");
 
-        let rev_flag = (strrev_fn.func)(&[str_val("A🇺🇸B")]).unwrap();
+        let rev_flag = (strrev_fn.func)(&[str_val("A🇺🇸B")])?;
         assert_eq!(rev_flag.to_string(), "\"B🇺🇸A\"");
         let family = "👨‍👩‍👧‍👦";
-        let fam_len = (length_fn.func)(&[str_val(family)]).unwrap();
+        let fam_len = (length_fn.func)(&[str_val(family)])?;
         assert_eq!(fam_len.to_string(), "1");
-        let fam_sub = (substr_fn.func)(&[str_val(family), num_val(0), num_val(1)]).unwrap();
+        let fam_sub = (substr_fn.func)(&[str_val(family), num_val(0), num_val(1)])?;
         assert_eq!(fam_sub.to_string(), "\"👨‍👩‍👧‍👦\"");
-        let rev_fam = (strrev_fn.func)(&[str_val("X👨‍👩‍👧‍👦Y")]).unwrap();
+        let rev_fam = (strrev_fn.func)(&[str_val("X👨‍👩‍👧‍👦Y")])?;
         assert_eq!(rev_fam.to_string(), "\"Y👨‍👩‍👧‍👦X\"");
         let accented = "e\u{0301}";
-        let acc_len = (length_fn.func)(&[str_val(accented)]).unwrap();
+        let acc_len = (length_fn.func)(&[str_val(accented)])?;
         assert_eq!(acc_len.to_string(), "1");
-        let acc_rev = (strrev_fn.func)(&[str_val(accented)]).unwrap();
+        let acc_rev = (strrev_fn.func)(&[str_val(accented)])?;
         assert_eq!(acc_rev.to_string(), "\"e\u{0301}\"");
         let acc_word = "re\u{0301}sume\u{0301}";
-        let word_len = (length_fn.func)(&[str_val(acc_word)]).unwrap();
+        let word_len = (length_fn.func)(&[str_val(acc_word)])?;
         assert_eq!(word_len.to_string(), "6");
-        let word_sub = (substr_fn.func)(&[str_val(acc_word), num_val(1), num_val(2)]).unwrap();
+        let word_sub = (substr_fn.func)(&[str_val(acc_word), num_val(1), num_val(2)])?;
         assert_eq!(word_sub.to_string(), "\"e\u{0301}s\"");
         let thumbs_up = "👍🏽";
-        let thumb_len = (length_fn.func)(&[str_val(thumbs_up)]).unwrap();
+        let thumb_len = (length_fn.func)(&[str_val(thumbs_up)])?;
         assert_eq!(thumb_len.to_string(), "1");
-        let thumb_rev = (strrev_fn.func)(&[str_val(thumbs_up)]).unwrap();
+        let thumb_rev = (strrev_fn.func)(&[str_val(thumbs_up)])?;
         assert_eq!(thumb_rev.to_string(), "\"👍🏽\"");
-        let neg_sub = (substr_fn.func)(&[str_val(mixed_flag), num_val(-2), num_val(1)]).unwrap();
+        let neg_sub = (substr_fn.func)(&[str_val(mixed_flag), num_val(-2), num_val(1)])?;
         assert_eq!(neg_sub.to_string(), "\"🇺🇸\"");
+        Ok(())
     }
 
     #[test]
-    fn test_large_integers_exceeding_64_bits() {
+    fn test_large_integers_exceeding_64_bits() -> Result<(), HclError> {
         use crate::eval::stdlib::get_stdlib_function;
         use crate::types::ValueData;
         use bigdecimal::BigDecimal;
         use std::str::FromStr;
 
-        let pow_fn = get_stdlib_function("pow").unwrap();
-        let parseint_fn = get_stdlib_function("parseint").unwrap();
+        let pow_fn = get_stdlib_function("pow")
+            .ok_or_else(|| HclError::Eval("pow not found".to_string()))?;
+        let parseint_fn = get_stdlib_function("parseint")
+            .ok_or_else(|| HclError::Eval("parseint not found".to_string()))?;
         let num_val = |s: &str| {
             crate::types::Value::new(
                 crate::types::Type::Number,
-                ValueData::Number(crate::number::Number::new(BigDecimal::from_str(s).unwrap())),
+                ValueData::Number(crate::number::Number::new(
+                    BigDecimal::from_str(s).unwrap_or_default(),
+                )),
             )
         };
         let str_val = |s: &str| {
@@ -646,14 +638,15 @@ mod tests {
         };
 
         let giant_num_str = "1234567890123456789012345678901234567890";
-        let parsed = (parseint_fn.func)(&[str_val(giant_num_str), num_val("10")]).unwrap();
+        let parsed = (parseint_fn.func)(&[str_val(giant_num_str), num_val("10")])?;
         assert_eq!(parsed.to_string(), giant_num_str);
 
         // Let's do 10^40
-        let pow_res = (pow_fn.func)(&[num_val("10"), num_val("40")]).unwrap();
+        let pow_res = (pow_fn.func)(&[num_val("10"), num_val("40")])?;
         assert_eq!(
             pow_res.to_string(),
             "10000000000000000000000000000000000000000"
         );
+        Ok(())
     }
 }

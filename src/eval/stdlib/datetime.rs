@@ -1,4 +1,5 @@
 //! Date & Time standard library functions.
+use crate::error::HclError;
 use crate::eval::func::Function;
 use crate::types::{Type, Value, ValueData};
 use chrono::{DateTime, Duration, Utc};
@@ -21,9 +22,12 @@ fn get_plan_timestamp() -> &'static str {
 fn timestamp_func() -> Function {
     Function {
         name: "timestamp".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if !args.is_empty() {
-                return Err(format!("timestamp expects 0 arguments, got {}", args.len()));
+                return Err(HclError::FunctionArgMismatch(format!(
+                    "timestamp expects 0 arguments, got {}",
+                    args.len()
+                )));
             }
             let ts = Utc::now().to_rfc3339();
             Ok(Value::new(Type::String, ValueData::String(ts)))
@@ -34,12 +38,12 @@ fn timestamp_func() -> Function {
 fn plantimestamp_func() -> Function {
     Function {
         name: "plantimestamp".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if !args.is_empty() {
-                return Err(format!(
+                return Err(HclError::FunctionArgMismatch(format!(
                     "plantimestamp expects 0 arguments, got {}",
                     args.len()
-                ));
+                )));
             }
             let ts = get_plan_timestamp().to_string();
             Ok(Value::new(Type::String, ValueData::String(ts)))
@@ -50,19 +54,24 @@ fn plantimestamp_func() -> Function {
 fn timecmp_func() -> Function {
     Function {
         name: "timecmp".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err(format!("timecmp expects 2 arguments, got {}", args.len()));
+                return Err(HclError::FunctionArgMismatch(format!(
+                    "timecmp expects 2 arguments, got {}",
+                    args.len()
+                )));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::Number));
             }
             let a_str = coerce_to_string(&args[0], "timecmp first argument")?;
             let b_str = coerce_to_string(&args[1], "timecmp second argument")?;
-            let dt_a = DateTime::parse_from_rfc3339(&a_str)
-                .map_err(|e| format!("timecmp: invalid RFC3339 timestamp {a_str:?}: {e}"))?;
-            let dt_b = DateTime::parse_from_rfc3339(&b_str)
-                .map_err(|e| format!("timecmp: invalid RFC3339 timestamp {b_str:?}: {e}"))?;
+            let dt_a = DateTime::parse_from_rfc3339(&a_str).map_err(|e| {
+                HclError::Eval(format!("timecmp: invalid RFC3339 timestamp {a_str:?}: {e}"))
+            })?;
+            let dt_b = DateTime::parse_from_rfc3339(&b_str).map_err(|e| {
+                HclError::Eval(format!("timecmp: invalid RFC3339 timestamp {b_str:?}: {e}"))
+            })?;
             let cmp_val = match dt_a.cmp(&dt_b) {
                 std::cmp::Ordering::Less => -1,
                 std::cmp::Ordering::Equal => 0,
@@ -76,23 +85,26 @@ fn timecmp_func() -> Function {
         signature: None,
     }
 }
-fn coerce_to_string(arg: &Value, name: &str) -> Result<String, String> {
-    let coerced = arg
-        .clone()
-        .coerce(&Type::String)
-        .map_err(|_| format!("{} requires a string, got type {}", name, arg.ty()))?;
+fn coerce_to_string(arg: &Value, name: &str) -> Result<String, HclError> {
+    let coerced = arg.clone().coerce(&Type::String).map_err(|_| {
+        HclError::FunctionArgMismatch(format!("{} requires a string, got type {}", name, arg.ty()))
+    })?;
     if let ValueData::String(s) = *coerced.data {
         Ok(s)
     } else {
-        Err(format!("{name} requires a string"))
+        Err(HclError::FunctionArgMismatch(format!(
+            "{name} requires a string"
+        )))
     }
 }
 fn formatdate_func() -> Function {
     Function {
         name: "formatdate".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
             if args.len() != 2 {
-                return Err("formatdate expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "formatdate expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::String));
@@ -100,7 +112,7 @@ fn formatdate_func() -> Function {
             let format_str = coerce_to_string(&args[0], "formatdate format")?;
             let time_str = coerce_to_string(&args[1], "formatdate time")?;
             let dt = DateTime::parse_from_rfc3339(&time_str)
-                .map_err(|e| format!("invalid time: {e}"))?;
+                .map_err(|e| HclError::Eval(format!("invalid time: {e}")))?;
             let cformat = format_str
                 .replace("YYYY", "%Y")
                 .replace("MM", "%m")
@@ -114,9 +126,12 @@ fn formatdate_func() -> Function {
 fn timeadd_func() -> Function {
     Function {
         name: "timeadd".to_string(),
-        func: Arc::new(|args: &[Value]| -> Result<Value, String> {
+        func: Arc::new(|args: &[Value]| -> Result<Value, HclError> {
+            use bigdecimal::num_traits::ToPrimitive;
             if args.len() != 2 {
-                return Err("timeadd expects 2 arguments".to_string());
+                return Err(HclError::FunctionArgMismatch(
+                    "timeadd expects 2 arguments".to_string(),
+                ));
             }
             if args[0].is_unknown() || args[1].is_unknown() {
                 return Ok(Value::unknown(Type::String));
@@ -124,7 +139,7 @@ fn timeadd_func() -> Function {
             let time_str = coerce_to_string(&args[0], "timeadd time")?;
             let dur_str = coerce_to_string(&args[1], "timeadd duration")?;
             let mut dt = DateTime::parse_from_rfc3339(&time_str)
-                .map_err(|e| format!("invalid time: {e}"))?
+                .map_err(|e| HclError::Eval(format!("invalid time: {e}")))?
                 .with_timezone(&Utc);
             let mut total_secs = 0.0;
             let mut current_num = String::new();
@@ -134,26 +149,27 @@ fn timeadd_func() -> Function {
                 } else if c == 'h' {
                     let val: f64 = current_num
                         .parse()
-                        .map_err(|_| "invalid duration".to_string())?;
+                        .map_err(|_| HclError::Eval("invalid duration".to_string()))?;
                     total_secs += val * 3600.0;
                     current_num.clear();
                 } else if c == 'm' {
                     let val: f64 = current_num
                         .parse()
-                        .map_err(|_| "invalid duration".to_string())?;
+                        .map_err(|_| HclError::Eval("invalid duration".to_string()))?;
                     total_secs += val * 60.0;
                     current_num.clear();
                 } else if c == 's' {
                     let val: f64 = current_num
                         .parse()
-                        .map_err(|_| "invalid duration".to_string())?;
+                        .map_err(|_| HclError::Eval("invalid duration".to_string()))?;
                     total_secs += val;
                     current_num.clear();
                 } else {
-                    return Err("invalid duration unit".to_string());
+                    return Err(HclError::Eval("invalid duration unit".to_string()));
                 }
             }
-            let dur = Duration::milliseconds((total_secs * 1000.0) as i64);
+            let millis = (total_secs * 1000.0).to_i64().unwrap_or(0);
+            let dur = Duration::milliseconds(millis);
             dt += dur;
             let res = dt.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true);
             Ok(Value::new(Type::String, ValueData::String(res)))
@@ -163,13 +179,7 @@ fn timeadd_func() -> Function {
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
+    use crate::error::HclError;
     use crate::eval::stdlib::datetime::*;
     #[test]
     fn test_datetime_require_string_arg_err() {
@@ -177,14 +187,14 @@ mod tests {
         assert!(coerce_to_string(&val, "test").is_err());
     }
     use crate::types::{Type, Value, ValueData};
-    fn eval_func(name: &str, args: &[Value]) -> Result<Value, String> {
+    fn eval_func(name: &str, args: &[Value]) -> Result<Value, HclError> {
         let funcs = functions();
         for f in funcs {
             if f.name == name {
                 return (f.func)(args);
             }
         }
-        panic!("Function {name} not found");
+        Err(HclError::Eval(format!("Function {name} not found")))
     }
     #[test]
     fn test_datetime_errors() {
@@ -207,8 +217,8 @@ mod tests {
         assert!((timestamp_func().func)(std::slice::from_ref(&s)).is_err());
         assert!((plantimestamp_func().func)(std::slice::from_ref(&s)).is_err());
         assert!((fmt.func)(&[s.clone(), bad_time.clone()]).is_err());
-        assert!((add.func)(&[bad_time, s.clone()]).is_err());
-        assert!((add.func)(&[ok_time.clone(), bad_dur]).is_err());
+        assert!((add.func)(&[bad_time, s]).is_err());
+        assert!((add.func)(&[ok_time, bad_dur]).is_err());
     }
     #[test]
     fn test_datetime_duration_parse_errors() {
@@ -226,7 +236,7 @@ mod tests {
         assert!((add.func)(&[ok_time, bad_dur_parse_s]).is_err());
     }
     #[test]
-    fn test_datetime_unknown() {
+    fn test_datetime_unknown() -> Result<(), HclError> {
         use crate::types::{Type, Value, ValueData};
         let fmt = formatdate_func();
         let add = timeadd_func();
@@ -235,32 +245,20 @@ mod tests {
             ValueData::String("2020-01-02T15:04:05Z".to_string()),
         );
         let unk = Value::unknown(Type::String);
-        assert!(
-            (fmt.func)(&[unk.clone(), ok_time.clone()])
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            (fmt.func)(&[ok_time.clone(), unk.clone()])
-                .unwrap()
-                .is_unknown()
-        );
-        assert!(
-            (add.func)(&[unk.clone(), ok_time.clone()])
-                .unwrap()
-                .is_unknown()
-        );
-        assert!((add.func)(&[ok_time, unk]).unwrap().is_unknown());
+        assert!((fmt.func)(&[unk.clone(), ok_time.clone()])?.is_unknown());
+        assert!((fmt.func)(&[ok_time.clone(), unk.clone()])?.is_unknown());
+        assert!((add.func)(&[unk.clone(), ok_time.clone()])?.is_unknown());
+        assert!((add.func)(&[ok_time, unk])?.is_unknown());
+        Ok(())
     }
     #[test]
-    fn test_formatdate() {
+    fn test_formatdate() -> Result<(), HclError> {
         assert!(eval_func("formatdate", &[]).is_err());
         assert!(
             eval_func(
                 "formatdate",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
-            )
-            .unwrap()
+            )?
             .is_unknown()
         );
         let res = eval_func(
@@ -272,8 +270,7 @@ mod tests {
                     ValueData::String("2020-01-02T03:04:05Z".to_string()),
                 ),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(*res.data, ValueData::String("2020-01-02".to_string()));
         assert!(
             eval_func(
@@ -285,16 +282,16 @@ mod tests {
             )
             .is_err()
         );
+        Ok(())
     }
     #[test]
-    fn test_timeadd() {
+    fn test_timeadd() -> Result<(), HclError> {
         assert!(eval_func("timeadd", &[]).is_err());
         assert!(
             eval_func(
                 "timeadd",
                 &[Value::unknown(Type::String), Value::unknown(Type::String)]
-            )
-            .unwrap()
+            )?
             .is_unknown()
         );
         let res = eval_func(
@@ -306,8 +303,7 @@ mod tests {
                 ),
                 Value::new(Type::String, ValueData::String("1h".to_string())),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(
             *res.data,
             ValueData::String("2020-01-02T04:04:05Z".to_string())
@@ -321,8 +317,7 @@ mod tests {
                 ),
                 Value::new(Type::String, ValueData::String("1m30s".to_string())),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(
             *res.data,
             ValueData::String("2020-01-02T03:05:35Z".to_string())
@@ -336,8 +331,7 @@ mod tests {
                 ),
                 Value::new(Type::String, ValueData::String("-1h-30m".to_string())),
             ],
-        )
-        .unwrap();
+        )?;
         assert_eq!(
             *res_neg.data,
             ValueData::String("2020-01-02T01:34:05Z".to_string())
@@ -368,6 +362,7 @@ mod tests {
             )
             .is_err()
         );
+        Ok(())
     }
     #[test]
     fn test_datetime_coverage() {
@@ -379,9 +374,9 @@ mod tests {
         assert!(eval_func("timeadd", &[str_val("2020-01-02T00:00:00Z"), non_str]).is_err());
     }
     #[test]
-    fn test_new_datetime_functions() {
+    fn test_new_datetime_functions() -> Result<(), HclError> {
         let str_val = |s: &str| Value::new(Type::String, ValueData::String(s.to_string()));
-        let ts = eval_func("timestamp", &[]).unwrap();
+        let ts = eval_func("timestamp", &[])?;
         assert_eq!(ts.ty(), &Type::String);
         let check_str = |v: &Value| match &*v.data {
             ValueData::String(s) => DateTime::parse_from_rfc3339(s).is_ok(),
@@ -390,14 +385,14 @@ mod tests {
         assert!(check_str(&ts));
         assert!(!check_str(&Value::null(Type::Dynamic)));
         assert!(eval_func("timestamp", &[str_val("extra")]).is_err());
-        let pts1 = eval_func("plantimestamp", &[]).unwrap();
-        let pts2 = eval_func("plantimestamp", &[]).unwrap();
+        let pts1 = eval_func("plantimestamp", &[])?;
+        let pts2 = eval_func("plantimestamp", &[])?;
         assert_eq!(pts1, pts2);
         assert!(eval_func("plantimestamp", &[str_val("extra")]).is_err());
         let t1 = str_val("2026-01-01T00:00:00Z");
         let t2 = str_val("2026-06-01T00:00:00Z");
         let t3 = str_val("2026-01-01T00:00:00Z");
-        let result_less = eval_func("timecmp", &[t1.clone(), t2.clone()]).unwrap();
+        let result_less = eval_func("timecmp", &[t1.clone(), t2.clone()])?;
         assert_eq!(
             result_less,
             Value::new(
@@ -405,7 +400,7 @@ mod tests {
                 ValueData::Number(crate::number::Number::from(-1))
             )
         );
-        let result_greater = eval_func("timecmp", &[t2, t1.clone()]).unwrap();
+        let result_greater = eval_func("timecmp", &[t2, t1.clone()])?;
         assert_eq!(
             result_greater,
             Value::new(
@@ -413,7 +408,7 @@ mod tests {
                 ValueData::Number(crate::number::Number::from(1))
             )
         );
-        let result_equal = eval_func("timecmp", &[t1, t3]).unwrap();
+        let result_equal = eval_func("timecmp", &[t1, t3])?;
         assert_eq!(
             result_equal,
             Value::new(
@@ -422,7 +417,7 @@ mod tests {
             )
         );
         let unk = Value::unknown(Type::String);
-        let res_unk = eval_func("timecmp", &[unk, str_val("2026-01-01T00:00:00Z")]).unwrap();
+        let res_unk = eval_func("timecmp", &[unk, str_val("2026-01-01T00:00:00Z")])?;
         assert!(res_unk.is_unknown());
         let res_unk2 = eval_func(
             "timecmp",
@@ -430,8 +425,7 @@ mod tests {
                 str_val("2026-01-01T00:00:00Z"),
                 Value::unknown(Type::String),
             ],
-        )
-        .unwrap();
+        )?;
         assert!(res_unk2.is_unknown());
         assert!(
             eval_func(
@@ -457,10 +451,10 @@ mod tests {
         );
         assert!(eval_func("timecmp", &[str_val("2026-01-01T00:00:00Z"), non_coercible]).is_err());
         assert!(eval_func("timecmp", &[]).is_err());
+        Ok(())
     }
     #[test]
-    #[should_panic(expected = "Function notexist not found")]
     fn test_eval_func_not_found() {
-        eval_func("notexist", &[]).unwrap();
+        assert!(eval_func("notexist", &[]).is_err());
     }
 }

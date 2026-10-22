@@ -79,7 +79,7 @@ fn expand_single_dynamic_block(
             .map(|(idx, val)| {
                 let k = Value::new(
                     Type::Number,
-                    ValueData::Number(Number::new(BigDecimal::from(idx as i64))),
+                    ValueData::Number(Number::new(BigDecimal::from(idx as u64))),
                 );
                 (k, val.clone())
             })
@@ -105,9 +105,7 @@ fn expand_single_dynamic_block(
     };
     for (key, val) in items {
         let mut child_ctx = Context::new_child(ctx);
-        let mut iter_obj = BTreeMap::new();
-        iter_obj.insert("key".to_string(), key);
-        iter_obj.insert("value".to_string(), val);
+        let iter_obj = BTreeMap::from([("key".to_string(), key), ("value".to_string(), val)]);
         let iter_val = Value::new(Type::object(BTreeMap::new()), ValueData::Object(iter_obj));
         child_ctx.set_variable(iterator_name.to_string(), iter_val);
         let mut evaluated_labels = Vec::new();
@@ -134,7 +132,7 @@ fn expand_single_dynamic_block(
             }
         }
         let expanded_content = expand_dynamic_blocks(&dyn_block.content, &mut child_ctx)?;
-        let block = Block {
+        out_blocks.push(Block {
             block_type: dyn_block.block_type.clone(),
             type_span: dyn_block.type_span.clone(),
             labels: evaluated_labels,
@@ -145,20 +143,12 @@ fn expand_single_dynamic_block(
             close_brace_span: dyn_block.span.clone(),
             leading_comments: Vec::new(),
             trailing_comment: None,
-        };
-        out_blocks.push(block);
+        });
     }
     Ok(())
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::ast::expr::Expression;
     use crate::ast::structure::Attribute;
@@ -166,7 +156,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::str::FromStr;
     #[test]
-    fn test_expand_dynamic_blocks_array() {
+    fn test_expand_dynamic_blocks_array() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut root_body = Body::new(span.clone());
         let mut content = Body::new(span.clone());
@@ -199,15 +189,16 @@ mod tests {
         );
         root_body.dynamic_blocks.push(dyn_block);
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx)?;
         assert_eq!(expanded.blocks.len(), 2);
         assert_eq!(expanded.blocks[0].block_type, "tag");
         assert_eq!(expanded.blocks[0].labels, vec!["lbl"]);
         assert_eq!(expanded.blocks[1].block_type, "tag");
         assert_eq!(expanded.blocks[1].labels, vec!["lbl"]);
+        Ok(())
     }
     #[test]
-    fn test_expand_dynamic_blocks_object_and_iterator() {
+    fn test_expand_dynamic_blocks_object_and_iterator() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut root_body = Body::new(span.clone());
         let dyn_block = DynamicBlock::new(
@@ -227,13 +218,14 @@ mod tests {
         );
         root_body.dynamic_blocks.push(dyn_block);
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx)?;
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "setting");
         assert_eq!(expanded.blocks[0].labels, [] as [String; 0]);
+        Ok(())
     }
     #[test]
-    fn test_expand_dynamic_blocks_with_existing_regular_blocks() {
+    fn test_expand_dynamic_blocks_with_existing_regular_blocks() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut root_body = Body::new(span.clone());
         let regular_block = Block {
@@ -250,12 +242,13 @@ mod tests {
         };
         root_body.blocks.push(regular_block);
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx)?;
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "resource");
+        Ok(())
     }
     #[test]
-    fn test_expand_dynamic_blocks_null_and_unknown() {
+    fn test_expand_dynamic_blocks_null_and_unknown() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut root_body = Body::new(span.clone());
         let dyn_null = DynamicBlock::new(
@@ -280,12 +273,13 @@ mod tests {
         root_body.dynamic_blocks.push(dyn_unknown);
         let mut ctx = Context::new();
         ctx.set_variable("unknown_var".to_string(), Value::unknown(Type::Dynamic));
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx)?;
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "unknown_block");
+        Ok(())
     }
     #[test]
-    fn test_expand_dynamic_blocks_set() {
+    fn test_expand_dynamic_blocks_set() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut root_body = Body::new(span.clone());
         let dyn_block = DynamicBlock::new(
@@ -308,27 +302,25 @@ mod tests {
             "my_set".to_string(),
             Value::new(Type::Set(Box::new(Type::String)), ValueData::Set(set)),
         );
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx)?;
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "item");
+        Ok(())
     }
     #[test]
-    fn test_expand_dynamic_blocks_nested() {
+    fn test_expand_dynamic_blocks_nested() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut root_body = Body::new(span.clone());
         let mut inner_content = Body::new(span.clone());
         let inner_dyn = DynamicBlock::new(
             "nested".to_string(),
             Expression::Tuple(
-                vec![Expression::Number(
-                    Number::from_str("1").unwrap(),
-                    span.clone(),
-                )],
+                vec![Expression::Number(Number::from_str("1")?, span.clone())],
                 span.clone(),
             ),
             None,
             Some(vec![Expression::Number(
-                Number::from_str("100").unwrap(),
+                Number::from_str("100")?,
                 span.clone(),
             )]),
             Body::new(span.clone()),
@@ -350,20 +342,21 @@ mod tests {
         );
         root_body.dynamic_blocks.push(outer_dyn);
         let mut ctx = Context::new();
-        let expanded = expand_dynamic_blocks(&root_body, &mut ctx).unwrap();
+        let expanded = expand_dynamic_blocks(&root_body, &mut ctx)?;
         assert_eq!(expanded.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].block_type, "outer");
         assert_eq!(expanded.blocks[0].body.blocks.len(), 1);
         assert_eq!(expanded.blocks[0].body.blocks[0].block_type, "nested");
         assert_eq!(expanded.blocks[0].body.blocks[0].labels, vec!["100"]);
+        Ok(())
     }
     #[test]
-    fn test_expand_dynamic_blocks_errors() {
+    fn test_expand_dynamic_blocks_errors() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut root_body = Body::new(span.clone());
         let dyn_bad_coll = DynamicBlock::new(
             "bad".to_string(),
-            Expression::Number(Number::from_str("42").unwrap(), span.clone()),
+            Expression::Number(Number::from_str("42")?, span.clone()),
             None,
             None,
             Body::new(span.clone()),
@@ -416,15 +409,21 @@ mod tests {
             )]),
             Body::new(span.clone()),
             span.clone(),
-            span.clone(),
+            span,
         );
         root_lbl_eval_err.dynamic_blocks.push(dyn_lbl_eval_err);
         assert!(expand_dynamic_blocks(&root_lbl_eval_err, &mut ctx).is_err());
+        Ok(())
+    }
+    #[test]
+    fn test_expand_dynamic_blocks_nested_errors() -> Result<(), HclError> {
+        let span = Span::new(0, 10, 1, 1, 1, 11);
+        let mut ctx = Context::new();
         let mut root_block_err = Body::new(span.clone());
         let mut inner_block_body = Body::new(span.clone());
         let bad_dyn = DynamicBlock::new(
             "bad".to_string(),
-            Expression::Number(Number::from_str("42").unwrap(), span.clone()),
+            Expression::Number(Number::from_str("42")?, span.clone()),
             None,
             None,
             Body::new(span.clone()),
@@ -450,7 +449,7 @@ mod tests {
         let mut bad_content = Body::new(span.clone());
         let bad_nested_dyn = DynamicBlock::new(
             "bad_nested".to_string(),
-            Expression::Number(Number::from_str("42").unwrap(), span.clone()),
+            Expression::Number(Number::from_str("42")?, span.clone()),
             None,
             None,
             Body::new(span.clone()),
@@ -472,5 +471,6 @@ mod tests {
         );
         root_content_err.dynamic_blocks.push(outer_dyn);
         assert!(expand_dynamic_blocks(&root_content_err, &mut ctx).is_err());
+        Ok(())
     }
 }

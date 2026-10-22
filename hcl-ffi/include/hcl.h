@@ -37,6 +37,14 @@ struct hcl_context_t *hcl_context_new(void);
 /**
  * Binds a named variable into an evaluation context.
  *
+ * # Arguments
+ * * `ctx` - Mutable pointer to an [`hcl_context_t`].
+ * * `name` - Null-terminated UTF-8 variable name.
+ * * `val` - Pointer to an [`hcl_value_t`] to bind.
+ *
+ * # Returns
+ * `0` on success, or `-1` if any pointer is null or `name` is invalid UTF-8.
+ *
  * # Safety
  * * `ctx` must be a valid, non-null pointer to an [`hcl_context_t`].
  * * `name` must be a valid null-terminated C string.
@@ -48,6 +56,9 @@ int32_t hcl_context_set_variable(struct hcl_context_t *ctx,
 
 /**
  * Releases an evaluation context handle.
+ *
+ * # Arguments
+ * * `ctx` - Pointer to the context handle to free.
  *
  * # Safety
  * * `ctx` must be a pointer returned by [`hcl_context_new`] or null.
@@ -112,6 +123,9 @@ int32_t hcl_format_string(const char *input, char **out_str, struct hcl_diagnost
 /**
  * Releases an AST body handle.
  *
+ * # Arguments
+ * * `body` - Pointer to the body handle to free.
+ *
  * # Safety
  * `body` must be a pointer returned by [`hcl_parse_string`] or null.
  */
@@ -119,6 +133,9 @@ void hcl_free_body(struct hcl_body_t *body);
 
 /**
  * Releases a value handle.
+ *
+ * # Arguments
+ * * `val` - Pointer to the value handle to free.
  *
  * # Safety
  * `val` must be a pointer returned by [`hcl_evaluate`] or null.
@@ -128,6 +145,9 @@ void hcl_free_value(struct hcl_value_t *val);
 /**
  * Releases a diagnostics collection handle.
  *
+ * # Arguments
+ * * `diags` - Pointer to the diagnostics handle to free.
+ *
  * # Safety
  * `diags` must be a pointer returned by an FFI function or null.
  */
@@ -135,6 +155,9 @@ void hcl_free_diagnostics(struct hcl_diagnostics_t *diags);
 
 /**
  * Releases a string allocated by this library.
+ *
+ * # Arguments
+ * * `str_ptr` - Pointer to the C string to free.
  *
  * # Safety
  * `str_ptr` must be a pointer returned by an FFI function or null.
@@ -144,6 +167,9 @@ void hcl_free_string(char *str_ptr);
 /**
  * Returns the number of diagnostics in a diagnostics handle.
  *
+ * # Arguments
+ * * `diags` - Pointer to the diagnostics handle.
+ *
  * # Safety
  * `diags` must be a valid, non-null pointer to an [`hcl_diagnostics_t`].
  */
@@ -151,6 +177,9 @@ uintptr_t hcl_diagnostics_count(const struct hcl_diagnostics_t *diags);
 
 /**
  * Returns `true` if the diagnostics collection contains error-level items.
+ *
+ * # Arguments
+ * * `diags` - Pointer to the diagnostics handle.
  *
  * # Safety
  * `diags` must be a valid, non-null pointer to an [`hcl_diagnostics_t`].
@@ -160,6 +189,9 @@ bool hcl_diagnostics_has_errors(const struct hcl_diagnostics_t *diags);
 /**
  * Serializes diagnostics to a JSON string.
  *
+ * # Arguments
+ * * `diags` - Pointer to the diagnostics handle.
+ *
  * # Safety
  * The returned pointer must be released with [`hcl_free_string`].
  */
@@ -168,6 +200,9 @@ char *hcl_diagnostics_to_json(const struct hcl_diagnostics_t *diags);
 /**
  * Serializes a value to its JSON string representation.
  *
+ * # Arguments
+ * * `val` - Pointer to the value handle.
+ *
  * # Safety
  * The returned pointer must be released with [`hcl_free_string`].
  */
@@ -175,6 +210,9 @@ char *hcl_value_to_json(const struct hcl_value_t *val);
 
 /**
  * Returns the type description of a value as a C string.
+ *
+ * # Arguments
+ * * `val` - Pointer to the value handle.
  *
  * # Safety
  * The returned pointer must be released with [`hcl_free_string`].

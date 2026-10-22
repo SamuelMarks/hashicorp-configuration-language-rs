@@ -76,13 +76,6 @@ pub fn splice_tokens(tokens: &[Token], target_span: &Span, new_tokens: Vec<Token
 }
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::lex::token::TokenKind;
     #[test]
@@ -92,7 +85,7 @@ mod tests {
         let t3 = Token::new(TokenKind::Assign, "=", Span::new(4, 5, 1, 5, 1, 6));
         let t4 = Token::new(TokenKind::Whitespace, " ", Span::new(5, 6, 1, 6, 1, 7));
         let t5 = Token::new(TokenKind::Number, "42", Span::new(6, 8, 1, 7, 1, 9));
-        let tokens = vec![t1.clone(), t2.clone(), t3.clone(), t4.clone(), t5.clone()];
+        let tokens = vec![t1, t2, t3, t4, t5];
         let span_all = Span::new(0, 8, 1, 1, 1, 9);
         assert_eq!(extract_source(&tokens, &span_all), "foo = 42");
         let span_val = Span::new(6, 8, 1, 7, 1, 9);
@@ -114,7 +107,7 @@ mod tests {
             "\"hello\"",
             target_span.clone(),
         )];
-        let spliced = splice_tokens(&tokens, &target_span, new_tokens.clone());
+        let spliced = splice_tokens(&tokens, &target_span, new_tokens);
         assert_eq!(spliced.len(), 5);
         assert_eq!(spliced[4].text, "\"hello\"");
         let target_span_miss = Span::new(10, 12, 1, 11, 1, 13);

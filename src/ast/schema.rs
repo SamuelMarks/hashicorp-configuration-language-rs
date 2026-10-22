@@ -183,7 +183,11 @@ impl BodyContent {
     /// * `blocks` - The matched blocks.
     /// * `span` - The source span.
     #[must_use]
-    pub fn new(attributes: HashMap<String, Attribute>, blocks: Vec<Block>, span: Span) -> Self {
+    pub const fn new(
+        attributes: HashMap<String, Attribute>,
+        blocks: Vec<Block>,
+        span: Span,
+    ) -> Self {
         Self {
             attributes,
             blocks,
@@ -321,7 +325,7 @@ impl Body {
     ///
     /// # Errors
     /// Returns [`Diagnostics`] if a required attribute is missing or if recognized blocks have label count errors.
-    pub fn partial_content(&self, schema: &BodySchema) -> Result<(BodyContent, Body), Diagnostics> {
+    pub fn partial_content(&self, schema: &BodySchema) -> Result<(BodyContent, Self), Diagnostics> {
         let mut diags = Diagnostics::new();
         let mut matched_attributes = HashMap::new();
         let mut remain_attributes = HashMap::new();
@@ -368,7 +372,7 @@ impl Body {
                 remain_blocks.push(block.clone());
             }
         }
-        let mut remain_body = Body::new(self.span.clone());
+        let mut remain_body = Self::new(self.span.clone());
         remain_body.attributes = remain_attributes;
         remain_body.blocks = remain_blocks;
         remain_body.functions.clone_from(&self.functions);
@@ -387,14 +391,8 @@ impl Body {
     }
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::ast::expr::Expression;
     use crate::span::Span;
@@ -407,7 +405,7 @@ mod tests {
         let opt_attr = AttributeSchema::optional("enabled").with_description("Enable toggle");
         assert_eq!(opt_attr.name, "enabled");
         assert!(!opt_attr.required);
-        let inner_schema = BodySchema::new().with_attribute(attr.clone());
+        let inner_schema = BodySchema::new().with_attribute(attr);
         let block_schema = BlockHeaderSchema::new("service", vec!["name".to_string()])
             .with_body_schema(inner_schema)
             .with_description("Service definition");
@@ -459,7 +457,7 @@ mod tests {
         assert_eq!(content.find_blocks("missing").len(), 0);
     }
     #[test]
-    fn test_body_content_success_and_errors() {
+    fn test_body_content_success_and_errors() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
         body.attributes.insert(
@@ -477,10 +475,12 @@ mod tests {
         let schema = BodySchema::new()
             .with_attribute(AttributeSchema::required("name"))
             .with_attribute(AttributeSchema::required("count"));
-        let err = body.content(&schema);
-        assert!(err.is_err());
+        let err = body
+            .content(&schema)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected error".to_string()))?;
         assert!(
-            err.unwrap_err().errors()[0]
+            err.errors()[0]
                 .error
                 .to_string()
                 .contains(r#"The argument "count" is required"#)
@@ -499,10 +499,12 @@ mod tests {
             },
         );
         let empty_schema = BodySchema::new();
-        let err2 = body2.content(&empty_schema);
-        assert!(err2.is_err());
+        let err2 = body2
+            .content(&empty_schema)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected error".to_string()))?;
         assert!(
-            err2.unwrap_err().errors()[0]
+            err2.errors()[0]
                 .error
                 .to_string()
                 .contains(r#"An argument named "unexpected" is not expected here."#)
@@ -522,25 +524,30 @@ mod tests {
         });
         let schema3 = BodySchema::new()
             .with_block(BlockHeaderSchema::new("server", vec!["name".to_string()]));
-        let err3 = body3.content(&schema3);
-        assert!(err3.is_err());
+        let err3 = body3
+            .content(&schema3)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected error".to_string()))?;
         assert!(
-            err3.unwrap_err().errors()[0]
+            err3.errors()[0]
                 .error
                 .to_string()
                 .contains("Wrong number of labels")
         );
-        let err_unexp_block = body3.content(&empty_schema);
-        assert!(err_unexp_block.is_err());
+        let err_unexp_block = body3
+            .content(&empty_schema)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected error".to_string()))?;
         assert!(
-            err_unexp_block.unwrap_err().errors()[0]
+            err_unexp_block.errors()[0]
                 .error
                 .to_string()
                 .contains(r#"Blocks of type "server" are not expected here."#)
         );
+        Ok(())
     }
     #[test]
-    fn test_body_partial_content_partitioning() {
+    fn test_body_partial_content_partitioning() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut body = Body::new(span.clone());
         body.attributes.insert(
@@ -597,7 +604,7 @@ mod tests {
                 "known_block",
                 vec!["label".to_string()],
             ));
-        let (content, remain) = body.partial_content(&schema).unwrap();
+        let (content, remain) = body.partial_content(&schema)?;
         assert_eq!(content.attributes.len(), 1);
         assert!(content.attributes.contains_key("known_attr"));
         assert_eq!(content.blocks.len(), 1);
@@ -610,14 +617,15 @@ mod tests {
         let schema2 = BodySchema::new()
             .with_attribute(AttributeSchema::required("unknown_attr"))
             .with_block(BlockHeaderSchema::new("unknown_block", vec![]));
-        let (content2, remain2) = remain.partial_content(&schema2).unwrap();
+        let (content2, remain2) = remain.partial_content(&schema2)?;
         assert_eq!(content2.attributes.len(), 1);
         assert_eq!(content2.blocks.len(), 1);
         assert_eq!(remain2.attributes.len(), 0);
         assert_eq!(remain2.blocks, [] as [Block; 0]);
+        Ok(())
     }
     #[test]
-    fn test_body_nested_body_schema_validation() {
+    fn test_body_nested_body_schema_validation() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut inner_body = Body::new(span.clone());
         inner_body.attributes.insert(
@@ -641,7 +649,7 @@ mod tests {
             body: inner_body,
             span: span.clone(),
             open_brace_span: span.clone(),
-            close_brace_span: span.clone(),
+            close_brace_span: span,
             leading_comments: Vec::new(),
             trailing_comment: None,
         });
@@ -649,15 +657,17 @@ mod tests {
             BodySchema::new().with_attribute(AttributeSchema::required("expected_attr"));
         let root_schema = BodySchema::new()
             .with_block(BlockHeaderSchema::new("outer", vec![]).with_body_schema(inner_schema));
-        let err = root_body.content(&root_schema);
-        assert!(err.is_err());
-        let errs = err.unwrap_err();
+        let errs = root_body
+            .content(&root_schema)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected error".to_string()))?;
         assert!(errs.errors().len() >= 2);
         let err_partial = root_body.partial_content(&root_schema);
         assert!(err_partial.is_err());
+        Ok(())
     }
     #[test]
-    fn test_schema_coverage_comprehensive() {
+    fn test_schema_coverage_comprehensive() -> Result<(), HclError> {
         let span = Span::new(0, 10, 1, 1, 1, 11);
         let mut inner_body = Body::new(span.clone());
         inner_body.attributes.insert(
@@ -704,9 +714,9 @@ mod tests {
             .with_attribute(AttributeSchema::optional("opt_attr"))
             .with_block(
                 BlockHeaderSchema::new("service", vec!["name".to_string()])
-                    .with_body_schema(inner_schema.clone()),
+                    .with_body_schema(inner_schema),
             );
-        let content = body.content(&schema).unwrap();
+        let content = body.content(&schema)?;
         assert_eq!(content.attributes.len(), 1);
         assert_eq!(content.blocks.len(), 1);
         let bad_schema = BodySchema::new().with_attribute(AttributeSchema::required("missing_req"));
@@ -718,11 +728,12 @@ mod tests {
         ));
         let err_labels = body.partial_content(&bad_block_schema);
         assert!(err_labels.is_err());
-        let (p_content, remain) = body.partial_content(&schema).unwrap();
+        let (p_content, remain) = body.partial_content(&schema)?;
         assert_eq!(p_content.attributes.len(), 1);
         assert_eq!(p_content.blocks.len(), 1);
         assert_eq!(remain.attributes.len(), 0);
         assert_eq!(remain.blocks.len(), 0);
+        Ok(())
     }
     #[derive(Debug, PartialEq, ImpliedBodySchema)]
     struct SubBlock {
@@ -740,7 +751,7 @@ mod tests {
         replicas: Vec<SubBlock>,
     }
     #[test]
-    fn test_implied_body_schema_derive_and_json_integration() {
+    fn test_implied_body_schema_derive_and_json_integration() -> Result<(), HclError> {
         let schema = AppConfig::implied_body_schema();
         assert_eq!(schema.attributes.len(), 2);
         assert!(schema.attributes["name"].required);
@@ -748,7 +759,10 @@ mod tests {
         assert_eq!(schema.blocks.len(), 2);
         let sub_schema = &schema.blocks["sub"];
         assert_eq!(sub_schema.label_names, vec!["id"]);
-        let inner = sub_schema.body_schema.as_ref().unwrap();
+        let inner = sub_schema
+            .body_schema
+            .as_ref()
+            .ok_or_else(|| HclError::Eval("expected inner schema".to_string()))?;
         assert!(inner.attributes["count"].required);
         let replicas_schema = &schema.blocks["replicas"];
         assert_eq!(replicas_schema.label_names, vec!["id"]);
@@ -772,10 +786,14 @@ mod tests {
                 }
             ]
         }"#;
-        let body = crate::parse::json::parse_json_with_schema(json_str, &schema).unwrap();
+        let body = crate::parse::json::parse_json_with_schema(json_str, &schema)?;
         assert!(body.attributes.contains_key("name"));
         assert_eq!(body.blocks.len(), 3);
-        let sub_block = body.blocks.iter().find(|b| b.block_type == "sub").unwrap();
+        let sub_block = body
+            .blocks
+            .iter()
+            .find(|b| b.block_type == "sub")
+            .ok_or_else(|| HclError::Eval("expected sub block".to_string()))?;
         assert_eq!(sub_block.labels, vec!["sub-primary"]);
         assert!(sub_block.body.attributes.contains_key("count"));
         let replica_blocks: Vec<_> = body
@@ -786,6 +804,7 @@ mod tests {
         assert_eq!(replica_blocks.len(), 2);
         assert_eq!(replica_blocks[0].labels, vec!["rep-1"]);
         assert_eq!(replica_blocks[1].labels, vec!["rep-2"]);
+        Ok(())
     }
     #[test]
     fn test_implied_label_names_default() {
@@ -801,7 +820,7 @@ mod tests {
         assert_eq!(labels, Vec::<String>::new());
     }
     #[test]
-    fn test_attribute_and_block_typo_suggestions() {
+    fn test_attribute_and_block_typo_suggestions() -> Result<(), HclError> {
         let schema = BodySchema::new()
             .with_attribute(AttributeSchema::new("username", true))
             .with_attribute(AttributeSchema::new("password", false))
@@ -811,13 +830,15 @@ mod tests {
             servce {
             }
         "#;
-        let body = crate::api::parse(src).unwrap();
-        let err = validate_body(&body, &schema).err().unwrap();
+        let body = crate::api::parse(src)?;
+        let err = validate_body(&body, &schema)
+            .err()
+            .ok_or_else(|| HclError::Eval("expected error".to_string()))?;
         let attr_err = err
             .errors()
             .iter()
             .find(|d| d.summary_str().contains("usrname"))
-            .unwrap();
+            .ok_or_else(|| HclError::Eval("expected usrname error".to_string()))?;
         assert_eq!(
             attr_err.detail.as_deref(),
             Some("Did you mean \"username\"?")
@@ -826,11 +847,12 @@ mod tests {
             .errors()
             .iter()
             .find(|d| d.summary_str().contains("servce"))
-            .unwrap();
+            .ok_or_else(|| HclError::Eval("expected servce error".to_string()))?;
         assert_eq!(
             block_err.detail.as_deref(),
             Some("Did you mean \"service\"?")
         );
+        Ok(())
     }
     #[test]
     fn test_implied_body_schema_for_body() {
@@ -840,6 +862,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod extra_tests {
     use super::*;
     use crate::span::Span;
@@ -847,6 +870,12 @@ mod extra_tests {
 
     #[test]
     fn test_body_content_coverage() {
+        struct Dummy;
+        impl ImpliedBodySchema for Dummy {
+            fn implied_body_schema() -> BodySchema {
+                BodySchema::new()
+            }
+        }
         let span = Span::new(0, 10, 1, 1, 1, 10);
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -862,29 +891,22 @@ mod extra_tests {
             },
         );
 
-        let content = BodyContent::new(attrs, vec![], span.clone());
+        let content = BodyContent::new(attrs, vec![], span);
 
         // test Clone
-        let content2 = content.clone();
+        let content2 = Clone::clone(&content);
 
         // test PartialEq
         assert_eq!(content, content2);
 
         // test Debug
-        let dbg_str = format!("{:?}", content);
+        let dbg_str = format!("{content:?}");
         assert!(dbg_str.contains("BodyContent"));
 
         // test get_attribute
         assert!(content.get_attribute("foo").is_some());
         assert!(content.get_attribute("bar").is_none());
 
-        // test implied_label_names default impl
-        struct Dummy;
-        impl ImpliedBodySchema for Dummy {
-            fn implied_body_schema() -> BodySchema {
-                BodySchema::new()
-            }
-        }
         assert!(Dummy::implied_label_names().is_empty());
         let _ = Dummy::implied_body_schema();
     }

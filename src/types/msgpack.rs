@@ -18,7 +18,7 @@ pub struct MsgPackWriter {
 impl MsgPackWriter {
     /// Creates a new empty [`MsgPackWriter`].
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { buf: Vec::new() }
     }
     /// Consumes the writer and returns the accumulated byte buffer.
@@ -47,50 +47,33 @@ impl MsgPackWriter {
     /// * `n` - The signed integer to write.
     pub fn write_int(&mut self, n: i64) {
         if (-32..=127).contains(&n) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            self.buf.push(n as u8);
+            self.buf.push(i8::try_from(n).unwrap_or(0).to_be_bytes()[0]);
         } else if (0..=255).contains(&n) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            {
-                self.buf.push(0xcc);
-                self.buf.push(n as u8);
-            }
+            self.buf.push(0xcc);
+            self.buf.push(u8::try_from(n).unwrap_or(0));
         } else if (0..=65535).contains(&n) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            {
-                self.buf.push(0xcd);
-                self.buf.extend_from_slice(&(n as u16).to_be_bytes());
-            }
+            self.buf.push(0xcd);
+            self.buf
+                .extend_from_slice(&u16::try_from(n).unwrap_or(0).to_be_bytes());
         } else if (0..=i64::from(u32::MAX)).contains(&n) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            {
-                self.buf.push(0xce);
-                self.buf.extend_from_slice(&(n as u32).to_be_bytes());
-            }
+            self.buf.push(0xce);
+            self.buf
+                .extend_from_slice(&u32::try_from(n).unwrap_or(0).to_be_bytes());
         } else if n >= 0 {
-            #[allow(clippy::cast_sign_loss)]
-            {
-                self.buf.push(0xcf);
-                self.buf.extend_from_slice(&(n as u64).to_be_bytes());
-            }
+            self.buf.push(0xcf);
+            self.buf
+                .extend_from_slice(&u64::try_from(n).unwrap_or(0).to_be_bytes());
         } else if n >= -128 {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            {
-                self.buf.push(0xd0);
-                self.buf.push(n as i8 as u8);
-            }
+            self.buf.push(0xd0);
+            self.buf.push(i8::try_from(n).unwrap_or(0).to_be_bytes()[0]);
         } else if n >= -32768 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xd1);
-                self.buf.extend_from_slice(&(n as i16).to_be_bytes());
-            }
+            self.buf.push(0xd1);
+            self.buf
+                .extend_from_slice(&i16::try_from(n).unwrap_or(0).to_be_bytes());
         } else if n >= i64::from(i32::MIN) {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xd2);
-                self.buf.extend_from_slice(&(n as i32).to_be_bytes());
-            }
+            self.buf.push(0xd2);
+            self.buf
+                .extend_from_slice(&i32::try_from(n).unwrap_or(0).to_be_bytes());
         } else {
             self.buf.push(0xd3);
             self.buf.extend_from_slice(&n.to_be_bytes());
@@ -102,26 +85,18 @@ impl MsgPackWriter {
     /// * `n` - The unsigned integer to write.
     pub fn write_uint(&mut self, n: u64) {
         if n <= 127 {
-            #[allow(clippy::cast_possible_truncation)]
-            self.buf.push(n as u8);
+            self.buf.push(u8::try_from(n).unwrap_or(0));
         } else if n <= 255 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xcc);
-                self.buf.push(n as u8);
-            }
+            self.buf.push(0xcc);
+            self.buf.push(u8::try_from(n).unwrap_or(0));
         } else if n <= 65535 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xcd);
-                self.buf.extend_from_slice(&(n as u16).to_be_bytes());
-            }
+            self.buf.push(0xcd);
+            self.buf
+                .extend_from_slice(&u16::try_from(n).unwrap_or(0).to_be_bytes());
         } else if u32::try_from(n).is_ok() {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xce);
-                self.buf.extend_from_slice(&(n as u32).to_be_bytes());
-            }
+            self.buf.push(0xce);
+            self.buf
+                .extend_from_slice(&u32::try_from(n).unwrap_or(0).to_be_bytes());
         } else {
             self.buf.push(0xcf);
             self.buf.extend_from_slice(&n.to_be_bytes());
@@ -142,26 +117,18 @@ impl MsgPackWriter {
     pub fn write_str(&mut self, s: &str) {
         let len = s.len();
         if len < 32 {
-            #[allow(clippy::cast_possible_truncation)]
-            self.buf.push(0xa0 | (len as u8));
+            self.buf.push(0xa0 | u8::try_from(len).unwrap_or(0));
         } else if len < 256 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xd9);
-                self.buf.push(len as u8);
-            }
+            self.buf.push(0xd9);
+            self.buf.push(u8::try_from(len).unwrap_or(0));
         } else if len < 65536 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xda);
-                self.buf.extend_from_slice(&(len as u16).to_be_bytes());
-            }
+            self.buf.push(0xda);
+            self.buf
+                .extend_from_slice(&u16::try_from(len).unwrap_or(0).to_be_bytes());
         } else {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xdb);
-                self.buf.extend_from_slice(&(len as u32).to_be_bytes());
-            }
+            self.buf.push(0xdb);
+            self.buf
+                .extend_from_slice(&u32::try_from(len).unwrap_or(u32::MAX).to_be_bytes());
         }
         self.buf.extend_from_slice(s.as_bytes());
     }
@@ -172,23 +139,16 @@ impl MsgPackWriter {
     pub fn write_bin(&mut self, bytes: &[u8]) {
         let len = bytes.len();
         if len < 256 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xc4);
-                self.buf.push(len as u8);
-            }
+            self.buf.push(0xc4);
+            self.buf.push(u8::try_from(len).unwrap_or(0));
         } else if len < 65536 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xc5);
-                self.buf.extend_from_slice(&(len as u16).to_be_bytes());
-            }
+            self.buf.push(0xc5);
+            self.buf
+                .extend_from_slice(&u16::try_from(len).unwrap_or(0).to_be_bytes());
         } else {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xc6);
-                self.buf.extend_from_slice(&(len as u32).to_be_bytes());
-            }
+            self.buf.push(0xc6);
+            self.buf
+                .extend_from_slice(&u32::try_from(len).unwrap_or(u32::MAX).to_be_bytes());
         }
         self.buf.extend_from_slice(bytes);
     }
@@ -198,20 +158,15 @@ impl MsgPackWriter {
     /// * `len` - The number of elements in the array.
     pub fn write_array_header(&mut self, len: usize) {
         if len < 16 {
-            #[allow(clippy::cast_possible_truncation)]
-            self.buf.push(0x90 | (len as u8));
+            self.buf.push(0x90 | u8::try_from(len).unwrap_or(0));
         } else if len < 65536 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xdc);
-                self.buf.extend_from_slice(&(len as u16).to_be_bytes());
-            }
+            self.buf.push(0xdc);
+            self.buf
+                .extend_from_slice(&u16::try_from(len).unwrap_or(0).to_be_bytes());
         } else {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xdd);
-                self.buf.extend_from_slice(&(len as u32).to_be_bytes());
-            }
+            self.buf.push(0xdd);
+            self.buf
+                .extend_from_slice(&u32::try_from(len).unwrap_or(u32::MAX).to_be_bytes());
         }
     }
     /// Writes a map header with the specified number of key-value pairs.
@@ -220,20 +175,15 @@ impl MsgPackWriter {
     /// * `len` - The number of key-value pairs in the map.
     pub fn write_map_header(&mut self, len: usize) {
         if len < 16 {
-            #[allow(clippy::cast_possible_truncation)]
-            self.buf.push(0x80 | (len as u8));
+            self.buf.push(0x80 | u8::try_from(len).unwrap_or(0));
         } else if len < 65536 {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xde);
-                self.buf.extend_from_slice(&(len as u16).to_be_bytes());
-            }
+            self.buf.push(0xde);
+            self.buf
+                .extend_from_slice(&u16::try_from(len).unwrap_or(0).to_be_bytes());
         } else {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                self.buf.push(0xdf);
-                self.buf.extend_from_slice(&(len as u32).to_be_bytes());
-            }
+            self.buf.push(0xdf);
+            self.buf
+                .extend_from_slice(&u32::try_from(len).unwrap_or(u32::MAX).to_be_bytes());
         }
     }
     /// Writes a `MessagePack` extension value.
@@ -242,8 +192,7 @@ impl MsgPackWriter {
     /// * `type_code` - The signed 8-bit extension type code.
     /// * `data` - The extension payload bytes.
     pub fn write_ext(&mut self, type_code: i8, data: &[u8]) {
-        #[allow(clippy::cast_sign_loss)]
-        let type_byte = type_code as u8;
+        let type_byte = type_code.to_be_bytes()[0];
         let len = data.len();
         match len {
             1 => {
@@ -268,17 +217,19 @@ impl MsgPackWriter {
             }
             0..=255 => {
                 self.buf.push(0xc7);
-                self.buf.push(len as u8);
+                self.buf.push(u8::try_from(len).unwrap_or(0));
                 self.buf.push(type_byte);
             }
             256..=65535 => {
                 self.buf.push(0xc8);
-                self.buf.extend_from_slice(&(len as u16).to_be_bytes());
+                self.buf
+                    .extend_from_slice(&u16::try_from(len).unwrap_or(0).to_be_bytes());
                 self.buf.push(type_byte);
             }
             _ => {
                 self.buf.push(0xc9);
-                self.buf.extend_from_slice(&(len as u32).to_be_bytes());
+                self.buf
+                    .extend_from_slice(&u32::try_from(len).unwrap_or(u32::MAX).to_be_bytes());
                 self.buf.push(type_byte);
             }
         }
@@ -321,12 +272,12 @@ impl<'a> MsgPackReader<'a> {
     /// # Arguments
     /// * `bytes` - The input bytes to read.
     #[must_use]
-    pub fn new(bytes: &'a [u8]) -> Self {
+    pub const fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, pos: 0 }
     }
     /// Returns the number of unconsumed bytes remaining.
     #[must_use]
-    pub fn remaining(&self) -> usize {
+    pub const fn remaining(&self) -> usize {
         self.bytes.len().saturating_sub(self.pos)
     }
     fn read_u8(&mut self) -> Result<u8, HclError> {
@@ -375,6 +326,22 @@ impl<'a> MsgPackReader<'a> {
         arr.copy_from_slice(slice);
         Ok(arr)
     }
+    fn read_str_with_len(&mut self, len: usize) -> Result<MsgPackToken<'a>, HclError> {
+        let slice = self.read_exact(len)?;
+        let s = std::str::from_utf8(slice)
+            .map_err(|e| HclError::MsgPackDecode(format!("invalid utf8 string: {e}")))?;
+        Ok(MsgPackToken::Str(s))
+    }
+
+    fn read_ext_with_len(&mut self, len: usize) -> Result<MsgPackToken<'a>, HclError> {
+        let code = i8::from_be_bytes([self.read_u8()?]);
+        Ok(MsgPackToken::Ext(code, self.read_exact(len)?))
+    }
+
+    fn read_bin_with_len(&mut self, len: usize) -> Result<MsgPackToken<'a>, HclError> {
+        Ok(MsgPackToken::Bin(self.read_exact(len)?))
+    }
+
     /// Reads and decodes the next [`MsgPackToken`].
     ///
     /// # Errors
@@ -385,157 +352,93 @@ impl<'a> MsgPackReader<'a> {
             0x00..=0x7f => Ok(MsgPackToken::Uint(u64::from(b))),
             0x80..=0x8f => Ok(MsgPackToken::MapHeader(usize::from(b & 0x0f))),
             0x90..=0x9f => Ok(MsgPackToken::ArrayHeader(usize::from(b & 0x0f))),
-            0xa0..=0xbf => {
-                let len = usize::from(b & 0x1f);
-                let slice = self.read_exact(len)?;
-                let s = std::str::from_utf8(slice)
-                    .map_err(|e| HclError::MsgPackDecode(format!("invalid utf8 string: {e}")))?;
-                Ok(MsgPackToken::Str(s))
-            }
+            0xa0..=0xbf => self.read_str_with_len(usize::from(b & 0x1f)),
             0xc0 => Ok(MsgPackToken::Nil),
             0xc2 => Ok(MsgPackToken::Bool(false)),
             0xc3 => Ok(MsgPackToken::Bool(true)),
             0xc4 => {
                 let len = usize::from(self.read_u8()?);
-                Ok(MsgPackToken::Bin(self.read_exact(len)?))
+                self.read_bin_with_len(len)
             }
             0xc5 => {
                 let len = usize::from(u16::from_be_bytes(self.read_2_bytes()?));
-                Ok(MsgPackToken::Bin(self.read_exact(len)?))
+                self.read_bin_with_len(len)
             }
             0xc6 => {
-                #[allow(clippy::cast_possible_truncation)]
-                let len = u32::from_be_bytes(self.read_4_bytes()?) as usize;
-                Ok(MsgPackToken::Bin(self.read_exact(len)?))
+                let len =
+                    usize::try_from(u32::from_be_bytes(self.read_4_bytes()?)).unwrap_or(usize::MAX);
+                self.read_bin_with_len(len)
             }
             0xc7 => {
                 let len = usize::from(self.read_u8()?);
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(len)?))
+                self.read_ext_with_len(len)
             }
             0xc8 => {
                 let len = usize::from(u16::from_be_bytes(self.read_2_bytes()?));
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(len)?))
+                self.read_ext_with_len(len)
             }
             0xc9 => {
-                #[allow(clippy::cast_possible_truncation)]
-                let len = u32::from_be_bytes(self.read_4_bytes()?) as usize;
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(len)?))
+                let len =
+                    usize::try_from(u32::from_be_bytes(self.read_4_bytes()?)).unwrap_or(usize::MAX);
+                self.read_ext_with_len(len)
             }
-            0xca => {
-                let f_bytes = self.read_4_bytes()?;
-                Ok(MsgPackToken::Float(f64::from(f32::from_be_bytes(f_bytes))))
-            }
-            0xcb => {
-                let f_bytes = self.read_8_bytes()?;
-                Ok(MsgPackToken::Float(f64::from_be_bytes(f_bytes)))
-            }
-            0xcc => {
-                let val = self.read_u8()?;
-                Ok(MsgPackToken::Uint(u64::from(val)))
-            }
-            0xcd => {
-                let val = u16::from_be_bytes(self.read_2_bytes()?);
-                Ok(MsgPackToken::Uint(u64::from(val)))
-            }
-            0xce => {
-                let val = u32::from_be_bytes(self.read_4_bytes()?);
-                Ok(MsgPackToken::Uint(u64::from(val)))
-            }
-            0xcf => {
-                let val = u64::from_be_bytes(self.read_8_bytes()?);
-                Ok(MsgPackToken::Uint(val))
-            }
+            0xca => Ok(MsgPackToken::Float(f64::from(f32::from_be_bytes(
+                self.read_4_bytes()?,
+            )))),
+            0xcb => Ok(MsgPackToken::Float(f64::from_be_bytes(
+                self.read_8_bytes()?,
+            ))),
+            0xcc => Ok(MsgPackToken::Uint(u64::from(self.read_u8()?))),
+            0xcd => Ok(MsgPackToken::Uint(u64::from(u16::from_be_bytes(
+                self.read_2_bytes()?,
+            )))),
+            0xce => Ok(MsgPackToken::Uint(u64::from(u32::from_be_bytes(
+                self.read_4_bytes()?,
+            )))),
+            0xcf => Ok(MsgPackToken::Uint(u64::from_be_bytes(self.read_8_bytes()?))),
             0xd0 => {
-                #[allow(clippy::cast_possible_wrap)]
-                let val = self.read_u8()? as i8;
+                let val = i8::from_be_bytes([self.read_u8()?]);
                 Ok(MsgPackToken::Int(i64::from(val)))
             }
-            0xd1 => {
-                let val = i16::from_be_bytes(self.read_2_bytes()?);
-                Ok(MsgPackToken::Int(i64::from(val)))
-            }
-            0xd2 => {
-                let val = i32::from_be_bytes(self.read_4_bytes()?);
-                Ok(MsgPackToken::Int(i64::from(val)))
-            }
-            0xd3 => {
-                let val = i64::from_be_bytes(self.read_8_bytes()?);
-                Ok(MsgPackToken::Int(val))
-            }
-            0xd4 => {
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(1)?))
-            }
-            0xd5 => {
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(2)?))
-            }
-            0xd6 => {
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(4)?))
-            }
-            0xd7 => {
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(8)?))
-            }
-            0xd8 => {
-                #[allow(clippy::cast_possible_wrap)]
-                let code = self.read_u8()? as i8;
-                Ok(MsgPackToken::Ext(code, self.read_exact(16)?))
-            }
+            0xd1 => Ok(MsgPackToken::Int(i64::from(i16::from_be_bytes(
+                self.read_2_bytes()?,
+            )))),
+            0xd2 => Ok(MsgPackToken::Int(i64::from(i32::from_be_bytes(
+                self.read_4_bytes()?,
+            )))),
+            0xd3 => Ok(MsgPackToken::Int(i64::from_be_bytes(self.read_8_bytes()?))),
+            0xd4..=0xd8 => self.read_ext_with_len(1 << (b - 0xd4)),
             0xd9 => {
                 let len = usize::from(self.read_u8()?);
-                let slice = self.read_exact(len)?;
-                let s = std::str::from_utf8(slice)
-                    .map_err(|e| HclError::MsgPackDecode(format!("invalid utf8 string: {e}")))?;
-                Ok(MsgPackToken::Str(s))
+                self.read_str_with_len(len)
             }
             0xda => {
                 let len = usize::from(u16::from_be_bytes(self.read_2_bytes()?));
-                let slice = self.read_exact(len)?;
-                let s = std::str::from_utf8(slice)
-                    .map_err(|e| HclError::MsgPackDecode(format!("invalid utf8 string: {e}")))?;
-                Ok(MsgPackToken::Str(s))
+                self.read_str_with_len(len)
             }
             0xdb => {
-                #[allow(clippy::cast_possible_truncation)]
-                let len = u32::from_be_bytes(self.read_4_bytes()?) as usize;
-                let slice = self.read_exact(len)?;
-                let s = std::str::from_utf8(slice)
-                    .map_err(|e| HclError::MsgPackDecode(format!("invalid utf8 string: {e}")))?;
-                Ok(MsgPackToken::Str(s))
+                let len =
+                    usize::try_from(u32::from_be_bytes(self.read_4_bytes()?)).unwrap_or(usize::MAX);
+                self.read_str_with_len(len)
             }
-            0xdc => {
-                let len = usize::from(u16::from_be_bytes(self.read_2_bytes()?));
-                Ok(MsgPackToken::ArrayHeader(len))
-            }
+            0xdc => Ok(MsgPackToken::ArrayHeader(usize::from(u16::from_be_bytes(
+                self.read_2_bytes()?,
+            )))),
             0xdd => {
-                #[allow(clippy::cast_possible_truncation)]
-                let len = u32::from_be_bytes(self.read_4_bytes()?) as usize;
+                let len =
+                    usize::try_from(u32::from_be_bytes(self.read_4_bytes()?)).unwrap_or(usize::MAX);
                 Ok(MsgPackToken::ArrayHeader(len))
             }
-            0xde => {
-                let len = usize::from(u16::from_be_bytes(self.read_2_bytes()?));
-                Ok(MsgPackToken::MapHeader(len))
-            }
+            0xde => Ok(MsgPackToken::MapHeader(usize::from(u16::from_be_bytes(
+                self.read_2_bytes()?,
+            )))),
             0xdf => {
-                #[allow(clippy::cast_possible_truncation)]
-                let len = u32::from_be_bytes(self.read_4_bytes()?) as usize;
+                let len =
+                    usize::try_from(u32::from_be_bytes(self.read_4_bytes()?)).unwrap_or(usize::MAX);
                 Ok(MsgPackToken::MapHeader(len))
             }
             0xe0..=0xff => {
-                #[allow(clippy::cast_possible_wrap)]
-                let val = b as i8;
+                let val = i8::from_be_bytes([b]);
                 Ok(MsgPackToken::Int(i64::from(val)))
             }
             _ => Err(HclError::MsgPackDecode(format!(
@@ -699,14 +602,12 @@ fn encode_refinement(w: &mut MsgPackWriter, r: &Refinement) {
     w.write_array_header(10);
     w.write_bool(r.not_null);
     if let Some(min) = r.string_length_min {
-        #[allow(clippy::cast_possible_wrap)]
-        w.write_int(min as i64);
+        w.write_int(i64::try_from(min).unwrap_or(i64::MAX));
     } else {
         w.write_nil();
     }
     if let Some(max) = r.string_length_max {
-        #[allow(clippy::cast_possible_wrap)]
-        w.write_int(max as i64);
+        w.write_int(i64::try_from(max).unwrap_or(i64::MAX));
     } else {
         w.write_nil();
     }
@@ -721,14 +622,12 @@ fn encode_refinement(w: &mut MsgPackWriter, r: &Refinement) {
         w.write_nil();
     }
     if let Some(min) = r.collection_length_min {
-        #[allow(clippy::cast_possible_wrap)]
-        w.write_int(min as i64);
+        w.write_int(i64::try_from(min).unwrap_or(i64::MAX));
     } else {
         w.write_nil();
     }
     if let Some(max) = r.collection_length_max {
-        #[allow(clippy::cast_possible_wrap)]
-        w.write_int(max as i64);
+        w.write_int(i64::try_from(max).unwrap_or(i64::MAX));
     } else {
         w.write_nil();
     }
@@ -1015,62 +914,70 @@ fn decode_value_data(
                 ))
             }
         },
-        MsgPackToken::MapHeader(count) => match expected_type {
-            Type::Map(elem_ty) => {
-                let mut map = BTreeMap::new();
-                for _ in 0..count {
-                    let k = match reader.read_token()? {
-                        MsgPackToken::Str(s) => s.to_string(),
-                        _ => {
-                            return Err(HclError::MsgPackDecode(
-                                "map key must be a string".to_string(),
-                            ));
-                        }
-                    };
-                    let v = decode_value_internal(reader, elem_ty)?;
-                    map.insert(k, v);
-                }
-                Ok(Value::new(expected_type.clone(), ValueData::Object(map)))
-            }
-            Type::Object { attrs, .. } => {
-                let mut map = BTreeMap::new();
-                for _ in 0..count {
-                    let k = match reader.read_token()? {
-                        MsgPackToken::Str(s) => s.to_string(),
-                        _ => {
-                            return Err(HclError::MsgPackDecode(
-                                "object key must be a string".to_string(),
-                            ));
-                        }
-                    };
-                    let attr_ty = attrs.get(&k).unwrap_or(&Type::Dynamic);
-                    let v = decode_value_internal(reader, attr_ty)?;
-                    map.insert(k, v);
-                }
-                Ok(Value::new(expected_type.clone(), ValueData::Object(map)))
-            }
-            _ => {
-                let mut map = BTreeMap::new();
-                let mut attr_tys = BTreeMap::new();
-                for _ in 0..count {
-                    let k = match reader.read_token()? {
-                        MsgPackToken::Str(s) => s.to_string(),
-                        _ => {
-                            return Err(HclError::MsgPackDecode(
-                                "object key must be a string".to_string(),
-                            ));
-                        }
-                    };
-                    let v = decode_value_internal(reader, &Type::Dynamic)?;
-                    attr_tys.insert(k.clone(), v.ty().clone());
-                    map.insert(k, v);
-                }
-                Ok(Value::new(Type::object(attr_tys), ValueData::Object(map)))
-            }
-        },
+        MsgPackToken::MapHeader(count) => decode_map_value_data(reader, count, expected_type),
         MsgPackToken::Ext(code, _) => Err(HclError::MsgPackDecode(format!(
             "unexpected extension code {code} for cty.Value"
         ))),
+    }
+}
+
+fn decode_map_value_data(
+    reader: &mut MsgPackReader<'_>,
+    count: usize,
+    expected_type: &Type,
+) -> Result<Value, HclError> {
+    match expected_type {
+        Type::Map(elem_ty) => {
+            let mut map = BTreeMap::new();
+            for _ in 0..count {
+                let k = match reader.read_token()? {
+                    MsgPackToken::Str(s) => s.to_string(),
+                    _ => {
+                        return Err(HclError::MsgPackDecode(
+                            "map key must be a string".to_string(),
+                        ));
+                    }
+                };
+                let v = decode_value_internal(reader, elem_ty)?;
+                map.insert(k, v);
+            }
+            Ok(Value::new(expected_type.clone(), ValueData::Object(map)))
+        }
+        Type::Object { attrs, .. } => {
+            let mut map = BTreeMap::new();
+            for _ in 0..count {
+                let k = match reader.read_token()? {
+                    MsgPackToken::Str(s) => s.to_string(),
+                    _ => {
+                        return Err(HclError::MsgPackDecode(
+                            "object key must be a string".to_string(),
+                        ));
+                    }
+                };
+                let attr_ty = attrs.get(&k).unwrap_or(&Type::Dynamic);
+                let v = decode_value_internal(reader, attr_ty)?;
+                map.insert(k, v);
+            }
+            Ok(Value::new(expected_type.clone(), ValueData::Object(map)))
+        }
+        _ => {
+            let mut map = BTreeMap::new();
+            let mut attr_tys = BTreeMap::new();
+            for _ in 0..count {
+                let k = match reader.read_token()? {
+                    MsgPackToken::Str(s) => s.to_string(),
+                    _ => {
+                        return Err(HclError::MsgPackDecode(
+                            "object key must be a string".to_string(),
+                        ));
+                    }
+                };
+                let v = decode_value_internal(reader, &Type::Dynamic)?;
+                attr_tys.insert(k.clone(), v.ty().clone());
+                map.insert(k, v);
+            }
+            Ok(Value::new(Type::object(attr_tys), ValueData::Object(map)))
+        }
     }
 }
 /// Serializes a [`Value`] into canonical `MessagePack` binary format.
@@ -1109,14 +1016,8 @@ pub fn decode_value(bytes: &[u8], expected_type: &Type) -> Result<Value, HclErro
     Ok(val)
 }
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::pedantic,
-        clippy::nursery
-    )]
     use super::*;
     use crate::number::Number;
     use crate::types::refinement::Refinement;
@@ -1124,20 +1025,21 @@ mod tests {
     use crate::types::val::{Value, ValueData, ValueMark};
     use std::collections::{BTreeMap, BTreeSet};
     #[test]
-    fn test_msgpack_primitive_types_roundtrip() {
+    fn test_msgpack_primitive_types_roundtrip() -> Result<(), HclError> {
         let types = [Type::Number, Type::String, Type::Bool, Type::Dynamic];
         for ty in &types {
-            let encoded = ty.to_msgpack().unwrap();
-            let decoded = Type::from_msgpack(&encoded).unwrap();
+            let encoded = ty.to_msgpack()?;
+            let decoded = Type::from_msgpack(&encoded)?;
             assert_eq!(ty, &decoded);
         }
-        assert_eq!(Type::Number.to_msgpack().unwrap(), vec![0xa1, b'N']);
-        assert_eq!(Type::String.to_msgpack().unwrap(), vec![0xa1, b'S']);
-        assert_eq!(Type::Bool.to_msgpack().unwrap(), vec![0xa1, b'B']);
-        assert_eq!(Type::Dynamic.to_msgpack().unwrap(), vec![0xa1, b'?']);
+        assert_eq!(Type::Number.to_msgpack()?, vec![0xa1, b'N']);
+        assert_eq!(Type::String.to_msgpack()?, vec![0xa1, b'S']);
+        assert_eq!(Type::Bool.to_msgpack()?, vec![0xa1, b'B']);
+        assert_eq!(Type::Dynamic.to_msgpack()?, vec![0xa1, b'?']);
+        Ok(())
     }
     #[test]
-    fn test_msgpack_compound_types_roundtrip() {
+    fn test_msgpack_compound_types_roundtrip() -> Result<(), HclError> {
         let list_ty = Type::List(Box::new(Type::String));
         let set_ty = Type::Set(Box::new(Type::Number));
         let map_ty = Type::Map(Box::new(Type::Bool));
@@ -1149,48 +1051,50 @@ mod tests {
         let cap_ty = Type::capsule::<()>("my_custom_capsule");
         let compound = [list_ty, set_ty, map_ty, tup_ty, obj_ty, cap_ty];
         for ty in &compound {
-            let encoded = ty.to_msgpack().unwrap();
-            let decoded = Type::from_msgpack(&encoded).unwrap();
+            let encoded = ty.to_msgpack()?;
+            let decoded = Type::from_msgpack(&encoded)?;
             assert_eq!(ty, &decoded);
         }
+        Ok(())
     }
     #[test]
-    fn test_msgpack_primitive_values_roundtrip() {
+    fn test_msgpack_primitive_values_roundtrip() -> Result<(), HclError> {
         let null_str = Value::null(Type::String);
-        let null_enc = null_str.to_msgpack().unwrap();
+        let null_enc = null_str.to_msgpack()?;
         assert_eq!(null_enc, vec![0xc0]);
-        let null_dec = Value::from_msgpack(&null_enc, &Type::String).unwrap();
+        let null_dec = Value::from_msgpack(&null_enc, &Type::String)?;
         assert_eq!(null_str, null_dec);
         let t_val = Value::new(Type::Bool, ValueData::Bool(true));
         let f_val = Value::new(Type::Bool, ValueData::Bool(false));
-        assert_eq!(t_val.to_msgpack().unwrap(), vec![0xc3]);
-        assert_eq!(f_val.to_msgpack().unwrap(), vec![0xc2]);
-        assert_eq!(Value::from_msgpack(&[0xc3], &Type::Bool).unwrap(), t_val);
-        assert_eq!(Value::from_msgpack(&[0xc2], &Type::Bool).unwrap(), f_val);
+        assert_eq!(t_val.to_msgpack()?, vec![0xc3]);
+        assert_eq!(f_val.to_msgpack()?, vec![0xc2]);
+        assert_eq!(Value::from_msgpack(&[0xc3], &Type::Bool)?, t_val);
+        assert_eq!(Value::from_msgpack(&[0xc2], &Type::Bool)?, f_val);
         let str_val = Value::new(Type::String, ValueData::String("hello world".to_string()));
-        let str_enc = str_val.to_msgpack().unwrap();
-        let str_dec = Value::from_msgpack(&str_enc, &Type::String).unwrap();
+        let str_enc = str_val.to_msgpack()?;
+        let str_dec = Value::from_msgpack(&str_enc, &Type::String)?;
         assert_eq!(str_val, str_dec);
         let num_int = Value::new(Type::Number, ValueData::Number(Number::from(42)));
-        let num_enc = num_int.to_msgpack().unwrap();
-        let num_dec = Value::from_msgpack(&num_enc, &Type::Number).unwrap();
+        let num_enc = num_int.to_msgpack()?;
+        let num_dec = Value::from_msgpack(&num_enc, &Type::Number)?;
         assert_eq!(num_int, num_dec);
         let num_neg = Value::new(Type::Number, ValueData::Number(Number::from(-100)));
-        let neg_enc = num_neg.to_msgpack().unwrap();
-        let neg_dec = Value::from_msgpack(&neg_enc, &Type::Number).unwrap();
+        let neg_enc = num_neg.to_msgpack()?;
+        let neg_dec = Value::from_msgpack(&neg_enc, &Type::Number)?;
         assert_eq!(num_neg, neg_dec);
         let num_big = Value::new(
             Type::Number,
-            ValueData::Number(
-                Number::from_str("123456789012345678901234567890.123456789").unwrap(),
-            ),
+            ValueData::Number(Number::from_str(
+                "123456789012345678901234567890.123456789",
+            )?),
         );
-        let big_enc = num_big.to_msgpack().unwrap();
-        let big_dec = Value::from_msgpack(&big_enc, &Type::Number).unwrap();
+        let big_enc = num_big.to_msgpack()?;
+        let big_dec = Value::from_msgpack(&big_enc, &Type::Number)?;
         assert_eq!(num_big, big_dec);
+        Ok(())
     }
     #[test]
-    fn test_msgpack_collections_roundtrip() {
+    fn test_msgpack_collections_roundtrip() -> Result<(), HclError> {
         let list_val = Value::new(
             Type::List(Box::new(Type::String)),
             ValueData::Array(vec![
@@ -1198,15 +1102,15 @@ mod tests {
                 Value::new(Type::String, ValueData::String("b".to_string())),
             ]),
         );
-        let list_enc = list_val.to_msgpack().unwrap();
-        let list_dec = Value::from_msgpack(&list_enc, list_val.ty()).unwrap();
+        let list_enc = list_val.to_msgpack()?;
+        let list_dec = Value::from_msgpack(&list_enc, list_val.ty())?;
         assert_eq!(list_val, list_dec);
         let mut set = BTreeSet::new();
         set.insert(Value::new(Type::Number, ValueData::Number(Number::from(1))));
         set.insert(Value::new(Type::Number, ValueData::Number(Number::from(2))));
         let set_val = Value::new(Type::Set(Box::new(Type::Number)), ValueData::Set(set));
-        let set_enc = set_val.to_msgpack().unwrap();
-        let set_dec = Value::from_msgpack(&set_enc, set_val.ty()).unwrap();
+        let set_enc = set_val.to_msgpack()?;
+        let set_dec = Value::from_msgpack(&set_enc, set_val.ty())?;
         assert_eq!(set_val, set_dec);
         let tup_val = Value::new(
             Type::Tuple(vec![Type::String, Type::Number]),
@@ -1215,8 +1119,8 @@ mod tests {
                 Value::new(Type::Number, ValueData::Number(Number::from(99))),
             ]),
         );
-        let tup_enc = tup_val.to_msgpack().unwrap();
-        let tup_dec = Value::from_msgpack(&tup_enc, tup_val.ty()).unwrap();
+        let tup_enc = tup_val.to_msgpack()?;
+        let tup_dec = Value::from_msgpack(&tup_enc, tup_val.ty())?;
         assert_eq!(tup_val, tup_dec);
         let mut obj = BTreeMap::new();
         obj.insert(
@@ -1234,33 +1138,33 @@ mod tests {
             ])),
             ValueData::Object(obj),
         );
-        let obj_enc = obj_val.to_msgpack().unwrap();
-        let obj_dec = Value::from_msgpack(&obj_enc, obj_val.ty()).unwrap();
+        let obj_enc = obj_val.to_msgpack()?;
+        let obj_dec = Value::from_msgpack(&obj_enc, obj_val.ty())?;
         assert_eq!(obj_val, obj_dec);
+        Ok(())
     }
     #[test]
-    fn test_msgpack_unknown_and_refinements_roundtrip() {
+    fn test_msgpack_unknown_and_refinements_roundtrip() -> Result<(), HclError> {
         let unk_val = Value::unknown(Type::String);
-        let unk_enc = unk_val.to_msgpack().unwrap();
+        let unk_enc = unk_val.to_msgpack()?;
         assert_eq!(unk_enc, vec![0xd4, 0x00, 0x00]);
-        let unk_dec = Value::from_msgpack(&unk_enc, &Type::String).unwrap();
+        let unk_dec = Value::from_msgpack(&unk_enc, &Type::String)?;
         assert!(unk_dec.is_unknown());
         assert_eq!(unk_dec.refinement(), None);
         let r = Refinement::not_null()
             .with_prefix("server-")
             .with_suffix(".internal")
-            .with_string_length(10, 40)
-            .unwrap()
-            .with_collection_length(1, 100)
-            .unwrap()
-            .with_number_range(Number::from(1), Number::from(100))
-            .unwrap()
+            .with_string_length(10, 40)?
+            .with_collection_length(1, 100)?
+            .with_number_range(Number::from(1), Number::from(100))?
             .with_object_attr("ip", Refinement::not_null().with_prefix("10."));
-        let ref_val = Value::unknown_refined(Type::String, r.clone());
-        let ref_enc = ref_val.to_msgpack().unwrap();
-        let ref_dec = Value::from_msgpack(&ref_enc, &Type::String).unwrap();
+        let ref_val = Value::unknown_refined(Type::String, r);
+        let ref_enc = ref_val.to_msgpack()?;
+        let ref_dec = Value::from_msgpack(&ref_enc, &Type::String)?;
         assert!(ref_dec.is_unknown());
-        let decoded_ref = ref_dec.refinement().unwrap();
+        let decoded_ref = ref_dec
+            .refinement()
+            .ok_or_else(|| HclError::Validation("missing refinement".to_string()))?;
         assert!(decoded_ref.not_null);
         assert_eq!(decoded_ref.string_prefix.as_deref(), Some("server-"));
         assert_eq!(decoded_ref.string_suffix.as_deref(), Some(".internal"));
@@ -1273,7 +1177,7 @@ mod tests {
         assert!(decoded_ref.object_attrs.contains_key("ip"));
         let mut w_empty = MsgPackWriter::new();
         w_empty.write_ext(0, &[]);
-        let empty_unk = Value::from_msgpack(&w_empty.into_bytes(), &Type::String).unwrap();
+        let empty_unk = Value::from_msgpack(&w_empty.into_bytes(), &Type::String)?;
         assert!(empty_unk.is_unknown());
         let mut ref_payload = MsgPackWriter::new();
         ref_payload.write_array_header(10);
@@ -1289,36 +1193,42 @@ mod tests {
         ref_payload.write_map_header(0);
         let mut w_ref = MsgPackWriter::new();
         w_ref.write_ext(0, &ref_payload.into_bytes());
-        let dec_ref = Value::from_msgpack(&w_ref.into_bytes(), &Type::String).unwrap();
+        let dec_ref = Value::from_msgpack(&w_ref.into_bytes(), &Type::String)?;
         assert!(dec_ref.is_unknown());
-        let r = dec_ref.refinement().unwrap();
+        let r = dec_ref
+            .refinement()
+            .ok_or_else(|| HclError::Validation("missing refinement".to_string()))?;
         assert_eq!(r.string_length_min, None);
         assert_eq!(r.string_length_max, None);
         assert_eq!(r.collection_length_min, None);
         assert_eq!(r.collection_length_max, None);
+        Ok(())
     }
     #[test]
-    fn test_msgpack_marked_values_roundtrip() {
+    fn test_msgpack_marked_values_roundtrip() -> Result<(), HclError> {
         let mut val = Value::new(Type::String, ValueData::String("secret".to_string()));
         val.marks.insert(ValueMark::Sensitive);
         val.marks.insert(ValueMark::custom("encrypted"));
         val.marks.insert(ValueMark::typed(42u32));
-        let enc = val.to_msgpack().unwrap();
-        let dec = Value::from_msgpack(&enc, &Type::String).unwrap();
+        let enc = val.to_msgpack()?;
+        let dec = Value::from_msgpack(&enc, &Type::String)?;
         assert!(dec.has_mark(&ValueMark::Sensitive));
         assert!(dec.has_mark(&ValueMark::custom("encrypted")));
         assert!(dec.has_mark(&ValueMark::custom("42")));
+        Ok(())
     }
     #[test]
-    fn test_msgpack_capsule_roundtrip() {
+    fn test_msgpack_capsule_roundtrip() -> Result<(), HclError> {
         let cap_ty = Type::capsule::<()>("my_resource");
         let cap_val = Value::capsule("my_resource", ());
-        let enc = cap_val.to_msgpack().unwrap();
-        let dec = Value::from_msgpack(&enc, &cap_ty).unwrap();
+        let enc = cap_val.to_msgpack()?;
+        let dec = Value::from_msgpack(&enc, &cap_ty)?;
         assert_eq!(dec.ty().capsule_name(), Some("my_resource"));
+        Ok(())
     }
     #[test]
     fn test_msgpack_error_handling() {
+        use std::collections::BTreeMap;
         assert!(Type::from_msgpack(&[]).is_err());
         assert!(Value::from_msgpack(&[], &Type::String).is_err());
         assert!(Type::from_msgpack(&[0x92, 0xa1]).is_err());
@@ -1337,7 +1247,6 @@ mod tests {
         assert!(encode_value(&ephemeral_val).is_err());
 
         // Test nested ephemeral value encoding success (it gets serialized)
-        use std::collections::BTreeMap;
         let mut map = BTreeMap::new();
         map.insert("key".to_string(), ephemeral_val);
         let mut type_map = BTreeMap::new();
@@ -1577,9 +1486,9 @@ mod tests {
         assert!(decode_type(&[0x92, 0xa1, b'C']).is_err());
         assert!(decode_type(&[0xc0]).is_err());
     }
-    /// Tests value decoding edge cases, dynamic fallbacks, numbers, and errors.
+    /// Tests value decoding edge cases, dynamic fallbacks, and numbers.
     #[test]
-    fn test_msgpack_value_decoding_comprehensive() {
+    fn test_msgpack_value_decoding_primitives_and_dynamic() {
         let dynamic_arr_bytes = [0x92, 0xa5, b'h', b'e', b'l', b'l', b'o', 0x0a];
         let val_arr = decode_value(&dynamic_arr_bytes, &Type::Dynamic).ok();
         assert!(matches!(
@@ -1636,10 +1545,6 @@ mod tests {
         let dec_num = Value::new(Type::Number, ValueData::Number(dec_n));
         let enc_dec = encode_value(&dec_num).unwrap_or_default();
         assert_eq!(decode_value(&enc_dec, &Type::Number).ok(), Some(dec_num));
-        let bad_ref_hdr = [0xd4, 0x00, 0xc0];
-        assert!(decode_value(&bad_ref_hdr, &Type::String).is_err());
-        let short_ref_array = [0xd4, 0x00, 0x95];
-        assert!(decode_value(&short_ref_array, &Type::String).is_err());
         let mut map_data = BTreeMap::new();
         map_data.insert(
             "key".to_string(),
@@ -1651,6 +1556,14 @@ mod tests {
         );
         let map_enc = encode_value(&map_val).unwrap_or_default();
         assert_eq!(decode_value(&map_enc, map_val.ty()).ok(), Some(map_val));
+    }
+    /// Tests refinement encoding and decoding edge cases in `MsgPack`.
+    #[test]
+    fn test_msgpack_value_decoding_refinements() {
+        let bad_ref_hdr = [0xd4, 0x00, 0xc0];
+        assert!(decode_value(&bad_ref_hdr, &Type::String).is_err());
+        let short_ref_array = [0xd4, 0x00, 0x95];
+        assert!(decode_value(&short_ref_array, &Type::String).is_err());
         let empty_ref = Refinement {
             not_null: false,
             string_length_min: None,
@@ -1706,14 +1619,9 @@ mod tests {
         let mut ref_w_bad_key = MsgPackWriter::new();
         ref_w_bad_key.write_array_header(10);
         ref_w_bad_key.write_bool(true);
-        ref_w_bad_key.write_nil();
-        ref_w_bad_key.write_nil();
-        ref_w_bad_key.write_nil();
-        ref_w_bad_key.write_nil();
-        ref_w_bad_key.write_nil();
-        ref_w_bad_key.write_nil();
-        ref_w_bad_key.write_nil();
-        ref_w_bad_key.write_nil();
+        for _ in 0..8 {
+            ref_w_bad_key.write_nil();
+        }
         ref_w_bad_key.write_map_header(1);
         ref_w_bad_key.write_int(999);
         let mut ext_w_bad = MsgPackWriter::new();
@@ -1721,6 +1629,10 @@ mod tests {
         let dec_bad_attr_val = decode_value(&ext_w_bad.into_bytes(), &Type::String)
             .unwrap_or(Value::null(Type::Dynamic));
         assert!(dec_bad_attr_val.is_unknown());
+    }
+    /// Tests marked value decoding and error payloads in `MsgPack`.
+    #[test]
+    fn test_msgpack_value_decoding_marks_and_errors() {
         let tuple_3 = Value::new(
             Type::Tuple(vec![Type::String, Type::String, Type::String]),
             ValueData::Array(vec![
@@ -1772,10 +1684,7 @@ mod tests {
             w.write_ext(0, bad_payload);
             let bytes = w.into_bytes();
             let res = decode_value(&bytes, &Type::String);
-            assert!(
-                res.is_err(),
-                "payload {bad_payload:?} unexpectedly succeeded: {res:?}"
-            );
+            assert!(res.is_err());
         }
         assert!(decode_value(&[0x93, 0x01], &Type::String).is_err());
         assert!(
